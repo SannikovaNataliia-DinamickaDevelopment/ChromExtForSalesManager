@@ -1,0 +1,102 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: #1a1a1a;
+}
+
+h1 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+.account-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 12px;
+  color: #374151;
+}
+
+.account-bar button {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.parse-button {
+  width: 100%;
+  padding: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 6px;
+}
+
+.parse-button:disabled {
+  cursor: not-allowed;
+  background: #9ca3af;
+  border-color: #9ca3af;
+}
+
+.hint {
+  margin-top: 6px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.error {
+  margin-top: 8px;
+  padding: 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+}
+
+.lead-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lead-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.lead-card .title {
+  font-weight: 600;
+}
+
+.owner-badge {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.lead-card .meta {
+  color: #6b7280;
+  font-size: 12px;
+  margin: 2px 0;
+}
+
+.lead-card select {
+  margin-top: 6px;
+  width: 100%;
+  padding: 4px;
+}

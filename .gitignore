@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-account*.json
+google-sa*.json
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.wxt/
+extension/.output/
+
+# Local Postgres data volume (if ever bind-mounted instead of a named Docker volume)
+postgres-data/
+
+# Phase 0 spike snapshots, not part of the shipped app
+spikes/
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db

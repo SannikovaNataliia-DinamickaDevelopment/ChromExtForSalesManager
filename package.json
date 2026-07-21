@@ -1,0 +1,19 @@
+{
+  "name": "chrome-ext-for-sales-manager",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "backend",
+    "extension"
+  ],
+  "overrides": {
+    "@vitejs/plugin-react": "^5.2.0"
+  },
+  "scripts": {
+    "db:up": "docker compose -f backend/docker-compose.yml up -d",
+    "db:down": "docker compose -f backend/docker-compose.yml down",
+    "db:migrate": "npm run db:generate --workspace backend && npm run db:migrate --workspace backend",
+    "dev:backend": "npm run start:dev --workspace backend",
+    "dev:extension": "npm run dev --workspace extension"
+  }
+}
