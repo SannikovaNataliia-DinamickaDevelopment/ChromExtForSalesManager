@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AuthError, fetchLeads, updateLeadStatus } from '../../lib/api';
 import { fetchMe, login, logout, type CurrentUser } from '../../lib/auth';
-import { formatKyivDateTime } from '../../lib/format-time';
+import { formatKyivDate, formatKyivDateTime } from '../../lib/format-time';
 import { STATUS_OPTIONS } from '../../lib/status-labels';
 import type { JobLeadRecord, LeadStatus } from '../../lib/types';
 
@@ -144,7 +144,9 @@ export default function App() {
       <button className="parse-button" onClick={handleParse} disabled={!tabSupported || parsing}>
         {parsing ? 'Parsing…' : 'Parse current list page'}
       </button>
-      {!tabSupported && <div className="hint">Open a Techjobs.ca job list page to enable parsing.</div>}
+      {!tabSupported && (
+        <div className="hint">Open a Techjobs.ca or DevITjobs job list page to enable parsing.</div>
+      )}
       {error && <div className="error">{error}</div>}
 
       <div className="lead-list">
@@ -159,6 +161,7 @@ export default function App() {
               )}
             </div>
             <div className="meta">{lead.company || '—'} · {lead.location || '—'}</div>
+            <div className="meta">Posted: {lead.published_at ? formatKyivDate(lead.published_at) : '—'}</div>
             <div className="meta">{formatKyivDateTime(lead.scraped_at || lead.created_at)}</div>
             <a href={lead.source_url} target="_blank" rel="noreferrer">
               {lead.source_url}

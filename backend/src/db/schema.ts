@@ -46,6 +46,9 @@ export const job_leads = pgTable(
     contact_phone: text('contact_phone'),
     status: leadStatusEnum('status').default('new').notNull(),
     snapshot: jsonb('snapshot'),
+    // The vacancy's posted date (parsed from the list card), distinct from scraped_at
+    // (when we parsed it) and created_at (when the row was first saved).
+    published_at: timestamp('published_at', { withTimezone: true }),
     scraped_at: timestamp('scraped_at', { withTimezone: true }),
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

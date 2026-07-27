@@ -1,0 +1,1 @@
+ALTER TABLE "job_leads" ADD COLUMN "published_at" timestamp with time zone;

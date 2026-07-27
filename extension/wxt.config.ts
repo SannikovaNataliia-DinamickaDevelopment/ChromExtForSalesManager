@@ -20,7 +20,12 @@ export default defineConfig({
     // "storage" holds the backend session token (chrome.storage.local) per CLAUDE.md
     // NFR-9: chrome.storage is cache/token only, the backend stays the source of truth.
     permissions: ['sidePanel', 'storage'],
-    host_permissions: ['http://localhost:3000/*', 'https://www.techjobs.ca/*'],
+    host_permissions: [
+      'http://localhost:3000/*',
+      'https://www.techjobs.ca/*',
+      'https://www.devitjobs.nl/*',
+      'https://devitjobs.nl/*',
+    ],
     // Lets the backend's /auth/callback page (phase 5) hand the session token back to the
     // extension via chrome.runtime.sendMessage, without chrome.identity or a Google-specific client.
     externally_connectable: {

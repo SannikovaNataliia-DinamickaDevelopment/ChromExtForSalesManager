@@ -18,3 +18,18 @@ export function formatKyivDateTime(value: string | null | undefined): string {
 
   return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
 }
+
+// Date-only variant for fields with no meaningful time component (e.g. published_at,
+// parsed from a "Posted M/D/YYYY" card string).
+export function formatKyivDate(value: string | null | undefined): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}

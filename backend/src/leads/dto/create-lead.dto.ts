@@ -30,4 +30,6 @@ export class CreateLeadDto {
   @IsOptional() @IsObject() snapshot?: Record<string, unknown>;
 
   @IsOptional() @IsISO8601() scraped_at?: string;
+  // The vacancy's posted date, parsed from the list card; null/omitted when it couldn't be parsed.
+  @IsOptional() @IsISO8601() published_at?: string;
 }

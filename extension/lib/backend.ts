@@ -1,10 +1,10 @@
 export const BACKEND_URL = 'http://localhost:3000';
-export const SUPPORTED_HOST = 'www.techjobs.ca';
+export const SUPPORTED_HOSTS = ['www.techjobs.ca', 'www.devitjobs.nl', 'devitjobs.nl'];
 
 export function isSupportedUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return new URL(url).hostname === SUPPORTED_HOST;
+    return SUPPORTED_HOSTS.includes(new URL(url).hostname);
   } catch {
     return false;
   }

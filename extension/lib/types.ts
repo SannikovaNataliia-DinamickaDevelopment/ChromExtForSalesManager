@@ -16,6 +16,8 @@ export interface JobLead {
   contact_phone?: string;
   snapshot?: Record<string, unknown>;
   scraped_at: string;
+  // The vacancy's posted date, parsed from the list card; null when it couldn't be found.
+  published_at?: string | null;
 }
 
 export const LEAD_STATUSES = ['new', 'in_progress', 'done'] as const;

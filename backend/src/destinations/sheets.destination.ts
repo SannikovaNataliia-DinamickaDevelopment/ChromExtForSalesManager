@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { Injectable, Logger } from '@nestjs/common';
 import { google, sheets_v4 } from 'googleapis';
-import { formatKyivDateTime } from '../common/format-kyiv-time';
+import { formatKyivDate, formatKyivDateTime } from '../common/format-kyiv-time';
 import { Destination, JobLeadRecord, SaveResult } from './destination.interface';
 
 const SHEET_NAME = 'Leads';
@@ -14,8 +14,10 @@ function cell(value: unknown): string {
 }
 
 // Flat fields only (decision log: "snapshot in the DB, flat fields in Sheets"). Column
-// order matters: findRow() below assumes external_job_id is A and source_url is C.
+// order matters: findRow() below assumes published_at is A, external_job_id is B, and
+// source_url is D. CLAUDE.md: published_at is the manager's requested first column.
 const COLUMNS: { label: string; value: (r: JobLeadRecord) => string }[] = [
+  { label: 'published_at', value: (r) => formatKyivDate(r.published_at) },
   { label: 'external_job_id', value: (r) => cell(r.external_job_id) },
   { label: 'source_site', value: (r) => cell(r.source_site) },
   { label: 'source_url', value: (r) => cell(r.source_url) },
@@ -157,15 +159,15 @@ export class SheetsDestination implements Destination {
     this.headerEnsured = true;
   }
 
-  // external_job_id is column A, source_url is column C (see COLUMNS order above).
+  // external_job_id is column B, source_url is column D (see COLUMNS order above).
   private async findRow(sheets: sheets_v4.Sheets, record: JobLeadRecord): Promise<number | null> {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEET_NAME}!A2:C`,
+      range: `${SHEET_NAME}!A2:D`,
     });
     const rows = res.data.values ?? [];
     for (let i = 0; i < rows.length; i++) {
-      const [externalJobId, , sourceUrl] = rows[i];
+      const [, externalJobId, , sourceUrl] = rows[i];
       if (externalJobId === record.external_job_id || sourceUrl === record.source_url) {
         return i + 2; // +2: 1-indexed sheet rows, plus the header row
       }

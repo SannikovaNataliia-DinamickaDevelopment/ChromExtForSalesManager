@@ -2,6 +2,20 @@ import type { JobLead, SiteParser } from '../types';
 
 const BASE_URL = 'https://www.techjobs.ca';
 const INFO_SPAN_SELECTOR = 'span.text-sm.text-gray-700';
+const POSTED_DATE_RE = /^Posted\s+(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+// Parses "Posted M/D/YYYY" into an ISO date string; returns null (never throws) when the
+// text is missing or doesn't match, per CLAUDE.md ("keep it null if not found, don't crash").
+function parsePostedDate(text: string | undefined): string | null {
+  const match = text ? POSTED_DATE_RE.exec(text) : null;
+  if (!match) return null;
+
+  const [, month, day, year] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toISOString();
+}
 
 /**
  * Techjobs.ca list parser (CLAUDE.md "Parser spec" — SHALLOW).
@@ -28,6 +42,7 @@ export class TechjobsListParser implements SiteParser {
       const posted = Array.from(card.querySelectorAll('span'))
         .map((el) => el.textContent?.trim())
         .find((text): text is string => !!text && text.startsWith('Posted '));
+      const published_at = parsePostedDate(posted);
 
       const lead: JobLead = {
         source_site: 'techjobs',
@@ -45,6 +60,7 @@ export class TechjobsListParser implements SiteParser {
         contact_email: '',
         contact_phone: '',
         scraped_at,
+        published_at,
         snapshot: { employment_type, seniority, posted },
       };
       return lead;

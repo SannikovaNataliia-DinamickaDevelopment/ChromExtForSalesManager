@@ -66,6 +66,9 @@ export class LeadsService {
       .limit(1);
 
     const scraped_at = item.scraped_at ? new Date(item.scraped_at) : undefined;
+    // Parser sends null when "Posted M/D/YYYY" couldn't be found on the card; keep that
+    // null rather than silently dropping the field (don't crash, don't fabricate a date).
+    const published_at = item.published_at === undefined ? undefined : item.published_at ? new Date(item.published_at) : null;
     let lead: typeof job_leads.$inferSelect;
     let deduplicated: boolean;
 
@@ -75,7 +78,7 @@ export class LeadsService {
       deduplicated = true;
       const [updated] = await this.db
         .update(job_leads)
-        .set({ ...item, scraped_at, updated_at: new Date() })
+        .set({ ...item, scraped_at, published_at, updated_at: new Date() })
         .where(eq(job_leads.id, existing[0].id))
         .returning();
       lead = updated;
@@ -83,7 +86,7 @@ export class LeadsService {
       deduplicated = false;
       const [inserted] = await this.db
         .insert(job_leads)
-        .values({ ...item, scraped_at, owner_user_id: creatorUserId })
+        .values({ ...item, scraped_at, published_at, owner_user_id: creatorUserId })
         .returning();
       lead = inserted;
     }
