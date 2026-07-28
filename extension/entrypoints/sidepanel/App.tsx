@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import { AuthError, fetchLeads, updateLeadStatus } from '../../lib/api';
+import { AuthError, fetchLeads, updateLeadStatus, type LeadSaveResult } from '../../lib/api';
 import { fetchMe, login, logout, type CurrentUser } from '../../lib/auth';
 import { classifyLeads, type ClassifyProgress } from '../../lib/classify';
 import { deepenLeads, type DeepenProgress } from '../../lib/deepen';
 import { formatKyivDate, formatKyivDateTime } from '../../lib/format-time';
+import { MAX_PAGES, runMultiPageParse, type MultiPageProgress } from '../../lib/multipage';
 import { STATUS_OPTIONS } from '../../lib/status-labels';
 import type { JobLeadRecord, LeadStatus } from '../../lib/types';
 
-// Shape of each item in PARSE_ACTIVE_TAB's `results` (mirrors backend LeadSaveResult);
-// message-passing across chrome.runtime.sendMessage isn't typed, so this is asserted, not inferred.
-interface LeadSaveResult {
-  lead: JobLeadRecord;
-  deduplicated: boolean;
-  destination: 'ok' | 'failed';
+// Multi-page (scope D) only works on sites built on this template — confirmed identical
+// pagination/card structure for both (CLAUDE.md "Parser spec"). DevITjobs stays out (paused).
+const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export default function App() {
@@ -27,6 +28,10 @@ export default function App() {
   const [deepening, setDeepening] = useState<DeepenProgress | null>(null);
   const [classifying, setClassifying] = useState<ClassifyProgress | null>(null);
   const [classifySummary, setClassifySummary] = useState<string | null>(null);
+  const [targetDate, setTargetDate] = useState('');
+  const [multiPageRunning, setMultiPageRunning] = useState(false);
+  const [multiPageProgress, setMultiPageProgress] = useState<MultiPageProgress | null>(null);
+  const [multiPageSummary, setMultiPageSummary] = useState<string | null>(null);
 
   // Any backend call can 401 out from under a signed-in session (expiry, logout
   // elsewhere, backend restart clearing the in-memory revocation list) — funnel
@@ -168,6 +173,62 @@ export default function App() {
     }
   };
 
+  // CLAUDE.md scope D (DEMO): a separate, manually-triggered action from "Parse current list
+  // page" above — walks pages 1..N via the URL `page` param until `targetDate` is covered.
+  // Deliberately does NOT run Gemini classification (scope C) here.
+  const handleMultiPageParse = async () => {
+    if (!targetDate) {
+      setError('Pick a "parse back to" date first.');
+      return;
+    }
+
+    setError(null);
+    setMultiPageSummary(null);
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    let hostname = '';
+    try {
+      hostname = tab?.url ? new URL(tab.url).hostname : '';
+    } catch {
+      // leave hostname empty; falls through to the "not on techjobs.ca" error below
+    }
+    if (!tab?.id || !MULTIPAGE_HOSTNAMES.includes(hostname)) {
+      setError('Open a Techjobs.ca or ITjobs.ca list page in this tab first (DevITjobs is not supported for this action).');
+      return;
+    }
+
+    setMultiPageRunning(true);
+    try {
+      const result = await runMultiPageParse(tab.id, targetDate, (progress) => {
+        setMultiPageProgress(progress);
+        loadLeads();
+      });
+
+      if (result.stopReason === 'auth_error') {
+        setUser(null);
+        setError('Please sign in again.');
+      } else if (result.stopReason === 'glitch_error' || result.stopReason === 'nav_error') {
+        setError(result.errorMessage ?? 'Multi-page parse stopped unexpectedly.');
+      } else if (result.stopReason === 'max_pages') {
+        setMultiPageSummary(
+          `Stopped at the ${MAX_PAGES}-page safety cap without reaching ${targetDate} — ` +
+            `${result.pagesProcessed} page(s) processed, ${result.totalLeadsSaved} lead(s) saved. ` +
+            'Re-run with a later target date, or run again to continue further back.',
+        );
+      } else {
+        setMultiPageSummary(
+          `Done — parsed ${result.pagesProcessed} page(s), saved ${result.totalLeadsSaved} lead(s), reached ${targetDate}.`,
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMultiPageProgress(null);
+      setMultiPageRunning(false);
+      loadLeads();
+    }
+  };
+
   const handleStatusChange = async (id: string, status: LeadStatus) => {
     const previous = leads;
     setLeads((current) => current.map((lead) => (lead.id === id ? { ...lead, status } : lead)));
@@ -209,7 +270,7 @@ export default function App() {
         {parsing ? 'Parsing…' : 'Parse current list page'}
       </button>
       {!tabSupported && (
-        <div className="hint">Open a Techjobs.ca or DevITjobs job list page to enable parsing.</div>
+        <div className="hint">Open a Techjobs.ca, ITjobs.ca, or DevITjobs job list page to enable parsing.</div>
       )}
       {deepening && (
         <div className="hint">Deepening {deepening.current}/{deepening.total}…</div>
@@ -218,6 +279,35 @@ export default function App() {
         <div className="hint">Classifying {classifying.current}/{classifying.total}…</div>
       )}
       {classifySummary && <div className="hint">{classifySummary}</div>}
+
+      <div className="multipage-block">
+        <label htmlFor="target-date">Parse Techjobs back to date</label>
+        <div className="multipage-row">
+          <input
+            id="target-date"
+            type="date"
+            max={todayIso()}
+            value={targetDate}
+            onChange={(e) => setTargetDate(e.target.value)}
+            disabled={multiPageRunning}
+          />
+          <button
+            className="parse-button"
+            onClick={handleMultiPageParse}
+            disabled={!tabSupported || !targetDate || multiPageRunning || parsing}
+          >
+            {multiPageRunning ? 'Parsing pages…' : 'Parse pages back to date'}
+          </button>
+        </div>
+        <div className="hint">Techjobs.ca or ITjobs.ca only. Walks pages via ?page=N, up to {MAX_PAGES} pages. No Gemini here.</div>
+        {multiPageProgress && (
+          <div className="hint">
+            Page {multiPageProgress.page}/{MAX_PAGES} · Deepening {multiPageProgress.deepenCurrent}/{multiPageProgress.deepenTotal}
+          </div>
+        )}
+        {multiPageSummary && <div className="hint">{multiPageSummary}</div>}
+      </div>
+
       {error && <div className="error">{error}</div>}
 
       <div className="lead-list">

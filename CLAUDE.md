@@ -49,7 +49,7 @@ The model is a **shared team lead base**, not per-user pipelines:
 
 ## Parsing focus & mode
 
-- **Primary site: Techjobs.ca.** DevITjobs is **PAUSED** (virtualized list renders only ~18 cards at a time, and it has no publication dates). Don't work on DevITjobs in this iteration.
+- **Primary site: Techjobs.ca.** **ITjobs.ca added as a second source** (same template, `source_site: "itjobs"` — see Parser spec). DevITjobs is **PAUSED** (virtualized list renders only ~18 cards at a time, and it has no publication dates). Don't work on DevITjobs in this iteration.
 - **Batch list parse:** one click parses all job cards on the current list page and returns an array. Current tab only, on manual click, at human pace.
 
 ---
@@ -102,11 +102,20 @@ Priority order (A → C are the target; D only if time permits before the Tuesda
 
 ---
 
-## Parser spec (Techjobs.ca)
+## Parser spec (Techjobs.ca, shared with ITjobs.ca)
+
+**ITjobs.ca (`source_site: "itjobs"`) is a second source added after the manager found it: same
+platform/template as Techjobs.ca — confirmed byte-for-byte identical card markup
+(`spikes/itjobs_list.html`) and identical JSON-LD `JobPosting` shape on detail pages
+(`spikes/itjobs_detail.html`). Reuses `TechjobsListParser` with its own `source_site`/base URL —
+no new selectors. It is NOT an "IT-only" feed despite the name: smaller and cleaner than
+Techjobs.ca's main list (no cooks/drivers/labourers) but still mixed with non-IT
+professional/technical roles (marketing, legal, mechanical engineering, etc.) — Gemini
+classification (scope C) still applies to it exactly as for Techjobs.ca.**
 
 ### List page (works)
 - card: `a[href^="/job/"]`
-- `external_job_id`: last path segment (UUID); `source_url`: `https://www.techjobs.ca` + href
+- `external_job_id`: last path segment (UUID); `source_url`: site's base URL (`https://www.techjobs.ca` or `https://www.itjobs.ca`) + href
 - `job_title`: `h3` inside the card
 - `location`: 1st `span.text-sm.text-gray-700`
 - `published_at`: parse the "Posted M/D/YYYY" text on the card
@@ -187,4 +196,4 @@ Current iteration (deadline Tuesday), in priority order:
 
 ## Decision log
 
-side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized.
+side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)**.

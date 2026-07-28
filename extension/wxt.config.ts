@@ -23,6 +23,7 @@ export default defineConfig({
     host_permissions: [
       'http://localhost:3000/*',
       'https://www.techjobs.ca/*',
+      'https://www.itjobs.ca/*',
       'https://www.devitjobs.nl/*',
       'https://devitjobs.nl/*',
     ],

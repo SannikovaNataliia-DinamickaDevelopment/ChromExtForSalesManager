@@ -1,12 +1,19 @@
 import { getToken } from './auth';
 import { BACKEND_URL } from './backend';
-import type { JobLeadRecord, LeadIsIt, LeadStatus } from './types';
+import type { JobLead, JobLeadRecord, LeadIsIt, LeadStatus } from './types';
 
 export interface DeepenPatch {
   description?: string;
   company?: string;
   company_website?: string;
   published_at?: string;
+}
+
+// Mirrors backend LeadsService.LeadSaveResult (POST /leads' per-item response shape).
+export interface LeadSaveResult {
+  lead: JobLeadRecord;
+  deduplicated: boolean;
+  destination: 'ok' | 'failed';
 }
 
 // Thrown on 401 so callers can distinguish "please sign in again" from other failures.
@@ -32,6 +39,18 @@ async function unwrap<T>(res: Response): Promise<T> {
 export async function fetchLeads(): Promise<JobLeadRecord[]> {
   const res = await fetch(`${BACKEND_URL}/leads`, { headers: await authHeaders() });
   return unwrap<JobLeadRecord[]>(res);
+}
+
+// CLAUDE.md scope D: shared by the single-page parse (background.ts, unchanged) and the new
+// multi-page incremental parse (multipage.ts) — both just POST whatever the content script
+// parsed; dedup/upsert behavior is entirely the backend's (untouched here).
+export async function saveLeads(leads: JobLead[]): Promise<LeadSaveResult[]> {
+  const res = await fetch(`${BACKEND_URL}/leads`, {
+    method: 'POST',
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(leads),
+  });
+  return unwrap<LeadSaveResult[]>(res);
 }
 
 export async function updateLeadStatus(id: string, status: LeadStatus): Promise<JobLeadRecord> {

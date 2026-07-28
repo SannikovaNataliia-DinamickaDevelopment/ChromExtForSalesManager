@@ -62,6 +62,36 @@ h1 {
   border-radius: 6px;
 }
 
+.multipage-block {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.multipage-block label {
+  display: block;
+  font-size: 12px;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.multipage-row {
+  display: flex;
+  gap: 6px;
+}
+
+.multipage-row input[type='date'] {
+  flex: 0 0 auto;
+  padding: 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.multipage-row .parse-button {
+  flex: 1;
+}
+
 .lead-list {
   margin-top: 16px;
   display: flex;

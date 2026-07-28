@@ -1,6 +1,5 @@
 import type { JobLead, SiteParser } from '../types';
 
-const BASE_URL = 'https://www.techjobs.ca';
 const INFO_SPAN_SELECTOR = 'span.text-sm.text-gray-700';
 const POSTED_DATE_RE = /^Posted\s+(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
 
@@ -18,13 +17,21 @@ function parsePostedDate(text: string | undefined): string | null {
 }
 
 /**
- * Techjobs.ca list parser (CLAUDE.md "Parser spec" — SHALLOW).
- * Techjobs is Next.js/RSC: this parses the rendered DOM, never `self.__next_f`.
+ * List parser for Techjobs.ca and any other site built on the same template (e.g. itjobs.ca —
+ * confirmed byte-for-byte identical card markup against spikes/itjobs_list.html: same h3 class,
+ * same `span.text-sm.text-gray-700` triple, same "Posted M/D/YYYY" text). `sourceSite`/`baseUrl`
+ * are the only things that differ between deployments of this template (CLAUDE.md "Parser spec").
+ * Next.js/RSC: this parses the rendered DOM, never `self.__next_f`.
  * List cards don't carry company/company_website/salary/description/tech_stack/apply_url/
  * ats/contact_* — those keys are omitted here (not sent as '') so a list re-parse's dedup
  * UPDATE never clobbers values the "deepen" step (scope B) already filled in.
  */
 export class TechjobsListParser implements SiteParser {
+  constructor(
+    private readonly sourceSite: string,
+    private readonly baseUrl: string,
+  ) {}
+
   parseList(document: Document): JobLead[] {
     const cards = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href^="/job/"]'));
     const scraped_at = new Date().toISOString();
@@ -32,7 +39,7 @@ export class TechjobsListParser implements SiteParser {
     return cards.map((card) => {
       const href = card.getAttribute('href') ?? '';
       const external_job_id = href.split('/').filter(Boolean).pop() ?? '';
-      const source_url = `${BASE_URL}${href}`;
+      const source_url = `${this.baseUrl}${href}`;
       const job_title = card.querySelector('h3')?.textContent?.trim() ?? '';
 
       const infoSpans = Array.from(card.querySelectorAll(INFO_SPAN_SELECTOR));
@@ -46,7 +53,7 @@ export class TechjobsListParser implements SiteParser {
       const published_at = parsePostedDate(posted);
 
       const lead: JobLead = {
-        source_site: 'techjobs',
+        source_site: this.sourceSite,
         source_url,
         external_job_id,
         job_title,
