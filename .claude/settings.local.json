@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(npm *)"
+      "PowerShell(npm *)",
+      "Read(//tmp/**)",
+      "Bash(netstat -ano)"
     ]
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "job_leads" ADD COLUMN "company_website" text;

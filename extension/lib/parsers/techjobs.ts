@@ -20,8 +20,9 @@ function parsePostedDate(text: string | undefined): string | null {
 /**
  * Techjobs.ca list parser (CLAUDE.md "Parser spec" — SHALLOW).
  * Techjobs is Next.js/RSC: this parses the rendered DOM, never `self.__next_f`.
- * List cards don't carry company/salary/description/tech_stack/apply_url/ats/contact_* —
- * those stay empty here and are only ever filled by a separate manual per-lead "deepen" action.
+ * List cards don't carry company/company_website/salary/description/tech_stack/apply_url/
+ * ats/contact_* — those keys are omitted here (not sent as '') so a list re-parse's dedup
+ * UPDATE never clobbers values the "deepen" step (scope B) already filled in.
  */
 export class TechjobsListParser implements SiteParser {
   parseList(document: Document): JobLead[] {
@@ -50,15 +51,6 @@ export class TechjobsListParser implements SiteParser {
         external_job_id,
         job_title,
         location,
-        company: '',
-        salary: '',
-        description: '',
-        tech_stack: '',
-        apply_url: '',
-        ats: '',
-        contact_name: '',
-        contact_email: '',
-        contact_phone: '',
         scraped_at,
         published_at,
         snapshot: { employment_type, seniority, posted },
@@ -66,4 +58,60 @@ export class TechjobsListParser implements SiteParser {
       return lead;
     });
   }
+}
+
+export interface TechjobsDetail {
+  description: string;
+  company: string;
+  company_website: string;
+  published_at: string | null;
+}
+
+interface JobPostingJsonLd {
+  '@type'?: string;
+  description?: string;
+  datePosted?: string;
+  hiringOrganization?: { name?: string; sameAs?: string };
+}
+
+function isJobPosting(value: unknown): value is JobPostingJsonLd {
+  return !!value && typeof value === 'object' && (value as JobPostingJsonLd)['@type'] === 'JobPosting';
+}
+
+/**
+ * Techjobs.ca detail page parser (CLAUDE.md "Parser spec" — DETAIL, scope B).
+ * The detail page's initial (server-rendered) HTML embeds a clean JSON-LD JobPosting —
+ * confirmed against a live-fetched page and spikes/techjobs_detail.html — so this parses
+ * plain fetched HTML text via regex, never a DOM (must also run in a background/service-worker
+ * context with no `document`). Returns null (never throws) if no JobPosting block is found.
+ *
+ * Caveat (per manager): hiringOrganization is sometimes the reposting board, not the true
+ * employer — the real company may only be in the description. Fine for MVP; we store
+ * hiringOrganization.name/sameAs as-is.
+ */
+export function parseTechjobsDetail(html: string): TechjobsDetail | null {
+  const scriptRe = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = scriptRe.exec(html))) {
+    let data: unknown;
+    try {
+      data = JSON.parse(match[1]);
+    } catch {
+      continue;
+    }
+
+    const posting = Array.isArray(data) ? data.find(isJobPosting) : isJobPosting(data) ? data : undefined;
+    if (!posting) continue;
+
+    const datePosted = posting.datePosted ? new Date(posting.datePosted) : null;
+    return {
+      description: typeof posting.description === 'string' ? posting.description : '',
+      company: posting.hiringOrganization?.name ?? '',
+      company_website: posting.hiringOrganization?.sameAs ?? '',
+      published_at: datePosted && !Number.isNaN(datePosted.getTime()) ? datePosted.toISOString() : null,
+    };
+  }
+
+  return null;
 }

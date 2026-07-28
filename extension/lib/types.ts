@@ -5,6 +5,7 @@ export interface JobLead {
   external_job_id: string;
   job_title?: string;
   company?: string;
+  company_website?: string;
   location?: string;
   description?: string;
   salary?: string;
@@ -23,6 +24,11 @@ export interface JobLead {
 export const LEAD_STATUSES = ['new', 'in_progress', 'done'] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
+// CLAUDE.md scope C: broad IT/not-IT flag from Gemini, default 'unprocessed'. Never used to
+// delete leads — only flags them.
+export const LEAD_IS_IT_VALUES = ['it', 'not_it', 'unprocessed'] as const;
+export type LeadIsIt = (typeof LEAD_IS_IT_VALUES)[number];
+
 export interface JobLeadRecord extends JobLead {
   id: string;
   // "created_by" (shared team lead base decision log): who first parsed this lead.
@@ -31,6 +37,7 @@ export interface JobLeadRecord extends JobLead {
   owner_email: string | null;
   owner_display_name: string | null;
   status: LeadStatus;
+  is_it: LeadIsIt;
   created_at: string;
   updated_at: string;
 }

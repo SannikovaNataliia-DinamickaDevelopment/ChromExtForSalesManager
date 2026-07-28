@@ -15,6 +15,7 @@ export class CreateLeadDto {
 
   @IsOptional() @IsString() job_title?: string;
   @IsOptional() @IsString() company?: string;
+  @IsOptional() @IsString() company_website?: string;
   @IsOptional() @IsString() location?: string;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() salary?: string;

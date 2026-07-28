@@ -89,6 +89,24 @@ h1 {
   padding: 1px 6px;
 }
 
+.is-it-badge {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.is-it-badge.it {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.is-it-badge.not_it {
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
 .lead-card .meta {
   color: #6b7280;
   font-size: 12px;

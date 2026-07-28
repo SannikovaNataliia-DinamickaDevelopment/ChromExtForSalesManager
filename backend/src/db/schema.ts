@@ -1,6 +1,7 @@
 import { pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, jsonb } from 'drizzle-orm/pg-core';
 
 export const leadStatusEnum = pgEnum('lead_status', ['new', 'in_progress', 'done']);
+export const leadIsItEnum = pgEnum('lead_is_it', ['it', 'not_it', 'unprocessed']);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -34,6 +35,9 @@ export const job_leads = pgTable(
     source_url: text('source_url').notNull(),
     external_job_id: text('external_job_id').notNull(),
     company: text('company'),
+    // Filled by the deepen step (CLAUDE.md scope B): hiringOrganization.sameAs from the
+    // detail page's JSON-LD JobPosting. Sometimes a reposting board, not the true employer.
+    company_website: text('company_website'),
     job_title: text('job_title'),
     location: text('location'),
     description: text('description'),
@@ -45,6 +49,8 @@ export const job_leads = pgTable(
     contact_email: text('contact_email'),
     contact_phone: text('contact_phone'),
     status: leadStatusEnum('status').default('new').notNull(),
+    // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
+    is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),
     snapshot: jsonb('snapshot'),
     // The vacancy's posted date (parsed from the list card), distinct from scraped_at
     // (when we parsed it) and created_at (when the row was first saved).

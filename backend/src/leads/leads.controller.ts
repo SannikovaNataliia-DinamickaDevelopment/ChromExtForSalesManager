@@ -6,6 +6,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
 import { CreateLeadDto } from './dto/create-lead.dto';
+import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { LEAD_STATUSES } from './lead-status';
 import { LeadsService } from './leads.service';
@@ -66,6 +67,30 @@ export class LeadsController {
       );
     }
     return this.leadsService.updateStatus(id, dto.status);
+  }
+
+  // CLAUDE.md scope B: called once per NEW lead by the extension's human-paced deepen loop,
+  // after it fetches the lead's detail page itself and extracts the JSON-LD JobPosting.
+  @Patch(':id/deepen')
+  async deepen(@Param('id') id: string, @Body() body: unknown) {
+    const dto = plainToInstance(DeepenLeadDto, body);
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: false });
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; '),
+      );
+    }
+    return this.leadsService.deepen(id, dto);
+  }
+
+  // CLAUDE.md scope C: called once per deepened-but-unclassified lead by the extension's
+  // rate-limit-paced classify loop. No body — reads title/description from the DB itself and
+  // calls Gemini (NFR-3: the backend is allowed to talk to Gemini directly, unlike job sites).
+  @Patch(':id/classify')
+  async classify(@Param('id') id: string) {
+    return this.leadsService.classify(id);
   }
 
   @Delete(':id')

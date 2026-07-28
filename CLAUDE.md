@@ -113,9 +113,19 @@ Priority order (A → C are the target; D only if time permits before the Tuesda
 - into `snapshot`: employment type, seniority
 - `company`, `salary`, `description`, `apply_url`, `ats`, `company_website`, contact_*: NOT on the list → filled by deepening (B) or left empty
 
-### Detail page (for deepening — selectors TBD)
-- Derive real selectors from live detail-page HTML when implementing B: the full `description` text and the `company_website` link.
-- Do NOT invent selectors — capture a live detail page and derive them.
+### Detail page (deepening, implemented)
+- No DOM scraping needed: the initial (server-rendered) HTML embeds a clean JSON-LD block
+  (`script[type="application/ld+json"]`, `@type: "JobPosting"`) — confirmed against a live
+  page and `spikes/techjobs_detail.html`. Fetched as plain HTML text (no tab, no JS
+  execution needed) and parsed via regex + `JSON.parse` (works in any extension context,
+  including a background service worker with no `document`).
+- `description` ← `JobPosting.description` (full text).
+- `company` ← `JobPosting.hiringOrganization.name` (backfills the list page's blank `company`).
+- `company_website` ← `JobPosting.hiringOrganization.sameAs`.
+- `published_at` backfill ← `JobPosting.datePosted` (ISO), only applied when the list card's
+  `published_at` was empty — never overwrites a date the list already gave us.
+- Caveat: `hiringOrganization` is sometimes the reposting board, not the true employer (the
+  real company may only be in the description). Fine for MVP — `sameAs` is stored as-is.
 
 ---
 

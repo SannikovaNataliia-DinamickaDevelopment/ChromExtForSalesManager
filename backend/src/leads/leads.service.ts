@@ -5,7 +5,11 @@ import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
 import { DESTINATION, Destination } from '../destinations/destination.interface';
 import { CreateLeadDto } from './dto/create-lead.dto';
+import { DeepenLeadDto } from './dto/deepen-lead.dto';
+import { GeminiClassifierService } from './gemini-classifier.service';
+import type { LeadIsIt } from './lead-is-it';
 import { LeadStatus } from './lead-status';
+import { isObviouslyNonIt } from './non-it-keywords';
 
 export type LeadSaveResult = {
   lead: typeof job_leads.$inferSelect;
@@ -18,6 +22,7 @@ export class LeadsService {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(DESTINATION) private readonly destination: Destination,
+    private readonly geminiClassifier: GeminiClassifierService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -66,9 +71,11 @@ export class LeadsService {
       .limit(1);
 
     const scraped_at = item.scraped_at ? new Date(item.scraped_at) : undefined;
-    // Parser sends null when "Posted M/D/YYYY" couldn't be found on the card; keep that
-    // null rather than silently dropping the field (don't crash, don't fabricate a date).
-    const published_at = item.published_at === undefined ? undefined : item.published_at ? new Date(item.published_at) : null;
+    // Undefined (not null) when the parser found no "Posted" date this time: on insert that's
+    // just NULL same as before, but on a dedup UPDATE, undefined is dropped from the SQL SET
+    // entirely (drizzle's mapUpdateSet skips undefined), so a value from an earlier parse or
+    // deepen backfill is never clobbered by a re-parse that came up empty.
+    const published_at = item.published_at ? new Date(item.published_at) : undefined;
     let lead: typeof job_leads.$inferSelect;
     let deduplicated: boolean;
 
@@ -110,6 +117,106 @@ export class LeadsService {
     }
 
     return { lead, deduplicated, destination: destinationStatus };
+  }
+
+  // CLAUDE.md scope B: applies fields discovered on a lead's detail page. published_at is
+  // backfill-only — never clobbers a date the list card already gave us (last-write-wins
+  // still holds, but only for fields the caller actually sent new information for).
+  async deepen(id: string, patch: DeepenLeadDto) {
+    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+
+    const update: Partial<typeof job_leads.$inferInsert> = { updated_at: new Date() };
+    if (patch.description !== undefined) update.description = patch.description;
+    if (patch.company !== undefined) update.company = patch.company;
+    if (patch.company_website !== undefined) update.company_website = patch.company_website;
+    // Truthy check (not just !== undefined): IsOptional() skips IsISO8601() validation for
+    // `null` too, so patch.published_at could reach here as null — new Date(null) would
+    // silently produce the Unix epoch, a wrong date that's worse than leaving it empty.
+    if (patch.published_at && !existing.published_at) {
+      update.published_at = new Date(patch.published_at);
+    }
+
+    const [updated] = await this.db.update(job_leads).set(update).where(eq(job_leads.id, id)).returning();
+
+    const [owner] = await this.db
+      .select({ email: users.email, display_name: users.display_name })
+      .from(users)
+      .where(eq(users.id, updated.owner_user_id))
+      .limit(1);
+
+    let destinationStatus: 'ok' | 'failed';
+    try {
+      const saveResult = await this.destination.save({
+        ...updated,
+        owner_email: owner?.email ?? null,
+        owner_display_name: owner?.display_name ?? null,
+      });
+      destinationStatus = saveResult.status === 'failed' ? 'failed' : 'ok';
+    } catch {
+      destinationStatus = 'failed';
+    }
+
+    return { lead: updated, destination: destinationStatus };
+  }
+
+  // CLAUDE.md scope C: broad IT/not-IT flag via Gemini. Idempotent/safe to re-run — a lead
+  // that's already classified (or still has no description) is a no-op, so calling this
+  // repeatedly (e.g. a re-parse retrying leads a previous run left unprocessed) never
+  // redoes work or burns quota on leads that don't need it.
+  async classify(id: string): Promise<{ lead: typeof job_leads.$inferSelect; outcome: LeadIsIt; quotaExhausted: boolean }> {
+    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    if (existing.is_it !== 'unprocessed' || !existing.description) {
+      return { lead: existing, outcome: existing.is_it, quotaExhausted: false };
+    }
+
+    // Cheap pre-filter (no API call, no quota spent): obviously non-IT titles never need to
+    // ask Gemini at all. Conservative by design — see non-it-keywords.ts.
+    if (isObviouslyNonIt(existing.job_title ?? '')) {
+      const updated = await this.applyIsIt(existing, 'not_it');
+      return { lead: updated, outcome: 'not_it', quotaExhausted: false };
+    }
+
+    const { outcome, quotaExhausted } = await this.geminiClassifier.classify(existing.job_title ?? '', existing.description);
+    if (outcome === 'unprocessed') {
+      // NFR-12/13: quota/parse failure leaves the lead as-is (already 'unprocessed') so a
+      // later re-run can retry it — never crash, never guess.
+      return { lead: existing, outcome, quotaExhausted };
+    }
+
+    const updated = await this.applyIsIt(existing, outcome);
+    return { lead: updated, outcome, quotaExhausted: false };
+  }
+
+  private async applyIsIt(existing: typeof job_leads.$inferSelect, is_it: LeadIsIt) {
+    const [updated] = await this.db
+      .update(job_leads)
+      .set({ is_it, updated_at: new Date() })
+      .where(eq(job_leads.id, existing.id))
+      .returning();
+
+    const [owner] = await this.db
+      .select({ email: users.email, display_name: users.display_name })
+      .from(users)
+      .where(eq(users.id, updated.owner_user_id))
+      .limit(1);
+
+    try {
+      await this.destination.save({
+        ...updated,
+        owner_email: owner?.email ?? null,
+        owner_display_name: owner?.display_name ?? null,
+      });
+    } catch {
+      // Sheet push failure shouldn't fail the classify call — the DB write already succeeded.
+    }
+
+    return updated;
   }
 
   // Status is shared per lead (decision log), so any authenticated user may update any lead.

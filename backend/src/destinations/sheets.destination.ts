@@ -13,12 +13,16 @@ function cell(value: unknown): string {
   return String(value);
 }
 
-// Flat fields only (decision log: "snapshot in the DB, flat fields in Sheets"). Column
-// order matters: findRow() below assumes published_at is A, external_job_id is B, and
-// source_url is D. CLAUDE.md: published_at is the manager's requested first column.
+// CLAUDE.md's stated column order: "published_at (first) · external_job_id · is_it · short
+// description · company_website · plus existing fields". Column order matters: findRow()
+// below assumes published_at is A, external_job_id is B, and source_url is E.
+const IS_IT_LABELS: Record<JobLeadRecord['is_it'], string> = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
+
 const COLUMNS: { label: string; value: (r: JobLeadRecord) => string }[] = [
   { label: 'published_at', value: (r) => formatKyivDate(r.published_at) },
   { label: 'external_job_id', value: (r) => cell(r.external_job_id) },
+  // CLAUDE.md scope C: broad IT/not-IT flag from Gemini. Never deletes non-IT leads, only flags.
+  { label: 'is_it', value: (r) => IS_IT_LABELS[r.is_it] },
   { label: 'source_site', value: (r) => cell(r.source_site) },
   { label: 'source_url', value: (r) => cell(r.source_url) },
   { label: 'job_title', value: (r) => cell(r.job_title) },
@@ -27,6 +31,8 @@ const COLUMNS: { label: string; value: (r: JobLeadRecord) => string }[] = [
   { label: 'salary', value: (r) => cell(r.salary) },
   { label: 'tech_stack', value: (r) => cell(r.tech_stack) },
   { label: 'description', value: (r) => cell(r.description) },
+  // Filled by the deepen step (scope B), alongside description/company.
+  { label: 'company_website', value: (r) => cell(r.company_website) },
   { label: 'apply_url', value: (r) => cell(r.apply_url) },
   { label: 'ats', value: (r) => cell(r.ats) },
   { label: 'contact_name', value: (r) => cell(r.contact_name) },
@@ -159,15 +165,15 @@ export class SheetsDestination implements Destination {
     this.headerEnsured = true;
   }
 
-  // external_job_id is column B, source_url is column D (see COLUMNS order above).
+  // external_job_id is column B, source_url is column E (see COLUMNS order above).
   private async findRow(sheets: sheets_v4.Sheets, record: JobLeadRecord): Promise<number | null> {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: this.spreadsheetId,
-      range: `${SHEET_NAME}!A2:D`,
+      range: `${SHEET_NAME}!A2:E`,
     });
     const rows = res.data.values ?? [];
     for (let i = 0; i < rows.length; i++) {
-      const [, externalJobId, , sourceUrl] = rows[i];
+      const [, externalJobId, , , sourceUrl] = rows[i];
       if (externalJobId === record.external_job_id || sourceUrl === record.source_url) {
         return i + 2; // +2: 1-indexed sheet rows, plus the header row
       }
