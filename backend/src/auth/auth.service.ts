@@ -15,14 +15,18 @@ const SESSION_TTL = '7d';
 const STATE_TTL_SECONDS = 5 * 60;
 
 type CallbackResult =
-  | { ok: true; token: string; extId: string | null; email: string }
-  | { ok: false; error: string; extId: string | null };
+  | { ok: true; token: string; extId: string | null; email: string; forDashboard: boolean }
+  | { ok: false; error: string; extId: string | null; forDashboard: boolean };
 
 // Signed, self-contained "state" — carries the extension id + OIDC nonce across
 // the redirect to Google and back, with no server-side session store (Deployment: LOCAL, stateless backend).
 interface StatePayload {
   extId: string | null;
   nonce: string;
+  // Dashboard feature (backend/src/dashboard/): set when /auth/login was reached via
+  // /dashboard's redirect, so the callback knows to set a browser cookie instead of relaying
+  // the token to the extension. Same Google login, same session token either way.
+  forDashboard?: boolean;
 }
 
 @Injectable()
@@ -58,10 +62,10 @@ export class AuthService {
     return this.client;
   }
 
-  async buildAuthorizationUrl(extId: string | undefined): Promise<string> {
+  async buildAuthorizationUrl(extId: string | undefined, forDashboard = false): Promise<string> {
     const client = await this.getClient();
     const nonce = generators.nonce();
-    const state = jwt.sign({ extId: extId ?? null, nonce } satisfies StatePayload, this.jwtSecret, {
+    const state = jwt.sign({ extId: extId ?? null, nonce, forDashboard } satisfies StatePayload, this.jwtSecret, {
       expiresIn: STATE_TTL_SECONDS,
     });
     return client.authorizationUrl({ scope: 'openid email profile', state, nonce });
@@ -73,11 +77,18 @@ export class AuthService {
     try {
       state = jwt.verify(rawState, this.jwtSecret) as StatePayload;
     } catch {
-      return { ok: false, error: 'Login link expired or invalid. Please try signing in again.', extId: null };
+      return {
+        ok: false,
+        error: 'Login link expired or invalid. Please try signing in again.',
+        extId: null,
+        forDashboard: false,
+      };
     }
 
+    const forDashboard = state.forDashboard ?? false;
+
     if (query.error) {
-      return { ok: false, error: String(query.error), extId: state.extId };
+      return { ok: false, error: String(query.error), extId: state.extId, forDashboard };
     }
 
     const client = await this.getClient();
@@ -94,17 +105,18 @@ export class AuthService {
         ok: false,
         error: err instanceof Error ? err.message : 'Google authentication failed',
         extId: state.extId,
+        forDashboard,
       };
     }
 
     const claims = tokenSet.claims();
     if (!claims.email) {
-      return { ok: false, error: 'Google account has no email claim', extId: state.extId };
+      return { ok: false, error: 'Google account has no email claim', extId: state.extId, forDashboard };
     }
 
     const userId = await this.resolveUser(claims.sub, claims.email, claims.name);
     const token = this.issueSessionToken(userId, claims.email, claims.name);
-    return { ok: true, token, extId: state.extId, email: claims.email };
+    return { ok: true, token, extId: state.extId, email: claims.email, forDashboard };
   }
 
   private async resolveUser(providerUserId: string, email: string, name?: string): Promise<string> {

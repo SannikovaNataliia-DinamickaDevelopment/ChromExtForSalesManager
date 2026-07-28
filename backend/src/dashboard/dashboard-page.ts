@@ -1,0 +1,591 @@
+// Additive, self-contained dashboard feature (see module docstring in dashboard.module.ts).
+// Everything — markup, dark theme, and the client-side table logic — lives in this one
+// template function so the whole feature is just this folder + a couple of small, clearly
+// marked hooks in the auth module.
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+export function renderDashboardPage(opts: { authError?: string }): string {
+  const authErrorHtml = opts.authError
+    ? `<div class="auth-error">Sign-in error: ${escapeHtml(opts.authError)}</div>`
+    : '';
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leads Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1A1420;
+    --panel: #211826;
+    --panel-alt: #271d2e;
+    --accent: #A78BC4;
+    --accent-2: #8B7BB8;
+    --pink: #C97FB0;
+    --text: #FFFFFF;
+    --text-secondary: #D9D6DE;
+    --border: rgba(167, 139, 196, 0.25);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Poppins', system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .page { max-width: 1400px; margin: 0 auto; padding: 24px 28px 60px; }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 0;
+    letter-spacing: 0.2px;
+  }
+  .signout-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 6px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .signout-btn:hover { border-color: var(--pink); color: var(--pink); }
+  .auth-error {
+    background: rgba(201, 127, 176, 0.15);
+    border: 1px solid var(--pink);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .toolbar label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-right: 6px;
+  }
+  .toolbar select, .toolbar button.refresh {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .toolbar select:focus, .toolbar button.refresh:focus { outline: 1px solid var(--accent); }
+  .count {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: auto;
+    max-height: 76vh;
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 980px; }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel-alt);
+    color: var(--accent);
+    text-align: left;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 10px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+  thead th:hover { color: var(--pink); }
+  thead th .arrow { color: var(--pink); margin-left: 4px; font-size: 10px; }
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text-secondary);
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: rgba(167, 139, 196, 0.1); }
+  tbody tr:hover td { color: var(--text); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.title-cell { color: var(--text); font-weight: 500; }
+  a.website-link { color: var(--accent); text-decoration: none; }
+  a.website-link:hover { color: var(--pink); text-decoration: underline; }
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge.it { background: rgba(201, 127, 176, 0.22); color: var(--pink); }
+  .badge.not_it { background: rgba(217, 214, 222, 0.12); color: var(--text-secondary); }
+  .badge.source { background: rgba(167, 139, 196, 0.16); color: var(--accent); text-transform: uppercase; }
+  .empty-state, .loading-state {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-secondary);
+  }
+
+  /* Detail sidebar */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 6, 14, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+    z-index: 40;
+  }
+  .backdrop.open { opacity: 1; visibility: visible; }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(480px, 92vw);
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 50;
+    overflow-y: auto;
+    padding: 30px 28px 48px;
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .sidebar-close:hover { color: var(--pink); background: rgba(201, 127, 176, 0.12); }
+  .sidebar-title {
+    color: var(--accent);
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0 36px 6px 0;
+    line-height: 1.35;
+  }
+  .sidebar-badge { margin-bottom: 18px; }
+  .detail-row {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .detail-label {
+    flex: 0 0 100px;
+    color: var(--accent-2);
+    font-weight: 500;
+  }
+  .detail-value { color: var(--text-secondary); word-break: break-word; }
+  .sidebar-desc-label {
+    margin-top: 24px;
+    margin-bottom: 10px;
+    color: var(--accent);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+  }
+  .sidebar-desc {
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+    line-height: 1.75;
+    font-size: 14px;
+    max-width: 60ch;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <h1>Leads Dashboard</h1>
+    <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
+  </div>
+  ${authErrorHtml}
+  <div class="toolbar">
+    <span>
+      <label for="filter-is-it">IT filter</label>
+      <select id="filter-is-it">
+        <option value="all">All</option>
+        <option value="it">IT</option>
+        <option value="not_it">not-IT</option>
+        <option value="unprocessed">Unprocessed</option>
+      </select>
+    </span>
+    <span>
+      <label for="filter-status">Status</label>
+      <select id="filter-status">
+        <option value="all">All</option>
+        <option value="new">новий</option>
+        <option value="in_progress">опрацьовується</option>
+        <option value="done">опрацьований</option>
+      </select>
+    </span>
+    <button class="refresh" id="refresh-btn" type="button">Refresh</button>
+    <span class="count" id="count"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr id="header-row"></tr>
+      </thead>
+      <tbody id="table-body">
+        <tr><td class="loading-state" colspan="9">Loading leads…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="backdrop" id="backdrop"></div>
+<aside class="sidebar" id="sidebar" aria-hidden="true">
+  <button class="sidebar-close" id="sidebar-close" type="button" aria-label="Close">&times;</button>
+  <div id="sidebar-content"></div>
+</aside>
+<script>
+(function () {
+  var COOKIE_NAME = 'sm_dashboard_session';
+  var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
+  var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
+  var COLUMN_COUNT = 11;
+
+  var COLUMNS = [
+    { key: 'published_at', label: 'Published' },
+    { key: 'source_site', label: 'Source' },
+    { key: 'job_title', label: 'Title' },
+    { key: 'source_url', label: 'Job link' },
+    { key: 'is_it', label: 'IT?' },
+    { key: 'company', label: 'Company' },
+    { key: 'company_website', label: 'Website' },
+    { key: 'location', label: 'Location' },
+    { key: 'status', label: 'Status' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'scraped_at', label: 'Scraped' },
+  ];
+
+  var state = {
+    leads: [],
+    sortKey: 'published_at',
+    sortDir: 'desc',
+    filterIsIt: 'all',
+    filterStatus: 'all',
+  };
+
+  function getCookie(name) {
+    var parts = document.cookie.split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      var eq = p.indexOf('=');
+      if (eq === -1) continue;
+      if (p.slice(0, eq) === name) return decodeURIComponent(p.slice(eq + 1));
+    }
+    return null;
+  }
+
+  function clearCookieAndGoToLogin() {
+    document.cookie = COOKIE_NAME + '=; Max-Age=0; path=/';
+    window.location.href = '/auth/login?for=dashboard';
+  }
+
+  function formatKyiv(value, dateOnly) {
+    if (!value) return '';
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return '';
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Kyiv',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: dateOnly ? undefined : '2-digit',
+      minute: dateOnly ? undefined : '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    var get = function (type) {
+      for (var i = 0; i < parts.length; i++) if (parts[i].type === type) return parts[i].value;
+      return '';
+    };
+    if (dateOnly) return get('year') + '-' + get('month') + '-' + get('day');
+    return get('year') + '-' + get('month') + '-' + get('day') + ' ' + get('hour') + ':' + get('minute');
+  }
+
+  function isSafeUrl(url) {
+    return typeof url === 'string' && /^https?:\\/\\//i.test(url);
+  }
+
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    if (props) {
+      for (var key in props) {
+        if (key === 'className') node.className = props[key];
+        else if (key === 'text') node.textContent = props[key];
+        else node.setAttribute(key, props[key]);
+      }
+    }
+    (children || []).forEach(function (c) { if (c) node.appendChild(c); });
+    return node;
+  }
+
+  function renderHeader() {
+    var row = document.getElementById('header-row');
+    row.innerHTML = '';
+    COLUMNS.forEach(function (col) {
+      var th = document.createElement('th');
+      th.textContent = col.label;
+      th.addEventListener('click', function () { setSort(col.key); });
+      if (state.sortKey === col.key) {
+        var arrow = document.createElement('span');
+        arrow.className = 'arrow';
+        arrow.textContent = state.sortDir === 'asc' ? '\\u25B2' : '\\u25BC';
+        th.appendChild(arrow);
+      }
+      row.appendChild(th);
+    });
+  }
+
+  function setSort(key) {
+    if (state.sortKey === key) {
+      state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      state.sortKey = key;
+      state.sortDir = 'asc';
+    }
+    render();
+  }
+
+  function sortValue(lead, key) {
+    if (key === 'owner') return (lead.owner_display_name || lead.owner_email || '').toLowerCase();
+    var v = lead[key];
+    if (v === null || v === undefined) return '';
+    return typeof v === 'string' ? v.toLowerCase() : v;
+  }
+
+  function getFiltered() {
+    return state.leads.filter(function (lead) {
+      if (state.filterIsIt !== 'all' && lead.is_it !== state.filterIsIt) return false;
+      if (state.filterStatus !== 'all' && lead.status !== state.filterStatus) return false;
+      return true;
+    });
+  }
+
+  function buildDetailRow(label, value, isLink) {
+    var row = document.createElement('div');
+    row.className = 'detail-row';
+    row.appendChild(el('span', { className: 'detail-label', text: label }));
+    if (isLink && isSafeUrl(value)) {
+      var a = el('a', { className: 'website-link', href: value, target: '_blank', rel: 'noreferrer' });
+      a.textContent = value;
+      row.appendChild(a);
+    } else {
+      row.appendChild(el('span', { className: 'detail-value', text: value || '\\u2014' }));
+    }
+    return row;
+  }
+
+  // Compact link cell for the table (e.g. "Open ↗" rather than the full URL, so a long
+  // source_url/company_website doesn't bloat the row). stopPropagation so clicking the link
+  // navigates without also opening the row's detail sidebar underneath it.
+  function buildLinkTd(url, linkText) {
+    var td = document.createElement('td');
+    if (isSafeUrl(url)) {
+      var a = el('a', { className: 'website-link', href: url, target: '_blank', rel: 'noreferrer', text: linkText });
+      a.addEventListener('click', function (e) { e.stopPropagation(); });
+      td.appendChild(a);
+    } else {
+      td.textContent = '\\u2014';
+    }
+    return td;
+  }
+
+  // Only one sidebar exists — opening a new lead just replaces its content, so there's
+  // never more than one open at a time.
+  function openSidebar(lead) {
+    var content = document.getElementById('sidebar-content');
+    content.innerHTML = '';
+    content.appendChild(el('h2', { className: 'sidebar-title', text: lead.job_title || '(untitled)' }));
+
+    var isItLabel = IS_IT_LABELS[lead.is_it];
+    if (isItLabel) {
+      content.appendChild(el('div', { className: 'sidebar-badge' }, [
+        el('span', { className: 'badge ' + lead.is_it, text: isItLabel }),
+      ]));
+    }
+
+    content.appendChild(buildDetailRow('Company', lead.company));
+    content.appendChild(buildDetailRow('Website', lead.company_website, true));
+    content.appendChild(buildDetailRow('Job link', lead.source_url, true));
+    content.appendChild(buildDetailRow('Location', lead.location));
+    content.appendChild(buildDetailRow('Published', formatKyiv(lead.published_at, true)));
+    content.appendChild(buildDetailRow('Source', lead.source_site));
+    content.appendChild(buildDetailRow('Status', STATUS_LABELS[lead.status] || lead.status));
+    content.appendChild(buildDetailRow('Owner', lead.owner_display_name || lead.owner_email));
+    content.appendChild(buildDetailRow('Scraped', formatKyiv(lead.scraped_at || lead.created_at, false)));
+
+    content.appendChild(el('div', { className: 'sidebar-desc-label', text: 'Description' }));
+    content.appendChild(el('div', { className: 'sidebar-desc', text: lead.description || 'No description yet.' }));
+
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar').setAttribute('aria-hidden', 'false');
+    document.getElementById('backdrop').classList.add('open');
+  }
+
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar').setAttribute('aria-hidden', 'true');
+    document.getElementById('backdrop').classList.remove('open');
+  }
+
+  function buildRow(lead) {
+    var tr = document.createElement('tr');
+    tr.addEventListener('click', function () { openSidebar(lead); });
+
+    tr.appendChild(el('td', { text: formatKyiv(lead.published_at, true) || '\\u2014' }));
+
+    var sourceTd = document.createElement('td');
+    if (lead.source_site) {
+      sourceTd.appendChild(el('span', { className: 'badge source', text: lead.source_site }));
+    } else {
+      sourceTd.textContent = '\\u2014';
+    }
+    tr.appendChild(sourceTd);
+
+    tr.appendChild(el('td', { className: 'title-cell', text: lead.job_title || '(untitled)' }));
+    tr.appendChild(buildLinkTd(lead.source_url, 'Open \\u2197'));
+
+    var isItTd = document.createElement('td');
+    var isItLabel = IS_IT_LABELS[lead.is_it];
+    if (isItLabel) {
+      isItTd.appendChild(el('span', { className: 'badge ' + lead.is_it, text: isItLabel }));
+    } else {
+      isItTd.textContent = '\\u2014';
+    }
+    tr.appendChild(isItTd);
+
+    tr.appendChild(el('td', { text: lead.company || '\\u2014' }));
+    tr.appendChild(buildLinkTd(lead.company_website, lead.company_website));
+
+    tr.appendChild(el('td', { text: lead.location || '\\u2014' }));
+    tr.appendChild(el('td', { text: STATUS_LABELS[lead.status] || lead.status }));
+    tr.appendChild(el('td', { text: lead.owner_display_name || lead.owner_email || '\\u2014' }));
+    tr.appendChild(el('td', { text: formatKyiv(lead.scraped_at || lead.created_at, false) || '\\u2014' }));
+
+    return tr;
+  }
+
+  function render() {
+    renderHeader();
+    var filtered = getFiltered().slice();
+    filtered.sort(function (a, b) {
+      var av = sortValue(a, state.sortKey);
+      var bv = sortValue(b, state.sortKey);
+      if (av < bv) return state.sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return state.sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    var body = document.getElementById('table-body');
+    body.innerHTML = '';
+    if (filtered.length === 0) {
+      body.appendChild(el('tr', {}, [el('td', { colspan: String(COLUMN_COUNT), className: 'empty-state', text: 'No leads match the current filters.' })]));
+    } else {
+      filtered.forEach(function (lead) { body.appendChild(buildRow(lead)); });
+    }
+
+    document.getElementById('count').textContent = filtered.length + ' of ' + state.leads.length + ' leads';
+  }
+
+  function loadLeads() {
+    var token = getCookie(COOKIE_NAME);
+    if (!token) { clearCookieAndGoToLogin(); return; }
+
+    fetch('/leads', { headers: { Authorization: 'Bearer ' + token } })
+      .then(function (res) {
+        if (res.status === 401) { clearCookieAndGoToLogin(); return null; }
+        if (!res.ok) throw new Error('Request failed (' + res.status + ')');
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        state.leads = data;
+        render();
+      })
+      .catch(function (err) {
+        var body = document.getElementById('table-body');
+        body.innerHTML = '';
+        body.appendChild(el('tr', {}, [el('td', { colspan: String(COLUMN_COUNT), className: 'empty-state', text: 'Failed to load leads: ' + err.message })]));
+      });
+  }
+
+  document.getElementById('filter-is-it').addEventListener('change', function (e) {
+    state.filterIsIt = e.target.value;
+    render();
+  });
+  document.getElementById('filter-status').addEventListener('change', function (e) {
+    state.filterStatus = e.target.value;
+    render();
+  });
+  document.getElementById('refresh-btn').addEventListener('click', loadLeads);
+  document.getElementById('signout-btn').addEventListener('click', function () {
+    var token = getCookie(COOKIE_NAME);
+    var done = function () { clearCookieAndGoToLogin(); };
+    if (token) {
+      fetch('/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }).then(done, done);
+    } else {
+      done();
+    }
+  });
+
+  document.getElementById('backdrop').addEventListener('click', closeSidebar);
+  document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeSidebar();
+  });
+
+  renderHeader();
+  loadLeads();
+})();
+</script>
+</body>
+</html>`;
+}
