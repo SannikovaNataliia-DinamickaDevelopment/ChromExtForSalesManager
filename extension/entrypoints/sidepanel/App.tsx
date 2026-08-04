@@ -6,6 +6,11 @@ import { deepenLeads, type DeepenProgress } from '../../lib/deepen';
 import { formatKyivDate, formatKyivDateTime } from '../../lib/format-time';
 import { MAX_PAGES, runMultiPageParse, type MultiPageProgress } from '../../lib/multipage';
 import { STATUS_OPTIONS } from '../../lib/status-labels';
+import {
+  deepenWellfoundLeads,
+  WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
+  type WellfoundDeepenProgress,
+} from '../../lib/wellfound-deepen';
 import type { JobLeadRecord, LeadStatus } from '../../lib/types';
 
 // Multi-page (scope D) only works on sites built on this template — confirmed identical
@@ -32,6 +37,8 @@ export default function App() {
   const [multiPageRunning, setMultiPageRunning] = useState(false);
   const [multiPageProgress, setMultiPageProgress] = useState<MultiPageProgress | null>(null);
   const [multiPageSummary, setMultiPageSummary] = useState<string | null>(null);
+  const [wellfoundDeepening, setWellfoundDeepening] = useState<WellfoundDeepenProgress | null>(null);
+  const [wellfoundDeepenSummary, setWellfoundDeepenSummary] = useState<string | null>(null);
 
   // Any backend call can 401 out from under a signed-in session (expiry, logout
   // elsewhere, backend restart clearing the in-memory revocation list) — funnel
@@ -111,7 +118,11 @@ export default function App() {
       handleAuthAware(err);
       return;
     }
-    const targets = fresh.filter((l) => l.description && l.is_it === 'unprocessed').map((l) => ({ id: l.id }));
+    // CLAUDE.md scope D (Wellfound): Gemini stays OFF for Wellfound leads — permanently
+    // excluded here, not just for this run, so they never get swept in by a later re-parse.
+    const targets = fresh
+      .filter((l) => l.description && l.is_it === 'unprocessed' && l.source_site !== 'wellfound')
+      .map((l) => ({ id: l.id }));
     if (targets.length === 0) return;
 
     setClassifySummary(null);
@@ -150,6 +161,36 @@ export default function App() {
     }).finally(() => setDeepening(null));
   };
 
+  // CLAUDE.md scope D (Wellfound): TabDeepening instead of the plain-fetch strategy above —
+  // Wellfound's DataDome bot-protection blocks a background fetch outright (confirmed via a
+  // real curl: HTTP 403 challenge page). Deliberately does NOT chain into runClassify —
+  // Gemini stays off for Wellfound leads.
+  const runWellfoundDeepen = (results: unknown): Promise<void> => {
+    const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
+    const targets = items
+      .filter((r) => r?.lead && !r.lead.description)
+      .map((r) => ({ id: r.lead.id, source_url: r.lead.source_url }));
+    if (targets.length === 0) return Promise.resolve();
+
+    setWellfoundDeepenSummary(null);
+    setWellfoundDeepening({ current: 0, total: targets.length, succeeded: 0, stoppedEarly: false });
+    return deepenWellfoundLeads(targets, (progress) => {
+      setWellfoundDeepening(progress);
+      loadLeads();
+    })
+      .then((result) => {
+        if (result.stoppedEarly) {
+          setWellfoundDeepenSummary(
+            `Wellfound deepening stopped after ${WELLFOUND_CIRCUIT_BREAKER_THRESHOLD} consecutive failures — ` +
+              `possible bot-detection block. ${result.succeeded} of ${result.processed} attempted lead(s) succeeded.`,
+          );
+        } else {
+          setWellfoundDeepenSummary(`Wellfound deepening done — ${result.succeeded} of ${result.processed} lead(s) succeeded.`);
+        }
+      })
+      .finally(() => setWellfoundDeepening(null));
+  };
+
   const handleParse = async () => {
     setParsing(true);
     setError(null);
@@ -164,7 +205,13 @@ export default function App() {
         }
       } else {
         loadLeads();
-        runDeepen(res.results).then(runClassify);
+        const results = Array.isArray(res.results) ? (res.results as LeadSaveResult[]) : [];
+        const isWellfound = results.some((r) => r?.lead?.source_site === 'wellfound');
+        if (isWellfound) {
+          runWellfoundDeepen(results);
+        } else {
+          runDeepen(res.results).then(runClassify);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -270,7 +317,7 @@ export default function App() {
         {parsing ? 'Parsing…' : 'Parse current list page'}
       </button>
       {!tabSupported && (
-        <div className="hint">Open a Techjobs.ca, ITjobs.ca, or DevITjobs job list page to enable parsing.</div>
+        <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, or DevITjobs job list page to enable parsing.</div>
       )}
       {deepening && (
         <div className="hint">Deepening {deepening.current}/{deepening.total}…</div>
@@ -279,6 +326,12 @@ export default function App() {
         <div className="hint">Classifying {classifying.current}/{classifying.total}…</div>
       )}
       {classifySummary && <div className="hint">{classifySummary}</div>}
+      {wellfoundDeepening && (
+        <div className="hint">
+          Wellfound deepening {wellfoundDeepening.current}/{wellfoundDeepening.total} (background tab)…
+        </div>
+      )}
+      {wellfoundDeepenSummary && <div className="hint">{wellfoundDeepenSummary}</div>}
 
       <div className="multipage-block">
         <label htmlFor="target-date">Parse Techjobs back to date</label>

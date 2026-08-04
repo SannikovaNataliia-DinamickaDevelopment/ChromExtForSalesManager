@@ -1,4 +1,5 @@
 import { deepenLead } from './api';
+import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepening-strategy';
 import { parseTechjobsDetail } from './parsers/techjobs';
 
 const MIN_DELAY_MS = 1500;
@@ -18,6 +19,18 @@ export interface DeepenProgress {
   total: number;
 }
 
+// CLAUDE.md scope D (Wellfound): the DeepeningStrategy this whole module always used, now
+// named and exposed so the core (App.tsx) can pick a different one (TabDeepening, for
+// sources a plain fetch can't reach) without needing to know how either works.
+export class FetchDeepening implements DeepeningStrategy {
+  async deepenOne(target: DeepeningTarget): Promise<DeepenedFields | null> {
+    const res = await fetch(target.source_url);
+    if (!res.ok) return null;
+    const html = await res.text();
+    return parseTechjobsDetail(html);
+  }
+}
+
 /**
  * CLAUDE.md scope B ("auto by all", human pace): sequentially fetches each NEW lead's detail
  * page and applies what it finds. Runs in the side panel (not the background service worker)
@@ -30,21 +43,19 @@ export async function deepenLeads(
   targets: DeepenTarget[],
   onProgress: (progress: DeepenProgress) => void,
 ): Promise<void> {
+  const strategy = new FetchDeepening();
+
   for (let i = 0; i < targets.length; i++) {
     const target = targets[i];
     try {
-      const res = await fetch(target.source_url);
-      if (res.ok) {
-        const html = await res.text();
-        const detail = parseTechjobsDetail(html);
-        if (detail) {
-          await deepenLead(target.id, {
-            description: detail.description,
-            company: detail.company,
-            company_website: detail.company_website,
-            ...(detail.published_at ? { published_at: detail.published_at } : {}),
-          });
-        }
+      const detail = await strategy.deepenOne(target);
+      if (detail) {
+        await deepenLead(target.id, {
+          description: detail.description,
+          company: detail.company,
+          company_website: detail.company_website,
+          ...(detail.published_at ? { published_at: detail.published_at } : {}),
+        });
       }
     } catch {
       // Swallow: one bad detail page must not abort the rest of the run.
