@@ -49,7 +49,7 @@ The model is a **shared team lead base**, not per-user pipelines:
 
 ## Parsing focus & mode
 
-- **Primary site: Techjobs.ca.** **ITjobs.ca added as a second source** (same template, `source_site: "itjobs"` — see Parser spec). DevITjobs is **PAUSED** (virtualized list renders only ~18 cards at a time, and it has no publication dates). Don't work on DevITjobs in this iteration.
+- **Primary site: Techjobs.ca.** **ITjobs.ca added as a second source** (same template, `source_site: "itjobs"` — see Parser spec). **Wellfound.com added as a third source** (`source_site: "wellfound"`, own selectors, DataDome-blocked — deepens via a real tab, not a fetch; Gemini stays OFF for it — see Parser spec). DevITjobs is **PAUSED** (virtualized list renders only ~18 cards at a time, and it has no publication dates). Don't work on DevITjobs in this iteration.
 - **Batch list parse:** one click parses all job cards on the current list page and returns an array. Current tab only, on manual click, at human pace.
 
 ---
@@ -138,6 +138,56 @@ classification (scope C) still applies to it exactly as for Techjobs.ca.**
 
 ---
 
+## Parser spec (Wellfound — third source, DataDome-blocked)
+
+`source_site: "wellfound"`, `wellfound.com`. A genuinely different site (own list markup),
+unlike ITjobs.ca — not a template match with Techjobs. **Gemini stays OFF for Wellfound leads
+(permanently, not just per-run) — they stay `is_it: "unprocessed"`.** No multi-page (scope D)
+support for Wellfound yet — single-page parse only.
+
+### List page (`/role/r/*`)
+- card anchor: `a[href^="/jobs/"]` (title text); `external_job_id`: numeric prefix of
+  `/jobs/<id>-<slug>`; `source_url`: `https://wellfound.com` + href.
+- Cards are NOT self-contained: company name comes from the nearest *preceding*
+  `[data-testid="startup-header"] h2` (the page groups job rows under a company section) —
+  parsed with one linear document-order scan, not per-card lookups.
+- "Job row" (for salary/location) = closest ancestor of the title link containing
+  `[data-test="JobApplicationApplyButton"]` (verified 1:1 against job-card count — a more
+  stable landmark than Wellfound's Tailwind utility classes).
+- Salary vs. location both live in `span.text-xs.pl-1` — disambiguated by a `$` prefix, not
+  fixed position (either can be absent, and order isn't reliable in every card).
+- No absolute posted date on the list (only relative — "4 days ago", "yesterday", "5 months
+  ago"); `published_at` stays null from list parse and is backfilled from the detail page's
+  `datePosted` during deepening, same backfill-only mechanism as a Techjobs card with no
+  parseable date.
+
+### Detail page — requires a real browser tab, not a fetch
+**Confirmed via a real, unauthenticated curl against a live detail URL: HTTP 403 with a
+DataDome challenge page (`Set-Cookie: datadome=...`, `X-DataDome: protected`) — not a
+client-rendering delay like Techjobs' list page, an active bot-detection block on the raw
+HTTP request itself.** The JSON-LD JobPosting (`description`, `hiringOrganization.name/sameAs`,
+`datePosted`) is confirmed present once a real browser renders the page
+(`spikes/Wellfound_detail.html`) — an access problem, not a parsing problem.
+
+**`DeepeningStrategy` abstraction** (`extension/lib/deepening-strategy.ts`, parallel to the
+backend's `Destination` adapter — the orchestrator picks a strategy by `source_site` without
+knowing how either works):
+- `FetchDeepening` (`extension/lib/deepen.ts`) — the original plain-fetch approach, unchanged
+  behavior, used for Techjobs/ITjobs.
+- `TabDeepening` (`extension/lib/wellfound-deepen.ts`) — used only for Wellfound. Opens ONE
+  dedicated, minimized, unfocused popup window for the whole run (never the manager's active
+  window/tab) and reuses its tab by navigating it per lead. A content script
+  (`entrypoints/content.ts`, `EXTRACT_WELLFOUND_DETAIL` message) polls the live DOM for the
+  JobPosting JSON-LD for up to 15s (hydration can finish after `tabs.onUpdated` "complete") —
+  a DataDome challenge page never produces that JSON-LD either, so it fails the same
+  timeout path, no separate challenge detection needed. Sequential only, 4-8s between tabs
+  (human pace, Wellfound is anti-bot-aggressive). Circuit breaker: stops the whole run after
+  `WELLFOUND_CIRCUIT_BREAKER_THRESHOLD` (3) consecutive failures rather than hammering a
+  likely-blocked session — surfaced to the manager, never silent. Run cap:
+  `WELLFOUND_RUN_CAP` (20) leads per run, a named constant, easy to raise once validated.
+
+---
+
 ## What NOT to do (critical) — REVISED
 
 Reversals from the earlier brief (intentional, per the manager meeting):
@@ -174,6 +224,33 @@ v1: `SheetsDestination` (service account; find row by `external_job_id`/`source_
 
 ---
 
+## Dashboard (`backend/src/dashboard/`) — read-only leads browser, plus one write path
+
+Served at `GET /dashboard` (same Google-login-derived session cookie as the extension, see
+`backend/src/auth`), reads via the existing `GET /leads` — genuinely read-only except for one
+thing below. Not part of the original brief; added later in the project.
+
+- **Filters**: IT filter and Status filter are fixed small enums, hardcoded `<option>`s. The
+  **Source filter** is NOT — `source_site` isn't a fixed enum (new sources get added over
+  time, see Parser spec history above), so its options are derived from the distinct
+  `source_site` values in whatever's actually loaded (`populateSourceOptions()`), not
+  hardcoded. All three filter client-side, same as the existing two.
+- **"Enrich" button** (lead-detail sidebar, shown only when a lead is missing BOTH
+  `description` and `company_website` — i.e. it fell out of deepening): this page cannot
+  reach job sites or run `DeepeningStrategy` itself — it messages the **extension**
+  (`chrome.runtime.sendMessage(extensionId, {type:"ENRICH_LEAD", leadId, sourceSite,
+  sourceUrl})`, via `externally_connectable` scoped to this origin only — see
+  `extension/wxt.config.ts`) and the extension's `background.ts` does the actual work,
+  routing by `sourceSite` to the exact same `FetchDeepening` (Techjobs/ITjobs) or
+  `TabDeepening`/`deepenWellfoundLeads` (Wellfound) used by the batch "auto by all" flow —
+  same circuit breaker, same window/tab mechanics, just invoked for one lead. Gemini is never
+  triggered by this button, for any source. The extension's id isn't knowable in advance (it's
+  assigned per install/load) — the manager pastes it into a small "Extension ID" field once,
+  persisted in this browser's `localStorage`. "Extension not installed/unreachable" surfaces
+  as a clear inline message, never a silent failure.
+
+---
+
 ## Non-functional (condensed)
 
 NFR-2 processing basis + delete on request · NFR-3 data goes only to backend, Sheets, and Gemini (public vacancy text only) · NFR-4/5 human pace, only on manager action (applies to deepening too) · NFR-6 IdP/API creds outside the client · NFR-7 user not tied to an IdP · NFR-8 server-side enum validation (status, is_it) · NFR-9 backend = source of truth, `chrome.storage` only cache/token · NFR-10 last-write-wins · NFR-12/13 no silent failures (incl. Gemini rate limits → mark unprocessed) · NFR-14 parser adapters isolated.
@@ -196,4 +273,4 @@ Current iteration (deadline Tuesday), in priority order:
 
 ## Decision log
 
-side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)**.
+side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)** · **Wellfound.com added as a third source — own list selectors, deepens via a dedicated background browser tab (DeepeningStrategy abstraction: FetchDeepening vs TabDeepening) instead of a fetch because of DataDome bot-protection, Gemini stays permanently off for it**.

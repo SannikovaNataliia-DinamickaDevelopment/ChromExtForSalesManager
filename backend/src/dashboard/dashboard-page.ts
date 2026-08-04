@@ -69,6 +69,28 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 13px;
   }
   .signout-btn:hover { border-color: var(--pink); color: var(--pink); }
+  .ext-id-field {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    margin-right: 12px;
+  }
+  .ext-id-field label {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .ext-id-field input {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    width: 220px;
+  }
+  .ext-id-field input:focus { outline: 1px solid var(--accent); }
   .auth-error {
     background: rgba(201, 127, 176, 0.15);
     border: 1px solid var(--pink);
@@ -209,6 +231,32 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     line-height: 1.35;
   }
   .sidebar-badge { margin-bottom: 18px; }
+  .enrich-block {
+    margin-bottom: 20px;
+    padding: 12px;
+    background: rgba(139, 123, 182, 0.1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .enrich-btn {
+    background: var(--pink);
+    color: #1A1420;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .enrich-btn:hover { opacity: 0.9; }
+  .enrich-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+  .enrich-status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
   .detail-row {
     display: flex;
     gap: 12px;
@@ -245,6 +293,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 <div class="page">
   <div class="topbar">
     <h1>Leads Dashboard</h1>
+    <span class="ext-id-field">
+      <label for="extension-id">Extension ID</label>
+      <input type="text" id="extension-id" placeholder="see chrome://extensions" autocomplete="off" spellcheck="false">
+    </span>
     <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
   </div>
   ${authErrorHtml}
@@ -256,6 +308,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="it">IT</option>
         <option value="not_it">not-IT</option>
         <option value="unprocessed">Unprocessed</option>
+      </select>
+    </span>
+    <span>
+      <label for="filter-source">Source</label>
+      <select id="filter-source">
+        <option value="all">All</option>
       </select>
     </span>
     <span>
@@ -292,6 +350,21 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
   var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
   var COLUMN_COUNT = 11;
+  // "Enrich" button (extension-side deepening triggered from this page — see background.ts's
+  // ENRICH_LEAD handler). Each dev/browser loads the extension with its own id
+  // (chrome://extensions), so this can't be hardcoded — the manager pastes it in once and
+  // it's remembered in this browser.
+  var EXTENSION_ID_STORAGE_KEY = 'sm_extension_id';
+  // Safety net only — a real "not installed/not reachable" failure surfaces via
+  // chrome.runtime.lastError almost immediately, not via this timeout. This just guards
+  // against the callback never firing at all (worst case: nav timeout 30s + settle 1s +
+  // extract timeout 20s for Wellfound, so must stay comfortably above that).
+  var ENRICH_TIMEOUT_MS = 60000;
+  // Leads currently being enriched, keyed by id — checked both to disable the button
+  // immediately on click AND to re-render it disabled if the sidebar is closed and
+  // reopened for the same lead while a request is still in flight.
+  var enrichingLeadIds = {};
+  var currentSidebarLeadId = null;
 
   var COLUMNS = [
     { key: 'published_at', label: 'Published' },
@@ -313,6 +386,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     sortDir: 'desc',
     filterIsIt: 'all',
     filterStatus: 'all',
+    filterSource: 'all',
   };
 
   function getCookie(name) {
@@ -405,8 +479,29 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return state.leads.filter(function (lead) {
       if (state.filterIsIt !== 'all' && lead.is_it !== state.filterIsIt) return false;
       if (state.filterStatus !== 'all' && lead.status !== state.filterStatus) return false;
+      if (state.filterSource !== 'all' && lead.source_site !== state.filterSource) return false;
       return true;
     });
+  }
+
+  // Source options aren't a fixed enum like IT/Status (new sources get added over time — see
+  // CLAUDE.md Parser spec history) — derive them from whatever's actually in the loaded data
+  // instead of hardcoding a list that would silently go stale the next time a source is added.
+  function populateSourceOptions() {
+    var select = document.getElementById('filter-source');
+    var previous = select.value || state.filterSource;
+    var sources = Array.from(new Set(state.leads.map(function (l) { return l.source_site; }).filter(Boolean))).sort();
+
+    select.innerHTML = '';
+    select.appendChild(el('option', { value: 'all', text: 'All' }));
+    sources.forEach(function (s) {
+      select.appendChild(el('option', { value: s, text: s }));
+    });
+
+    var stillValid = previous === 'all' || sources.indexOf(previous) !== -1;
+    var next = stillValid ? previous : 'all';
+    select.value = next;
+    state.filterSource = next;
   }
 
   function buildDetailRow(label, value, isLink) {
@@ -440,7 +535,97 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   // Only one sidebar exists — opening a new lead just replaces its content, so there's
   // never more than one open at a time.
+  // Shown only for leads that fell out of deepening entirely (never attempted, failed, or
+  // timed out) — a lead with either field already populated has nothing this button would add.
+  function needsEnrich(lead) {
+    return !lead.description && !lead.company_website;
+  }
+
+  function buildEnrichBlock(lead) {
+    var wrap = document.createElement('div');
+    wrap.className = 'enrich-block';
+
+    var inFlight = !!enrichingLeadIds[lead.id];
+    var button = el('button', { className: 'enrich-btn', type: 'button', text: inFlight ? 'Enriching…' : 'Enrich' });
+    button.disabled = inFlight;
+    var statusEl = el('div', { className: 'enrich-status' });
+
+    button.addEventListener('click', function () {
+      startEnrich(lead, button, statusEl);
+    });
+
+    wrap.appendChild(button);
+    wrap.appendChild(statusEl);
+    return wrap;
+  }
+
+  // Extension messaging (background.ts's ENRICH_LEAD handler) — reuses the extension's own
+  // DeepeningStrategy implementations; this page never talks to Techjobs/ITjobs/Wellfound or
+  // Gemini directly. enrichingLeadIds plus the button's own disabled state double up as
+  // double-click protection: the native disabled attribute blocks a second click on the same
+  // button instance, and the id-keyed set covers closing and reopening the sidebar for the
+  // same lead while a request is still in flight (a fresh button is rendered pre-disabled).
+  function startEnrich(lead, button, statusEl) {
+    if (enrichingLeadIds[lead.id]) return;
+
+    var extId = (localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '').trim();
+    if (!extId) {
+      statusEl.textContent = 'Set the Extension ID above first (see chrome://extensions), then try again.';
+      return;
+    }
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+      statusEl.textContent = 'Install or open the Sales Manager extension in this browser to enrich leads.';
+      return;
+    }
+
+    enrichingLeadIds[lead.id] = true;
+    button.disabled = true;
+    button.textContent = 'Enriching…';
+    statusEl.textContent = '';
+
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      finish({ ok: false, error: 'Timed out waiting for the extension — it may still be working in the background. Try Refresh shortly.' });
+    }, ENRICH_TIMEOUT_MS);
+
+    function finish(response) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      delete enrichingLeadIds[lead.id];
+
+      if (!response || !response.ok) {
+        button.disabled = false;
+        button.textContent = 'Enrich';
+        var message = (response && response.error) || 'Install or open the Sales Manager extension in this browser to enrich leads.';
+        if (response && response.authError) message = 'Sign in to the extension first (open its side panel), then try again.';
+        statusEl.textContent = message;
+        return;
+      }
+
+      statusEl.textContent = 'Enriched \\u2014 refreshing\\u2026';
+      loadLeads().then(function () {
+        if (currentSidebarLeadId !== lead.id) return;
+        var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
+        if (updated) openSidebar(updated);
+      });
+    }
+
+    try {
+      chrome.runtime.sendMessage(extId, { type: 'ENRICH_LEAD', leadId: lead.id, sourceSite: lead.source_site, sourceUrl: lead.source_url }, function (response) {
+        if (chrome.runtime.lastError && !response) {
+          finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
+          return;
+        }
+        finish(response);
+      });
+    } catch (err) {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
+    }
+  }
+
   function openSidebar(lead) {
+    currentSidebarLeadId = lead.id;
     var content = document.getElementById('sidebar-content');
     content.innerHTML = '';
     content.appendChild(el('h2', { className: 'sidebar-title', text: lead.job_title || '(untitled)' }));
@@ -450,6 +635,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       content.appendChild(el('div', { className: 'sidebar-badge' }, [
         el('span', { className: 'badge ' + lead.is_it, text: isItLabel }),
       ]));
+    }
+
+    if (needsEnrich(lead)) {
+      content.appendChild(buildEnrichBlock(lead));
     }
 
     content.appendChild(buildDetailRow('Company', lead.company));
@@ -471,6 +660,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
 
   function closeSidebar() {
+    currentSidebarLeadId = null;
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('sidebar').setAttribute('aria-hidden', 'true');
     document.getElementById('backdrop').classList.remove('open');
@@ -535,11 +725,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     document.getElementById('count').textContent = filtered.length + ' of ' + state.leads.length + ' leads';
   }
 
+  // Returns the fetch chain (not just fired-and-forgotten) so callers that need to act on
+  // freshly-loaded data — e.g. re-rendering the sidebar after an Enrich call succeeds — can
+  // chain onto it instead of guessing when state.leads has updated.
   function loadLeads() {
     var token = getCookie(COOKIE_NAME);
-    if (!token) { clearCookieAndGoToLogin(); return; }
+    if (!token) { clearCookieAndGoToLogin(); return Promise.resolve(); }
 
-    fetch('/leads', { headers: { Authorization: 'Bearer ' + token } })
+    return fetch('/leads', { headers: { Authorization: 'Bearer ' + token } })
       .then(function (res) {
         if (res.status === 401) { clearCookieAndGoToLogin(); return null; }
         if (!res.ok) throw new Error('Request failed (' + res.status + ')');
@@ -548,6 +741,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       .then(function (data) {
         if (!data) return;
         state.leads = data;
+        populateSourceOptions();
         render();
       })
       .catch(function (err) {
@@ -561,11 +755,21 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     state.filterIsIt = e.target.value;
     render();
   });
+  document.getElementById('filter-source').addEventListener('change', function (e) {
+    state.filterSource = e.target.value;
+    render();
+  });
   document.getElementById('filter-status').addEventListener('change', function (e) {
     state.filterStatus = e.target.value;
     render();
   });
   document.getElementById('refresh-btn').addEventListener('click', loadLeads);
+
+  var extensionIdInput = document.getElementById('extension-id');
+  extensionIdInput.value = localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '';
+  extensionIdInput.addEventListener('input', function (e) {
+    localStorage.setItem(EXTENSION_ID_STORAGE_KEY, e.target.value.trim());
+  });
   document.getElementById('signout-btn').addEventListener('click', function () {
     var token = getCookie(COOKIE_NAME);
     var done = function () { clearCookieAndGoToLogin(); };

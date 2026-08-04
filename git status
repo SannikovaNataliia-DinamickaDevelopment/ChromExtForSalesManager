@@ -1,0 +1,12 @@
+warning: in the working copy of 'extension/entrypoints/content.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'extension/entrypoints/sidepanel/App.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'extension/lib/backend.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'extension/lib/deepen.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'extension/wxt.config.ts', LF will be replaced by CRLF the next time Git touches it
+ CLAUDE.md                               | 54 [32m++++++++++++++++++++++++++++[m[31m--[m
+ extension/entrypoints/content.ts        | 56 [32m++++++++++++++++++++++++++[m[31m-----[m
+ extension/entrypoints/sidepanel/App.tsx | 59 [32m+++++++++++++++++++++++++++++++[m[31m--[m
+ extension/lib/backend.ts                |  2 [32m+[m[31m-[m
+ extension/lib/deepen.ts                 | 35 [32m++++++++++++[m[31m-------[m
+ extension/wxt.config.ts                 | 10 [32m+++[m[31m---[m
+ 6 files changed, 185 insertions(+), 31 deletions(-)
