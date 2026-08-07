@@ -1,0 +1,1 @@
+ALTER TABLE "job_leads" ADD COLUMN "deleted_at" timestamp with time zone;

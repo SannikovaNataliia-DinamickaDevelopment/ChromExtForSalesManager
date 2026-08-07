@@ -58,6 +58,10 @@ export const job_leads = pgTable(
     scraped_at: timestamp('scraped_at', { withTimezone: true }),
     created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // Soft delete (retention window, dashboard "Deleted Leads" page): null = active/visible
+    // everywhere. Every listing query must filter this out by default (see LeadsService).
+    // Permanent removal is a separate, later step — see lead-retention.ts's purge job.
+    deleted_at: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => ({
     // Global dedup (shared team lead base, decision log): one row per posting across

@@ -1,5 +1,6 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, getTableColumns, or } from 'drizzle-orm';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { and, desc, eq, getTableColumns, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
@@ -8,6 +9,7 @@ import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { GeminiClassifierService } from './gemini-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
+import { LEAD_RETENTION_DAYS } from './lead-retention';
 import { LeadStatus } from './lead-status';
 import { isObviouslyNonIt } from './non-it-keywords';
 
@@ -19,6 +21,8 @@ export type LeadSaveResult = {
 
 @Injectable()
 export class LeadsService {
+  private readonly logger = new Logger(LeadsService.name);
+
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(DESTINATION) private readonly destination: Destination,
@@ -27,8 +31,10 @@ export class LeadsService {
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
   // just their own. owner_user_id ("created_by") is joined in for display, never filtered on.
+  // Soft-deleted leads (deleted_at set) are excluded unconditionally — see findDeleted() for
+  // the one place they're still visible.
   async findAll(filters: { status?: string; site?: string }) {
-    const conditions = [];
+    const conditions = [isNull(job_leads.deleted_at)];
     if (filters.status) {
       conditions.push(eq(job_leads.status, filters.status as LeadStatus));
     }
@@ -36,16 +42,30 @@ export class LeadsService {
       conditions.push(eq(job_leads.source_site, filters.site));
     }
 
-    const query = this.db
+    return this.db
       .select({
         ...getTableColumns(job_leads),
         owner_email: users.email,
         owner_display_name: users.display_name,
       })
       .from(job_leads)
-      .leftJoin(users, eq(job_leads.owner_user_id, users.id));
+      .leftJoin(users, eq(job_leads.owner_user_id, users.id))
+      .where(and(...conditions));
+  }
 
-    return conditions.length ? query.where(and(...conditions)) : query;
+  // Dashboard's /dashboard/deleted page: the one listing that shows soft-deleted leads, most
+  // recently deleted first.
+  async findDeleted() {
+    return this.db
+      .select({
+        ...getTableColumns(job_leads),
+        owner_email: users.email,
+        owner_display_name: users.display_name,
+      })
+      .from(job_leads)
+      .leftJoin(users, eq(job_leads.owner_user_id, users.id))
+      .where(isNotNull(job_leads.deleted_at))
+      .orderBy(desc(job_leads.deleted_at));
   }
 
   /** POST /leads: DB write always happens; the destination push is separate and never loses the record (CLAUDE.md API). */
@@ -232,11 +252,69 @@ export class LeadsService {
     return updated;
   }
 
+  // Soft delete (any authenticated user, no owner check — same shared-lead-base rule as
+  // status). Idempotent: deleting an already-deleted lead just refreshes deleted_at.
+  async softDelete(id: string) {
+    const [updated] = await this.db
+      .update(job_leads)
+      .set({ deleted_at: new Date(), updated_at: new Date() })
+      .where(eq(job_leads.id, id))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    return updated;
+  }
+
+  // /dashboard/deleted's "Restore" action.
+  async restore(id: string) {
+    const [updated] = await this.db
+      .update(job_leads)
+      .set({ deleted_at: null, updated_at: new Date() })
+      .where(eq(job_leads.id, id))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    return updated;
+  }
+
+  // Hard delete — irreversible. Used both for /dashboard/deleted's "Delete permanently" action
+  // (on an already soft-deleted lead) and the documented DELETE /leads/:id API in general; it
+  // doesn't require deleted_at to be set first, matching plain REST-delete semantics.
   async remove(id: string) {
     const [deleted] = await this.db.delete(job_leads).where(eq(job_leads.id, id)).returning();
     if (!deleted) {
       throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
     }
     return deleted;
+  }
+
+  // Retention purge (CLAUDE.md-style decision log: soft delete first, hard-purge after
+  // LEAD_RETENTION_DAYS). Deliberately a single stateless query comparing the stored
+  // deleted_at against NOW() at call-time — no in-memory timer/countdown, so a backend
+  // restart can never reset, extend, or otherwise affect how much of the window has elapsed;
+  // whatever's actually expired gets purged the next time this runs, on whatever schedule.
+  async purgeExpiredDeleted(): Promise<number> {
+    const cutoff = new Date(Date.now() - LEAD_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const purged = await this.db
+      .delete(job_leads)
+      .where(and(isNotNull(job_leads.deleted_at), lt(job_leads.deleted_at, cutoff)))
+      .returning({ id: job_leads.id });
+    if (purged.length > 0) {
+      this.logger.log(`Purged ${purged.length} soft-deleted lead(s) past the ${LEAD_RETENTION_DAYS}-day retention window.`);
+    }
+    return purged.length;
+  }
+
+  // Scheduled trigger for the purge above. Daily is plenty for a low-volume local tool — the
+  // correctness of WHO gets purged never depends on how often this fires (see
+  // purgeExpiredDeleted's comment), only on wall-clock time versus the stored deleted_at, so a
+  // missed or delayed tick just means expired leads get caught on the next one, nothing lost.
+  // POST /leads/deleted/purge-now (LeadsController) runs the exact same method on demand, for
+  // verifying this works without waiting on the schedule or the retention window.
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleScheduledPurge(): Promise<void> {
+    await this.purgeExpiredDeleted();
   }
 }

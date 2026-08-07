@@ -29,6 +29,14 @@ export class LeadsController {
     return this.leadsService.findAll({ status, site });
   }
 
+  // /dashboard/deleted: the one listing that includes soft-deleted leads (findAll excludes
+  // them). Declared as a literal 'deleted' path, not a dynamic :id — no route-matching
+  // ambiguity with the :id-based routes below.
+  @Get('deleted')
+  async findDeleted() {
+    return this.leadsService.findDeleted();
+  }
+
   // Accepts a single lead or an array (CLAUDE.md: "POST /leads accepts a single lead OR an array for batch").
   @Post()
   async create(@CurrentUser() user: SessionPayload, @Body() body: unknown) {
@@ -93,8 +101,33 @@ export class LeadsController {
     return this.leadsService.classify(id);
   }
 
+  // Soft delete (dashboard "Delete" action in the detail panel). Any authenticated user, no
+  // owner check — same shared-lead-base rule as status.
+  @Patch(':id/delete')
+  async softDelete(@Param('id') id: string) {
+    return this.leadsService.softDelete(id);
+  }
+
+  // /dashboard/deleted's "Restore" action.
+  @Patch(':id/restore')
+  async restore(@Param('id') id: string) {
+    return this.leadsService.restore(id);
+  }
+
+  // Hard delete, irreversible — /dashboard/deleted's "Delete permanently" action. Also the
+  // pre-existing documented DELETE /leads/:id API, unchanged.
   @Delete(':id')
   async remove(@Param('id') id: string) {
     return this.leadsService.remove(id);
+  }
+
+  // Manual trigger for LeadsService's scheduled retention purge — lets you verify the purge
+  // logic works without waiting for the daily cron tick or the LEAD_RETENTION_DAYS window
+  // (backdate a test lead's deleted_at directly in Postgres, then call this and confirm the
+  // row is gone). Runs the exact same code path as the cron, not a separate implementation.
+  @Post('deleted/purge-now')
+  async purgeNow() {
+    const purged = await this.leadsService.purgeExpiredDeleted();
+    return { purged };
   }
 }

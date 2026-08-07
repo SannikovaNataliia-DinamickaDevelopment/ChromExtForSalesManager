@@ -291,6 +291,53 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text-secondary);
     line-height: 1.5;
   }
+  .delete-block {
+    margin-bottom: 20px;
+    padding: 12px;
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+    border-radius: 8px;
+  }
+  .delete-btn {
+    background: var(--error);
+    color: #1A1420;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .delete-btn:hover { opacity: 0.9; }
+  .delete-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+  .delete-status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--error);
+    line-height: 1.5;
+  }
+  .status-select {
+    background: var(--panel-alt);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 6px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .status-select:focus { outline: 1px solid var(--accent); }
+  .status-select.field-error { border-color: var(--error); outline: 1px solid var(--error); }
+  .deleted-link {
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+  }
+  .deleted-link:hover { border-color: var(--pink); color: var(--pink); }
   .detail-row {
     display: flex;
     gap: 12px;
@@ -331,6 +378,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       <label for="extension-id">Extension ID</label>
       <input type="text" id="extension-id" placeholder="see chrome://extensions" autocomplete="off" spellcheck="false">
     </span>
+    <a class="deleted-link" href="/dashboard/deleted">Deleted leads</a>
     <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
   </div>
   ${authErrorHtml}
@@ -464,6 +512,44 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function clearCookieAndGoToLogin() {
     document.cookie = COOKIE_NAME + '=; Max-Age=0; path=/';
     window.location.href = '/auth/login?for=dashboard';
+  }
+
+  // Shared helper for the row-level actions below (status change, soft delete) — loadLeads()
+  // keeps its own inline fetch chain unchanged (different error-rendering needs: a full-table
+  // "failed to load" state vs. a per-row failure), this is only for the smaller one-off writes.
+  function apiFetch(path, options) {
+    var token = getCookie(COOKIE_NAME);
+    if (!token) {
+      clearCookieAndGoToLogin();
+      return Promise.reject(new Error('Not signed in.'));
+    }
+    var opts = options || {};
+    opts.headers = opts.headers || {};
+    opts.headers['Authorization'] = 'Bearer ' + token;
+    return fetch(path, opts).then(function (res) {
+      if (res.status === 401) {
+        clearCookieAndGoToLogin();
+        throw new Error('Session expired.');
+      }
+      return res.json().catch(function () { return null; }).then(function (data) {
+        if (!res.ok) {
+          throw new Error((data && data.error && data.error.message) || ('Request failed (' + res.status + ')'));
+        }
+        return data;
+      });
+    });
+  }
+
+  function updateLeadStatus(id, status) {
+    return apiFetch('/leads/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: status }),
+    });
+  }
+
+  function softDeleteLead(id) {
+    return apiFetch('/leads/' + id + '/delete', { method: 'PATCH' });
   }
 
   function formatKyiv(value, dateOnly) {
@@ -666,6 +752,36 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return wrap;
   }
 
+  // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
+  // (any lead can be deleted, not just undetailed ones). No confirmation dialog: matches this
+  // page's existing single-click convention (Enrich, bulk enrich) and the delete is reversible
+  // for LEAD_RETENTION_DAYS via /dashboard/deleted's Restore action anyway.
+  function buildDeleteBlock(lead) {
+    var wrap = document.createElement('div');
+    wrap.className = 'delete-block';
+
+    var button = el('button', { className: 'delete-btn', type: 'button', text: 'Delete' });
+    var statusEl = el('div', { className: 'delete-status' });
+
+    button.addEventListener('click', function () {
+      button.disabled = true;
+      statusEl.textContent = '';
+      softDeleteLead(lead.id)
+        .then(function () {
+          closeSidebar();
+          loadLeads();
+        })
+        .catch(function (err) {
+          button.disabled = false;
+          statusEl.textContent = err.message;
+        });
+    });
+
+    wrap.appendChild(button);
+    wrap.appendChild(statusEl);
+    return wrap;
+  }
+
   // Extension messaging (background.ts's ENRICH_LEAD handler) — reuses the extension's own
   // DeepeningStrategy implementations; this page never talks to Techjobs/ITjobs/Wellfound or
   // Gemini directly. enrichingLeadIds plus the button's own disabled state double up as
@@ -747,6 +863,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (needsEnrich(lead)) {
       content.appendChild(buildEnrichBlock(lead));
     }
+    content.appendChild(buildDeleteBlock(lead));
 
     content.appendChild(buildDetailRow('Company', lead.company));
     content.appendChild(buildDetailRow('Website', lead.company_website, true));
@@ -796,6 +913,49 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
+  // Briefly outlines a field in --error and shows the failure as a native tooltip — used for
+  // row-level write failures (status change) where there's no dedicated message slot the way
+  // the sidebar's enrich/delete blocks have one.
+  function flashFieldError(fieldEl, message) {
+    fieldEl.title = message;
+    fieldEl.classList.add('field-error');
+    setTimeout(function () { fieldEl.classList.remove('field-error'); }, 2500);
+  }
+
+  // Inline status editor (FEATURE 1) — same status values/labels as the Status filter and the
+  // extension side panel's per-lead dropdown (STATUS_OPTIONS in lib/status-labels.ts), same
+  // "change fires an immediate PATCH, no save button" UX. Optimistic-ish: reverts to the prior
+  // value on failure rather than trusting the click.
+  function buildStatusTd(lead) {
+    var td = document.createElement('td');
+    var select = document.createElement('select');
+    select.className = 'status-select';
+    Object.keys(STATUS_LABELS).forEach(function (value) {
+      select.appendChild(el('option', { value: value, text: STATUS_LABELS[value] }));
+    });
+    select.value = lead.status;
+
+    select.addEventListener('click', function (e) { e.stopPropagation(); });
+    select.addEventListener('change', function () {
+      var next = select.value;
+      var previous = lead.status;
+      select.disabled = true;
+      updateLeadStatus(lead.id, next)
+        .then(function (updated) {
+          lead.status = updated.status;
+          select.disabled = false;
+        })
+        .catch(function (err) {
+          select.value = previous;
+          select.disabled = false;
+          flashFieldError(select, err.message);
+        });
+    });
+
+    td.appendChild(select);
+    return td;
+  }
+
   function buildRow(lead) {
     var tr = document.createElement('tr');
     tr.addEventListener('click', function () { openSidebar(lead); });
@@ -827,7 +987,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     tr.appendChild(buildLinkTd(lead.company_website, lead.company_website));
 
     tr.appendChild(el('td', { text: lead.location || '\\u2014' }));
-    tr.appendChild(el('td', { text: STATUS_LABELS[lead.status] || lead.status }));
+    tr.appendChild(buildStatusTd(lead));
     tr.appendChild(el('td', { text: lead.owner_display_name || lead.owner_email || '\\u2014' }));
     tr.appendChild(el('td', { text: formatKyiv(lead.scraped_at || lead.created_at, false) || '\\u2014' }));
 
