@@ -105,6 +105,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
 
   * { box-sizing: border-box; }
+  /* Page-level scroll fix: html/body are hard-capped to the viewport height and never
+     scroll themselves. .page is a flex column of exactly that height — header/stats/toolbar
+     size to their own content as normal flex items, and .table-wrap (flex: 1; min-height: 0)
+     absorbs whatever's left over and scrolls internally (its own overflow: auto, unchanged).
+     Replaces the old .table-wrap max-height: 76vh, which assumed one fixed viewport height
+     instead of adapting to whatever's actually available below the header on a given screen. */
+  html, body { height: 100%; overflow: hidden; }
   body {
     margin: 0;
     background: var(--bg);
@@ -113,7 +120,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 14px;
     line-height: 1.5;
   }
-  .page { max-width: 1800px; margin: 0 auto; padding: 24px 28px 60px; }
+  .page {
+    max-width: 1800px;
+    height: 100vh;
+    margin: 0 auto;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+  }
   .topbar {
     display: flex;
     align-items: center;
@@ -340,7 +354,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: auto;
-    max-height: 76vh;
+    flex: 1;
+    min-height: 0;
   }
   table { border-collapse: collapse; width: 100%; min-width: 980px; }
   thead th {

@@ -29,6 +29,11 @@ export function renderDeletedLeadsPage(): string {
     --error-bg: rgba(242, 85, 90, 0.15);
   }
   * { box-sizing: border-box; }
+  /* Same page-level scroll fix as the main dashboard (dashboard-page.ts) — see its comment
+     for the full rationale. html/body never scroll; .page is a flex column pinned to the
+     viewport height; .table-wrap (flex: 1; min-height: 0) takes whatever's left and scrolls
+     internally instead. */
+  html, body { height: 100%; overflow: hidden; }
   body {
     margin: 0;
     background: var(--bg);
@@ -37,7 +42,14 @@ export function renderDeletedLeadsPage(): string {
     font-size: 14px;
     line-height: 1.5;
   }
-  .page { max-width: 1100px; margin: 0 auto; padding: 24px 28px 60px; }
+  .page {
+    max-width: 1100px;
+    height: 100vh;
+    margin: 0 auto;
+    padding: 24px 28px;
+    display: flex;
+    flex-direction: column;
+  }
   .topbar {
     display: flex;
     align-items: center;
@@ -72,6 +84,8 @@ export function renderDeletedLeadsPage(): string {
     border: 1px solid var(--border);
     border-radius: 12px;
     overflow: auto;
+    flex: 1;
+    min-height: 0;
   }
   table { border-collapse: collapse; width: 100%; min-width: 760px; }
   thead th {
