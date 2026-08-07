@@ -43,6 +43,13 @@
       "when": 1786096916993,
       "tag": "0005_swift_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786099640532,
+      "tag": "0006_quick_luke_cage",
+      "breakpoints": true
     }
   ]
 }

@@ -128,10 +128,82 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     cursor: pointer;
   }
   .toolbar select:focus, .toolbar button.refresh:focus { outline: 1px solid var(--accent); }
+  .search-field input {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    width: 220px;
+  }
+  .search-field input:focus { outline: 1px solid var(--accent); }
   .count {
     color: var(--text-secondary);
     font-size: 12px;
     margin-left: auto;
+  }
+  .stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .stat-tile {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    min-width: 96px;
+  }
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.25;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-top: 2px;
+  }
+  .stat-group {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+  }
+  .stat-group-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 8px;
+  }
+  .stat-group-body {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .stat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+  }
+  .stat-chip-count {
+    font-weight: 700;
+    color: var(--pink);
   }
   .bulk-bar {
     display: flex;
@@ -382,7 +454,29 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
   </div>
   ${authErrorHtml}
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-label">Total leads</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-value" id="stat-new-today">—</div>
+      <div class="stat-label">New today</div>
+    </div>
+    <div class="stat-group">
+      <div class="stat-group-label">By source</div>
+      <div class="stat-group-body" id="stat-by-source"></div>
+    </div>
+    <div class="stat-group">
+      <div class="stat-group-label">By IT</div>
+      <div class="stat-group-body" id="stat-by-is-it"></div>
+    </div>
+  </div>
   <div class="toolbar">
+    <span class="search-field">
+      <label for="search-input">Search</label>
+      <input type="text" id="search-input" placeholder="Title or company…" autocomplete="off">
+    </span>
     <span>
       <label for="filter-is-it">IT filter</label>
       <select id="filter-is-it">
@@ -496,6 +590,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterStatus: 'all',
     filterSource: 'all',
     filterDetail: 'all',
+    search: '',
   };
 
   function getCookie(name) {
@@ -657,6 +752,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         var notDetailed = needsEnrich(lead);
         if (state.filterDetail === 'not_detailed' && !notDetailed) return false;
         if (state.filterDetail === 'detailed' && notDetailed) return false;
+      }
+      if (state.search) {
+        var q = state.search.toLowerCase();
+        var titleMatch = (lead.job_title || '').toLowerCase().indexOf(q) !== -1;
+        var companyMatch = (lead.company || '').toLowerCase().indexOf(q) !== -1;
+        if (!titleMatch && !companyMatch) return false;
       }
       return true;
     });
@@ -1074,7 +1175,54 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         var body = document.getElementById('table-body');
         body.innerHTML = '';
         body.appendChild(el('tr', {}, [el('td', { colspan: String(COLUMN_COUNT), className: 'empty-state', text: 'Failed to load leads: ' + err.message })]));
+      })
+      .then(loadStats);
+  }
+
+  var STAT_IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: 'Unprocessed' };
+
+  function buildStatChip(label, count) {
+    return el('span', { className: 'stat-chip' }, [
+      el('span', { text: label }),
+      el('span', { className: 'stat-chip-count', text: String(count) }),
+    ]);
+  }
+
+  // Stats strip (GET /leads/stats): global counts, computed server-side over ALL non-deleted
+  // leads regardless of whatever's currently filtered/searched on the table — a deliberately
+  // separate query from the table's own data, not a client-side count of getFiltered()/state.leads.
+  function renderStats(stats) {
+    document.getElementById('stat-total').textContent = String(stats.total);
+    document.getElementById('stat-new-today').textContent = String(stats.newToday);
+
+    var sourceBody = document.getElementById('stat-by-source');
+    sourceBody.innerHTML = '';
+    var sources = Object.keys(stats.bySource).sort();
+    if (sources.length === 0) {
+      sourceBody.appendChild(el('span', { className: 'stat-chip', text: 'No leads yet' }));
+    } else {
+      sources.forEach(function (source) {
+        sourceBody.appendChild(buildStatChip(source, stats.bySource[source]));
       });
+    }
+
+    var isItBody = document.getElementById('stat-by-is-it');
+    isItBody.innerHTML = '';
+    ['it', 'not_it', 'unprocessed'].forEach(function (key) {
+      isItBody.appendChild(buildStatChip(STAT_IS_IT_LABELS[key], stats.byIsIt[key] || 0));
+    });
+  }
+
+  // Runs after every loadLeads() (initial load, Refresh, and every action that already calls
+  // loadLeads() to refresh the table — status change, delete, restore, enrich) so the strip
+  // never goes stale without needing its own separate set of call sites. A failure here is
+  // non-fatal — the main table is the page's actual job, so it degrades quietly rather than
+  // blocking or erroring the rest of the page.
+  function loadStats() {
+    return apiFetch('/leads/stats').then(renderStats).catch(function () {
+      var strip = document.getElementById('stats-strip');
+      if (strip) strip.textContent = 'Stats unavailable.';
+    });
   }
 
   function buildBulkSummary(result) {
@@ -1189,6 +1337,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('filter-detail').addEventListener('change', function (e) {
     state.filterDetail = e.target.value;
     render();
+  });
+  var searchDebounceId = null;
+  document.getElementById('search-input').addEventListener('input', function (e) {
+    var value = e.target.value;
+    clearTimeout(searchDebounceId);
+    searchDebounceId = setTimeout(function () {
+      state.search = value.trim();
+      render();
+    }, 300);
   });
   document.getElementById('refresh-btn').addEventListener('click', loadLeads);
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);

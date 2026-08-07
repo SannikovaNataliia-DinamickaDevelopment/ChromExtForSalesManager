@@ -1,4 +1,5 @@
-import { pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, jsonb } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, jsonb } from 'drizzle-orm/pg-core';
 
 export const leadStatusEnum = pgEnum('lead_status', ['new', 'in_progress', 'done']);
 export const leadIsItEnum = pgEnum('lead_is_it', ['it', 'not_it', 'unprocessed']);
@@ -72,5 +73,15 @@ export const job_leads = pgTable(
       table.external_job_id,
     ),
     source_url_unique: uniqueIndex('job_leads_source_url_idx').on(table.source_url),
+    // Dashboard stats strip's "new today" range query (LeadsService.getStats) filters
+    // scraped_at over almost-always-non-deleted rows — a partial index scoped to that (the
+    // overwhelmingly common case) keeps the range scan cheap as the table grows, without
+    // paying index-maintenance cost for the rare soft-deleted rows. The stats strip's other
+    // three counts (total, by source, by IT) inherently touch nearly every non-deleted row
+    // no matter what — an index can't turn "count almost all of them" into anything cheaper
+    // than a scan, so it isn't worth indexing those individually at this table's scale.
+    scraped_at_active_idx: index('job_leads_scraped_at_active_idx')
+      .on(table.scraped_at)
+      .where(sql`${table.deleted_at} is null`),
   }),
 );

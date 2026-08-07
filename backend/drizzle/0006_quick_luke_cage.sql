@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "job_leads_scraped_at_active_idx" ON "job_leads" USING btree ("scraped_at") WHERE "job_leads"."deleted_at" is null;

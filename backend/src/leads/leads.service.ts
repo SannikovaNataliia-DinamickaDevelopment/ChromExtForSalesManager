@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, desc, eq, getTableColumns, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gte, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
@@ -66,6 +67,53 @@ export class LeadsService {
       .leftJoin(users, eq(job_leads.owner_user_id, users.id))
       .where(isNotNull(job_leads.deleted_at))
       .orderBy(desc(job_leads.deleted_at));
+  }
+
+  // Dashboard stats strip: global counts, always over ALL non-deleted leads regardless of
+  // whatever filters/search are applied to the table below (CLAUDE.md-style decision:
+  // "here's everything we have", not "here's what's currently filtered"). Four small
+  // aggregate queries rather than fetching every row to count client-side — see the
+  // find-deleted service method above for how leads.length would otherwise be shaped; that
+  // approach doesn't scale the way COUNT/GROUP BY does as the table grows.
+  async getStats() {
+    const notDeleted = isNull(job_leads.deleted_at);
+    const countExpr = sql<number>`count(*)::int`;
+
+    const [[totalRow], [newTodayRow], bySourceRows, byIsItRows] = await Promise.all([
+      this.db.select({ count: countExpr }).from(job_leads).where(notDeleted),
+      (() => {
+        const { start, end } = getKyivTodayUtcRange();
+        return this.db
+          .select({ count: countExpr })
+          .from(job_leads)
+          .where(and(notDeleted, gte(job_leads.scraped_at, start), lt(job_leads.scraped_at, end)));
+      })(),
+      this.db
+        .select({ source_site: job_leads.source_site, count: countExpr })
+        .from(job_leads)
+        .where(notDeleted)
+        .groupBy(job_leads.source_site),
+      this.db
+        .select({ is_it: job_leads.is_it, count: countExpr })
+        .from(job_leads)
+        .where(notDeleted)
+        .groupBy(job_leads.is_it),
+    ]);
+
+    const bySource: Record<string, number> = {};
+    for (const row of bySourceRows) bySource[row.source_site] = row.count;
+
+    // Zero-fill every known is_it value so the UI never has to guess whether a missing key
+    // means "zero" or "not loaded yet".
+    const byIsIt: Record<LeadIsIt, number> = { it: 0, not_it: 0, unprocessed: 0 };
+    for (const row of byIsItRows) byIsIt[row.is_it as LeadIsIt] = row.count;
+
+    return {
+      total: totalRow?.count ?? 0,
+      newToday: newTodayRow?.count ?? 0,
+      bySource,
+      byIsIt,
+    };
   }
 
   /** POST /leads: DB write always happens; the destination push is separate and never loses the record (CLAUDE.md API). */

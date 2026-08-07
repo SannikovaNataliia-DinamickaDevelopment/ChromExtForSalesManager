@@ -37,6 +37,14 @@ export class LeadsController {
     return this.leadsService.findDeleted();
   }
 
+  // Dashboard stats strip: global counts (total, new today, by source, by IT) — always over
+  // ALL non-deleted leads, independent of whatever filters/search are applied to the table.
+  // Literal 'stats' path, same non-ambiguity reasoning as 'deleted' above.
+  @Get('stats')
+  async stats() {
+    return this.leadsService.getStats();
+  }
+
   // Accepts a single lead or an array (CLAUDE.md: "POST /leads accepts a single lead OR an array for batch").
   @Post()
   async create(@CurrentUser() user: SessionPayload, @Body() body: unknown) {
