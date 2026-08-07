@@ -18,6 +18,21 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Leads Dashboard</title>
+<script>
+// Runs synchronously before first paint (plain web page, so localStorage — not
+// chrome.storage, which isn't available here — see the theme-toggle wiring at the bottom of
+// this page for the counterpart that writes this key). Sets the data-theme attribute the
+// :root[data-theme='light'] CSS below keys off of, before any CSS has had a chance to paint
+// the (dark) default — this is what avoids a flash of the wrong theme on reload. No stored
+// value means first-time visitor: falls through to the unqualified :root block, which is
+// dark, matching this dashboard's default.
+(function () {
+  try {
+    var stored = localStorage.getItem('sm_dashboard_theme');
+    if (stored === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch (e) {}
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -38,7 +53,56 @@ export function renderDashboardPage(opts: { authError?: string }): string {
        one product, one error color. ~5:1 contrast against --bg/--panel, passes WCAG AA. */
     --error: #F2555A;
     --error-bg: rgba(242, 85, 90, 0.15);
+    /* Readable text color for anything using --error as a background (.delete-btn) — needs
+       its own per-theme value because, unlike --pink, --error isn't roughly the same
+       lightness in both themes (bright coral here, a darker saturated red in light mode
+       below), so a single hardcoded text color can't stay legible against both. */
+    --on-error: #1A1420;
+    /* Readable text/icon color for anything using --pink (a constant across themes) as a
+       background — the theme toggle's thumb, and the same role the side panel's --on-accent
+       plays for its own pink-background buttons/badges. Constant for the same reason --pink
+       itself is constant. */
+    --on-accent: #1A1420;
+    /* Accent-tinted backgrounds (table row hover, source badge, sidebar enrich block) were
+       previously hardcoded rgba() literals baked from this theme's --accent/--accent-2 RGB —
+       harmless while only dark mode existed, but wrong once --accent changes value in light
+       mode below. Tokenized so both themes stay correct. */
+    --accent-tint-weak: rgba(167, 139, 196, 0.1);
+    --accent-tint: rgba(167, 139, 196, 0.16);
+    --accent-2-tint: rgba(139, 123, 184, 0.1);
+    /* Same fix, for the neutral (not-IT badge) tint — was hardcoded from --text-secondary's
+       dark-mode RGB. Same name/values as the side panel's --chip-bg-neutral
+       (extension/entrypoints/sidepanel/style.css) — same visual role, same token. */
+    --chip-bg-neutral: rgba(217, 214, 222, 0.12);
   }
+
+  /* Light theme — values pulled verbatim from the side panel's :root[data-theme='light']
+     block (extension/entrypoints/sidepanel/style.css), which was itself derived from this
+     dashboard's original dark-only palette above. Copied back here rather than re-derived so
+     the two surfaces show numerically identical colors, not just visually similar ones.
+     --pink stays identical in both themes (only ever a filled-button/badge background, never
+     text-on-background, so no contrast-driven light variant is needed) — same reasoning as
+     the side panel. */
+  :root[data-theme='light'] {
+    --bg: #FAF8FC;
+    --panel: #FFFFFF;
+    --panel-alt: #F1EAF6;
+    --accent: #6B4A8C;
+    --accent-2: #5A3F78;
+    --pink: #C97FB0;
+    --text: #241B2D;
+    --text-secondary: #5B4E68;
+    --border: rgba(107, 74, 140, 0.2);
+    --error: #C42B3F;
+    --error-bg: rgba(196, 43, 63, 0.12);
+    --on-error: #FFFFFF;
+    --on-accent: #1A1420;
+    --accent-tint-weak: rgba(107, 74, 140, 0.1);
+    --accent-tint: rgba(107, 74, 140, 0.16);
+    --accent-2-tint: rgba(90, 63, 120, 0.1);
+    --chip-bg-neutral: rgba(91, 78, 104, 0.10);
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -97,6 +161,42 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     width: 220px;
   }
   .ext-id-field input:focus { outline: 1px solid var(--accent); }
+  /* Same moon/sun pattern as the side panel (extension/entrypoints/sidepanel/style.css) —
+     identical markup/classes/pixel values, just built via a raw HTML string here instead of
+     JSX. Sits in the topbar's right-aligned cluster, after .ext-id-field's margin-left:auto. */
+  .theme-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+  }
+  .theme-toggle-track {
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    transition: background 0.2s ease;
+  }
+  .theme-toggle-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--pink);
+    color: var(--on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: translateX(0);
+    transition: transform 0.2s ease;
+  }
+  .theme-toggle-track.light .theme-toggle-thumb { transform: translateX(16px); }
   .auth-error {
     background: var(--error-bg);
     border: 1px solid var(--error);
@@ -266,7 +366,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text-secondary);
   }
   tbody tr { cursor: pointer; }
-  tbody tr:hover { background: rgba(167, 139, 196, 0.1); }
+  tbody tr:hover { background: var(--accent-tint-weak); }
   tbody tr:hover td { color: var(--text); }
   tbody tr:last-child td { border-bottom: none; }
   td.title-cell { color: var(--text); font-weight: 500; }
@@ -280,8 +380,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-weight: 500;
   }
   .badge.it { background: rgba(201, 127, 176, 0.22); color: var(--pink); }
-  .badge.not_it { background: rgba(217, 214, 222, 0.12); color: var(--text-secondary); }
-  .badge.source { background: rgba(167, 139, 196, 0.16); color: var(--accent); text-transform: uppercase; }
+  .badge.not_it { background: var(--chip-bg-neutral); color: var(--text-secondary); }
+  .badge.source { background: var(--accent-tint); color: var(--accent); text-transform: uppercase; }
   .empty-state, .loading-state {
     padding: 40px;
     text-align: center;
@@ -340,7 +440,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   .enrich-block {
     margin-bottom: 20px;
     padding: 12px;
-    background: rgba(139, 123, 182, 0.1);
+    background: var(--accent-2-tint);
     border: 1px solid var(--border);
     border-radius: 8px;
   }
@@ -372,7 +472,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
   .delete-btn {
     background: var(--error);
-    color: #1A1420;
+    color: var(--on-error);
     border: none;
     border-radius: 8px;
     padding: 7px 16px;
@@ -450,6 +550,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       <label for="extension-id">Extension ID</label>
       <input type="text" id="extension-id" placeholder="see chrome://extensions" autocomplete="off" spellcheck="false">
     </span>
+    <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to light mode" title="Switch to light mode">
+      <span class="theme-toggle-track dark" id="theme-toggle-track">
+        <span class="theme-toggle-thumb" id="theme-toggle-thumb">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" /></svg>
+        </span>
+      </span>
+    </button>
     <a class="deleted-link" href="/dashboard/deleted">Deleted leads</a>
     <button class="signout-btn" id="signout-btn" type="button">Sign out</button>
   </div>
@@ -544,6 +651,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // (chrome://extensions), so this can't be hardcoded — the manager pastes it in once and
   // it's remembered in this browser.
   var EXTENSION_ID_STORAGE_KEY = 'sm_extension_id';
+  // Plain web page, not an extension context — chrome.storage isn't available here, so
+  // localStorage (matches the pattern EXTENSION_ID_STORAGE_KEY already uses above). Read
+  // synchronously by the inline <head> script (before first paint, to avoid a theme flash on
+  // reload) and written here on toggle click; independent of the side panel's own 'sm_theme'
+  // chrome.storage.local key — the two surfaces don't sync.
+  var THEME_STORAGE_KEY = 'sm_dashboard_theme';
   // Safety net only — a real "not installed/not reachable" failure surfaces via
   // chrome.runtime.lastError almost immediately, not via this timeout. This just guards
   // against the callback never firing at all (worst case: nav timeout 30s + settle 1s +
@@ -1322,6 +1435,33 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
   }
 
+  // Light/dark toggle. The DOM attribute (set by the inline <head> script before first paint,
+  // or defaulted to absent = dark) is the single source of truth — read from it rather than
+  // tracking a separate JS variable that could drift out of sync with what's actually painted.
+  var SUN_ICON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>';
+  var MOON_ICON_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" /></svg>';
+
+  function getCurrentTheme() {
+    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  }
+
+  function renderThemeToggle() {
+    var theme = getCurrentTheme();
+    var isLight = theme === 'light';
+    document.getElementById('theme-toggle-track').className = 'theme-toggle-track ' + theme;
+    document.getElementById('theme-toggle-thumb').innerHTML = isLight ? SUN_ICON_SVG : MOON_ICON_SVG;
+    var label = isLight ? 'Switch to dark mode' : 'Switch to light mode';
+    var btn = document.getElementById('theme-toggle');
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('title', label);
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch (e) {}
+    renderThemeToggle();
+  }
+
   document.getElementById('filter-is-it').addEventListener('change', function (e) {
     state.filterIsIt = e.target.value;
     render();
@@ -1355,6 +1495,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   extensionIdInput.addEventListener('input', function (e) {
     localStorage.setItem(EXTENSION_ID_STORAGE_KEY, e.target.value.trim());
   });
+  document.getElementById('theme-toggle').addEventListener('click', function () {
+    applyTheme(getCurrentTheme() === 'light' ? 'dark' : 'light');
+  });
+  // Syncs the toggle's own icon/track with whatever the inline <head> script already decided
+  // (or the dark default) — the page-wide colors are already correct at this point via CSS,
+  // this is only bringing the toggle widget itself in line.
+  renderThemeToggle();
   document.getElementById('signout-btn').addEventListener('click', function () {
     var token = getCookie(COOKIE_NAME);
     var done = function () { clearCookieAndGoToLogin(); };
