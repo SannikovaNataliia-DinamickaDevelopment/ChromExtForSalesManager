@@ -2,7 +2,15 @@ import { deepenLead } from '../lib/api';
 import { getToken } from '../lib/auth';
 import { BACKEND_URL, isSupportedUrl } from '../lib/backend';
 import { FetchDeepening } from '../lib/deepen';
-import { deepenWellfoundLeads } from '../lib/wellfound-deepen';
+import { deepenWellfoundLeads, WELLFOUND_RUN_CAP } from '../lib/wellfound-deepen';
+
+const BULK_ENRICH_PORT_NAME = 'enrich-bulk';
+
+// Guards against two overlapping bulk runs (two dashboard tabs/windows, or a double-click that
+// slipped past the UI's own disabled state) — the service worker is a single shared process, so
+// a module-level flag is enough; a second connection is rejected outright rather than queued or
+// interleaved with the first run's Wellfound circuit breaker/window.
+let bulkEnrichInFlight = false;
 
 // Coordinator (CLAUDE.md phase 1): resolves the active tab, asks its content
 // script to parse the current list page, then forwards the batch to the
@@ -44,6 +52,47 @@ export default defineBackground(() => {
       .then(sendResponse)
       .catch((err) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
     return true;
+  });
+
+  // Dashboard bulk "Enrich selected" — same externally_connectable channel as the single-lead
+  // ENRICH_LEAD message above, but a long-lived Port instead of one-shot sendMessage, since
+  // this needs to stream progress back over a run that can take minutes (Wellfound leads).
+  // Reuses the exact same FetchDeepening/deepenWellfoundLeads as enrichLead() and the batch
+  // "auto by all" flow — grouped by source, never a second Wellfound implementation.
+  chrome.runtime.onConnectExternal.addListener((port) => {
+    if (port.name !== BULK_ENRICH_PORT_NAME) return;
+
+    port.onMessage.addListener((message) => {
+      if (message?.type !== 'ENRICH_LEADS') return;
+
+      const send = (msg: unknown) => {
+        try {
+          port.postMessage(msg);
+        } catch {
+          // Port already disconnected (dashboard tab closed/navigated away) — the run below
+          // still finishes and writes to the backend, there's just no one left to tell.
+        }
+      };
+
+      if (bulkEnrichInFlight) {
+        send({ type: 'DONE', ok: false, error: 'A bulk enrich run is already in progress. Wait for it to finish and try again.' });
+        port.disconnect();
+        return;
+      }
+
+      bulkEnrichInFlight = true;
+      enrichLeadsBulk(message.leads, (progress) => send({ type: 'PROGRESS', ...progress }))
+        .then((result) => send({ type: 'DONE', ...result }))
+        .catch((err) => send({ type: 'DONE', ok: false, error: err instanceof Error ? err.message : String(err) }))
+        .finally(() => {
+          bulkEnrichInFlight = false;
+          try {
+            port.disconnect();
+          } catch {
+            // Already gone.
+          }
+        });
+    });
   });
 });
 
@@ -154,4 +203,111 @@ async function enrichLead(message: EnrichLeadMessage) {
     ...(detail.published_at ? { published_at: detail.published_at } : {}),
   });
   return { ok: true as const };
+}
+
+interface BulkEnrichLeadInput {
+  leadId: string;
+  sourceSite: string;
+  sourceUrl: string;
+}
+
+function normalizeBulkLeads(raw: unknown): BulkEnrichLeadInput[] {
+  if (!Array.isArray(raw)) return [];
+  const out: BulkEnrichLeadInput[] = [];
+  for (const rawItem of raw) {
+    const item = rawItem as { leadId?: unknown; sourceSite?: unknown; sourceUrl?: unknown } | null;
+    const leadId = typeof item?.leadId === 'string' ? item.leadId : '';
+    const sourceSite = typeof item?.sourceSite === 'string' ? item.sourceSite : '';
+    const sourceUrl = typeof item?.sourceUrl === 'string' ? item.sourceUrl : '';
+    if (leadId && sourceUrl) out.push({ leadId, sourceSite, sourceUrl });
+  }
+  return out;
+}
+
+interface BulkEnrichProgress {
+  completed: number;
+  total: number;
+}
+
+interface BulkEnrichResult {
+  ok: true;
+  succeeded: number;
+  failed: number;
+  // Never attempted this run, for two distinct reasons the dashboard reports separately:
+  // over WELLFOUND_RUN_CAP vs. the circuit breaker tripping partway through the capped batch.
+  skippedCapLeadIds: string[];
+  skippedCircuitBreakerLeadIds: string[];
+}
+
+// Dashboard bulk "Enrich selected" (ENRICH_LEADS, plural — distinct from the single-lead
+// ENRICH_LEAD handler above). Groups by sourceSite and reuses the exact same per-source
+// deepening the single-lead path and the batch "auto by all" flow use: FetchDeepening for
+// Techjobs/ITjobs (fast, no pacing needed for this button), and deepenWellfoundLeads() for
+// Wellfound — its own human-pace delay, run cap, and circuit breaker are all reused unchanged,
+// never a second Wellfound implementation.
+async function enrichLeadsBulk(
+  rawLeads: unknown,
+  onProgress: (progress: BulkEnrichProgress) => void,
+): Promise<BulkEnrichResult> {
+  const leads = normalizeBulkLeads(rawLeads);
+
+  const token = await getToken();
+  if (!token) {
+    throw new Error('Not signed in to the extension.');
+  }
+
+  const wellfoundLeads = leads.filter((l) => l.sourceSite === 'wellfound');
+  const otherLeads = leads.filter((l) => l.sourceSite !== 'wellfound');
+
+  const wellfoundCapped = wellfoundLeads.slice(0, WELLFOUND_RUN_CAP);
+  const skippedCapLeadIds = wellfoundLeads.slice(WELLFOUND_RUN_CAP).map((l) => l.leadId);
+
+  const total = otherLeads.length + wellfoundCapped.length;
+  let completed = 0;
+  let succeeded = 0;
+  let failed = 0;
+
+  // Techjobs/ITjobs: sequential FetchDeepening calls, same as enrichLead() at n=1 — no
+  // between-lead delay (CLAUDE.md's human-pace requirement is for the anti-ban detail-page
+  // walk in the auto-deepen flow, not this on-demand fetch path).
+  const strategy = new FetchDeepening();
+  for (const lead of otherLeads) {
+    try {
+      const detail = await strategy.deepenOne({ id: lead.leadId, source_url: lead.sourceUrl });
+      if (detail) {
+        await deepenLead(lead.leadId, {
+          description: detail.description,
+          company: detail.company,
+          company_website: detail.company_website,
+          ...(detail.published_at ? { published_at: detail.published_at } : {}),
+        });
+        succeeded++;
+      } else {
+        failed++;
+      }
+    } catch {
+      // Swallow: one bad detail page must not abort the rest of the batch (NFR-12/13).
+      failed++;
+    }
+    completed++;
+    onProgress({ completed, total });
+  }
+
+  let skippedCircuitBreakerLeadIds: string[] = [];
+  if (wellfoundCapped.length > 0) {
+    const result = await deepenWellfoundLeads(
+      wellfoundCapped.map((l) => ({ id: l.leadId, source_url: l.sourceUrl })),
+      (progress) => onProgress({ completed: completed + progress.current, total }),
+    );
+    completed += result.processed;
+    succeeded += result.succeeded;
+    failed += result.processed - result.succeeded;
+    if (result.stoppedEarly) {
+      // The circuit breaker stopped before reaching the end of the capped batch — the
+      // untried tail was never attempted, so it's a skip, not a failure.
+      skippedCircuitBreakerLeadIds = wellfoundCapped.slice(result.processed).map((l) => l.leadId);
+    }
+  }
+
+  return { ok: true, succeeded, failed, skippedCapLeadIds, skippedCircuitBreakerLeadIds };
 }

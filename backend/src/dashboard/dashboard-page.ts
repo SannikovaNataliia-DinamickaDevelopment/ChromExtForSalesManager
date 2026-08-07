@@ -32,6 +32,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     --text: #FFFFFF;
     --text-secondary: #D9D6DE;
     --border: rgba(167, 139, 196, 0.25);
+    /* Dedicated danger/error red, distinct from --pink (used elsewhere for normal brand UI —
+       buttons, badges, hover states — so it doesn't read as "error" on its own). Same value
+       as the side panel's dark-mode --error (extension/entrypoints/sidepanel/style.css) —
+       one product, one error color. ~5:1 contrast against --bg/--panel, passes WCAG AA. */
+    --error: #F2555A;
+    --error-bg: rgba(242, 85, 90, 0.15);
   }
   * { box-sizing: border-box; }
   body {
@@ -92,9 +98,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
   .ext-id-field input:focus { outline: 1px solid var(--accent); }
   .auth-error {
-    background: rgba(201, 127, 176, 0.15);
-    border: 1px solid var(--pink);
-    color: var(--text);
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+    color: var(--error);
     padding: 10px 14px;
     border-radius: 8px;
     margin-bottom: 16px;
@@ -127,6 +133,34 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 12px;
     margin-left: auto;
   }
+  .bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: rgba(201, 127, 176, 0.12);
+    border: 1px solid var(--pink);
+    border-radius: 10px;
+  }
+  .bulk-bar[hidden] { display: none; }
+  .bulk-bar .bulk-count { color: var(--text); font-size: 13px; font-weight: 500; }
+  .bulk-bar button {
+    background: var(--pink);
+    color: #1A1420;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .bulk-bar button:disabled { cursor: not-allowed; opacity: 0.6; }
+  .bulk-bar .bulk-status { color: var(--text-secondary); font-size: 12px; }
+  td.checkbox-cell, th.checkbox-cell { width: 34px; text-align: center; padding-left: 14px; padding-right: 4px; }
+  td.checkbox-cell input, th.checkbox-cell input { cursor: pointer; }
+  td.checkbox-cell input:disabled, th.checkbox-cell input:disabled { cursor: not-allowed; }
   .table-wrap {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -325,8 +359,21 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="done">опрацьований</option>
       </select>
     </span>
+    <span>
+      <label for="filter-detail">Detail</label>
+      <select id="filter-detail">
+        <option value="all">All</option>
+        <option value="not_detailed">Not detailed</option>
+        <option value="detailed">Detailed</option>
+      </select>
+    </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
     <span class="count" id="count"></span>
+  </div>
+  <div class="bulk-bar" id="bulk-bar" hidden>
+    <span class="bulk-count" id="bulk-count"></span>
+    <button id="bulk-enrich-btn" type="button">Enrich selected</button>
+    <span class="bulk-status" id="bulk-status"></span>
   </div>
   <div class="table-wrap">
     <table>
@@ -349,7 +396,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var COOKIE_NAME = 'sm_dashboard_session';
   var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
   var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
-  var COLUMN_COUNT = 11;
+  var COLUMN_COUNT = 12; // 11 data columns + the leading checkbox column
   // "Enrich" button (extension-side deepening triggered from this page — see background.ts's
   // ENRICH_LEAD handler). Each dev/browser loads the extension with its own id
   // (chrome://extensions), so this can't be hardcoded — the manager pastes it in once and
@@ -365,6 +412,19 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // reopened for the same lead while a request is still in flight.
   var enrichingLeadIds = {};
   var currentSidebarLeadId = null;
+
+  // Bulk "Enrich selected" (extension messaging over a long-lived Port — see background.ts's
+  // ENRICH_LEADS handler, chrome.runtime.onConnectExternal). A Port, not one-shot sendMessage
+  // like the single-lead ENRICH_LEAD button, because a bulk run streams progress back over what
+  // can be minutes of Wellfound tab-deepening.
+  var BULK_ENRICH_PORT_NAME = 'enrich-bulk';
+  var bulkState = {
+    selected: {}, // leadId -> true
+    inFlight: false,
+    completed: 0,
+    total: 0,
+    status: '',
+  };
 
   var COLUMNS = [
     { key: 'published_at', label: 'Published' },
@@ -387,6 +447,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterIsIt: 'all',
     filterStatus: 'all',
     filterSource: 'all',
+    filterDetail: 'all',
   };
 
   function getCookie(name) {
@@ -441,9 +502,35 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return node;
   }
 
+  // Header "select all currently filtered" checkbox — scoped to the not-detailed rows in the
+  // current filter, same set clicking each row checkbox individually would reach.
+  function buildSelectAllTh() {
+    var th = document.createElement('th');
+    th.className = 'checkbox-cell';
+    var checkable = getCheckableFiltered();
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.disabled = bulkState.inFlight || checkable.length === 0;
+    var selectedCount = checkable.filter(function (l) { return bulkState.selected[l.id]; }).length;
+    checkbox.checked = checkable.length > 0 && selectedCount === checkable.length;
+    checkbox.indeterminate = selectedCount > 0 && selectedCount < checkable.length;
+    checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+    checkbox.addEventListener('change', function () {
+      checkable.forEach(function (l) {
+        if (checkbox.checked) bulkState.selected[l.id] = true;
+        else delete bulkState.selected[l.id];
+      });
+      bulkState.status = '';
+      render();
+    });
+    th.appendChild(checkbox);
+    return th;
+  }
+
   function renderHeader() {
     var row = document.getElementById('header-row');
     row.innerHTML = '';
+    row.appendChild(buildSelectAllTh());
     COLUMNS.forEach(function (col) {
       var th = document.createElement('th');
       th.textContent = col.label;
@@ -480,8 +567,28 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       if (state.filterIsIt !== 'all' && lead.is_it !== state.filterIsIt) return false;
       if (state.filterStatus !== 'all' && lead.status !== state.filterStatus) return false;
       if (state.filterSource !== 'all' && lead.source_site !== state.filterSource) return false;
+      if (state.filterDetail !== 'all') {
+        var notDetailed = needsEnrich(lead);
+        if (state.filterDetail === 'not_detailed' && !notDetailed) return false;
+        if (state.filterDetail === 'detailed' && notDetailed) return false;
+      }
       return true;
     });
+  }
+
+  // Rows eligible for bulk selection — same "not detailed" definition the single-lead Enrich
+  // button and the Detail filter both use (needsEnrich), scoped to whatever's currently
+  // filtered/visible so "select all" never grabs a hidden row.
+  function getCheckableFiltered() {
+    return getFiltered().filter(needsEnrich);
+  }
+
+  function clearSelection() {
+    bulkState.selected = {};
+  }
+
+  function selectedCount() {
+    return Object.keys(bulkState.selected).length;
   }
 
   // Source options aren't a fixed enum like IT/Status (new sources get added over time — see
@@ -666,10 +773,34 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     document.getElementById('backdrop').classList.remove('open');
   }
 
+  // Bulk-select checkbox — rendered only for rows matching the same "not detailed" definition
+  // as the single-lead Enrich button (needsEnrich); a lead that already has description +
+  // company_website has nothing this checkbox would add, so its cell stays empty.
+  function buildCheckboxTd(lead) {
+    var td = document.createElement('td');
+    td.className = 'checkbox-cell';
+    if (!needsEnrich(lead)) return td;
+
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.disabled = bulkState.inFlight;
+    checkbox.checked = !!bulkState.selected[lead.id];
+    checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+    checkbox.addEventListener('change', function () {
+      if (checkbox.checked) bulkState.selected[lead.id] = true;
+      else delete bulkState.selected[lead.id];
+      bulkState.status = '';
+      render();
+    });
+    td.appendChild(checkbox);
+    return td;
+  }
+
   function buildRow(lead) {
     var tr = document.createElement('tr');
     tr.addEventListener('click', function () { openSidebar(lead); });
 
+    tr.appendChild(buildCheckboxTd(lead));
     tr.appendChild(el('td', { text: formatKyiv(lead.published_at, true) || '\\u2014' }));
 
     var sourceTd = document.createElement('td');
@@ -703,7 +834,41 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return tr;
   }
 
+  // Drops selections for leads that no longer qualify (freshly enriched elsewhere, deleted,
+  // or gone after a reload) — keeps them across filter/sort changes otherwise, since those
+  // don't change what's actually selected, only what's currently visible.
+  function pruneSelection() {
+    var stillCheckable = {};
+    state.leads.forEach(function (lead) { if (needsEnrich(lead)) stillCheckable[lead.id] = true; });
+    Object.keys(bulkState.selected).forEach(function (id) {
+      if (!stillCheckable[id]) delete bulkState.selected[id];
+    });
+  }
+
+  function renderBulkBar() {
+    var bar = document.getElementById('bulk-bar');
+    var count = selectedCount();
+
+    if (count === 0 && !bulkState.inFlight && !bulkState.status) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+
+    var countEl = document.getElementById('bulk-count');
+    var button = document.getElementById('bulk-enrich-btn');
+    var statusEl = document.getElementById('bulk-status');
+
+    countEl.textContent = bulkState.inFlight
+      ? 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026'
+      : count + ' selected';
+    button.textContent = 'Enrich selected (' + count + ')';
+    button.disabled = bulkState.inFlight || count === 0;
+    statusEl.textContent = bulkState.status;
+  }
+
   function render() {
+    pruneSelection();
     renderHeader();
     var filtered = getFiltered().slice();
     filtered.sort(function (a, b) {
@@ -723,6 +888,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
 
     document.getElementById('count').textContent = filtered.length + ' of ' + state.leads.length + ' leads';
+    renderBulkBar();
   }
 
   // Returns the fetch chain (not just fired-and-forgotten) so callers that need to act on
@@ -751,6 +917,103 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  function buildBulkSummary(result) {
+    if (!result || !result.ok) {
+      return (result && result.error) || 'Bulk enrich failed.';
+    }
+    var parts = [result.succeeded + ' succeeded'];
+    if (result.failed) parts.push(result.failed + ' failed');
+    var capSkipped = (result.skippedCapLeadIds || []).length;
+    var breakerSkipped = (result.skippedCircuitBreakerLeadIds || []).length;
+    if (capSkipped + breakerSkipped > 0) {
+      var reasons = [];
+      if (capSkipped) reasons.push('run cap reached');
+      if (breakerSkipped) reasons.push('repeated Wellfound failures, stopped early');
+      parts.push((capSkipped + breakerSkipped) + ' skipped \\u2014 ' + reasons.join('; '));
+    }
+    return parts.join(', ');
+  }
+
+  // Bulk "Enrich selected" — background.ts's ENRICH_LEADS handler (chrome.runtime.onConnectExternal,
+  // BULK_ENRICH_PORT_NAME), a long-lived Port rather than one-shot sendMessage so the run (which
+  // can take minutes for Wellfound leads) can stream PROGRESS back before the final DONE. Reuses
+  // the same extension-id lookup and "not reachable" fallback text as the single-lead startEnrich().
+  function startBulkEnrich() {
+    if (bulkState.inFlight) return;
+
+    var targets = getCheckableFiltered()
+      .filter(function (l) { return bulkState.selected[l.id]; })
+      .map(function (l) { return { leadId: l.id, sourceSite: l.source_site, sourceUrl: l.source_url }; });
+    if (targets.length === 0) return;
+
+    var extId = (localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '').trim();
+    if (!extId) {
+      bulkState.status = 'Set the Extension ID above first (see chrome://extensions), then try again.';
+      render();
+      return;
+    }
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.connect) {
+      bulkState.status = 'Install or open the Sales Manager extension in this browser to enrich leads.';
+      render();
+      return;
+    }
+
+    bulkState.inFlight = true;
+    bulkState.completed = 0;
+    bulkState.total = targets.length;
+    bulkState.status = '';
+    render();
+
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      finish({ ok: false, error: 'Timed out waiting for the extension — it may still be working in the background. Try Refresh shortly.' });
+    }, Math.max(ENRICH_TIMEOUT_MS, ENRICH_TIMEOUT_MS * targets.length));
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      bulkState.inFlight = false;
+      bulkState.status = buildBulkSummary(result);
+      clearSelection();
+      render();
+      loadLeads();
+    }
+
+    var port;
+    try {
+      port = chrome.runtime.connect(extId, { name: BULK_ENRICH_PORT_NAME });
+    } catch (err) {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
+      return;
+    }
+
+    port.onMessage.addListener(function (message) {
+      if (!message) return;
+      if (message.type === 'PROGRESS') {
+        bulkState.completed = message.completed;
+        bulkState.total = message.total;
+        render();
+        return;
+      }
+      if (message.type === 'DONE') {
+        finish(message);
+      }
+    });
+
+    // Fires before any DONE message when the extension id is wrong/not installed
+    // (chrome.runtime.lastError set almost immediately) or the connection drops mid-run.
+    port.onDisconnect.addListener(function () {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
+    });
+
+    try {
+      port.postMessage({ type: 'ENRICH_LEADS', leads: targets });
+    } catch (err) {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
+    }
+  }
+
   document.getElementById('filter-is-it').addEventListener('change', function (e) {
     state.filterIsIt = e.target.value;
     render();
@@ -763,7 +1026,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     state.filterStatus = e.target.value;
     render();
   });
+  document.getElementById('filter-detail').addEventListener('change', function (e) {
+    state.filterDetail = e.target.value;
+    render();
+  });
   document.getElementById('refresh-btn').addEventListener('click', loadLeads);
+  document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
 
   var extensionIdInput = document.getElementById('extension-id');
   extensionIdInput.value = localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '';

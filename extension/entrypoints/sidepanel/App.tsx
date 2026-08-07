@@ -6,6 +6,7 @@ import { deepenLeads, type DeepenProgress } from '../../lib/deepen';
 import { formatKyivDate, formatKyivDateTime } from '../../lib/format-time';
 import { MAX_PAGES, runMultiPageParse, type MultiPageProgress } from '../../lib/multipage';
 import { STATUS_OPTIONS } from '../../lib/status-labels';
+import { getStoredTheme, setStoredTheme, type Theme } from '../../lib/theme';
 import {
   deepenWellfoundLeads,
   WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
@@ -19,6 +20,42 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function SunIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
+    </svg>
+  );
+}
+
+// Visual-only preference toggle, not part of the extension's business logic — see
+// lib/theme.ts for the chrome.storage.local persistence it's wired to in App().
+function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
+  const isLight = theme === 'light';
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={onToggle}
+      aria-label={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
+      title={isLight ? 'Switch to dark mode' : 'Switch to light mode'}
+    >
+      <span className={`theme-toggle-track ${theme}`}>
+        <span className="theme-toggle-thumb">{isLight ? <SunIcon /> : <MoonIcon />}</span>
+      </span>
+    </button>
+  );
 }
 
 export default function App() {
@@ -39,6 +76,25 @@ export default function App() {
   const [multiPageSummary, setMultiPageSummary] = useState<string | null>(null);
   const [wellfoundDeepening, setWellfoundDeepening] = useState<WellfoundDeepenProgress | null>(null);
   const [wellfoundDeepenSummary, setWellfoundDeepenSummary] = useState<string | null>(null);
+  // Default is dark, matching the dashboard's current (only) look, until/unless the user's
+  // stored choice loads from chrome.storage.local (see lib/theme.ts).
+  const [theme, setTheme] = useState<Theme>('dark');
+
+  useEffect(() => {
+    getStoredTheme().then((stored) => {
+      if (stored) setTheme(stored);
+    });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    setStoredTheme(next);
+  };
 
   // Any backend call can 401 out from under a signed-in session (expiry, logout
   // elsewhere, backend restart clearing the in-memory revocation list) — funnel
@@ -288,12 +344,22 @@ export default function App() {
   };
 
   if (!authChecked) {
-    return <div>Loading…</div>;
+    return (
+      <div>
+        <div className="theme-bar">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+        </div>
+        <div>Loading…</div>
+      </div>
+    );
   }
 
   if (!user) {
     return (
       <div>
+        <div className="theme-bar">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+        </div>
         <h1>Sales Manager — Leads</h1>
         <p className="hint">Sign in with Google to save leads to your Sheet.</p>
         <button className="parse-button" onClick={handleLogin} disabled={signingIn}>
@@ -308,7 +374,10 @@ export default function App() {
     <div>
       <div className="account-bar">
         <span>Signed in as {user.display_name}</span>
-        <button onClick={handleLogout}>Sign out</button>
+        <div className="account-bar-actions">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          <button onClick={handleLogout}>Sign out</button>
+        </div>
       </div>
 
       <h1>Sales Manager — Leads</h1>
