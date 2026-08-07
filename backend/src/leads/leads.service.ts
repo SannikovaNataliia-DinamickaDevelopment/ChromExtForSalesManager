@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { and, desc, eq, getTableColumns, gte, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
 import { DESTINATION, Destination } from '../destinations/destination.interface';
+import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { GeminiClassifierService } from './gemini-classifier.service';
@@ -312,6 +313,22 @@ export class LeadsService {
       throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
     }
     return updated;
+  }
+
+  // Dashboard "Delete selected" — same semantics as softDelete above (sets deleted_at, no
+  // owner check), applied to every id in one statement instead of one PATCH per lead. A plain
+  // DB write, so unlike bulk enrich this never needs extension involvement — the dashboard
+  // calls this endpoint directly. Missing/already-deleted ids are silently not-matched rather
+  // than erroring (mirrors an UPDATE...WHERE IN's natural behavior; the caller only cares how
+  // many actually changed).
+  async bulkSoftDelete({ leadIds }: BulkDeleteLeadsDto): Promise<{ deleted: number }> {
+    if (leadIds.length === 0) return { deleted: 0 };
+    const updated = await this.db
+      .update(job_leads)
+      .set({ deleted_at: new Date(), updated_at: new Date() })
+      .where(inArray(job_leads.id, leadIds))
+      .returning({ id: job_leads.id });
+    return { deleted: updated.length };
   }
 
   // /dashboard/deleted's "Restore" action.

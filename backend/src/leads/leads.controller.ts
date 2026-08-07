@@ -5,6 +5,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
+import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
@@ -68,6 +69,25 @@ export class LeadsController {
 
     const results = await this.leadsService.createOrUpdateMany(user.sub, items);
     return wasArray ? results : results[0];
+  }
+
+  // Dashboard "Delete selected" (bulk soft delete). Declared as a literal 'bulk-delete' path
+  // and — importantly — BEFORE @Patch(':id') below: both are one path segment after /leads,
+  // so if updateStatus's :id route were registered first it would swallow
+  // "PATCH /leads/bulk-delete" as an update-status call with id="bulk-delete" instead of
+  // ever reaching this handler. Route registration order is match order here, not specificity.
+  @Patch('bulk-delete')
+  async bulkSoftDelete(@Body() body: BulkDeleteLeadsDto) {
+    const dto = plainToInstance(BulkDeleteLeadsDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        'leadIds must be a non-empty array of lead id strings',
+      );
+    }
+    return this.leadsService.bulkSoftDelete(dto);
   }
 
   // Status is shared per lead (decision log): any authenticated user may change it.

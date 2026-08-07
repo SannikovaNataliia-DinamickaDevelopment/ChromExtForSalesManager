@@ -2,6 +2,7 @@
 // Everything — markup, dark theme, and the client-side table logic — lives in this one
 // template function so the whole feature is just this folder + a couple of small, clearly
 // marked hooks in the auth module.
+import { LEAD_RETENTION_DAYS } from '../leads/lead-retention';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -112,7 +113,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 14px;
     line-height: 1.5;
   }
-  .page { max-width: 1400px; margin: 0 auto; padding: 24px 28px 60px; }
+  .page { max-width: 1800px; margin: 0 auto; padding: 24px 28px 60px; }
   .topbar {
     display: flex;
     align-items: center;
@@ -329,6 +330,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     cursor: pointer;
   }
   .bulk-bar button:disabled { cursor: not-allowed; opacity: 0.6; }
+  .bulk-bar .bulk-delete-btn { background: var(--error); color: var(--on-error); }
   .bulk-bar .bulk-status { color: var(--text-secondary); font-size: 12px; }
   td.checkbox-cell, th.checkbox-cell { width: 34px; text-align: center; padding-left: 14px; padding-right: 4px; }
   td.checkbox-cell input, th.checkbox-cell input { cursor: pointer; }
@@ -463,28 +465,31 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text-secondary);
     line-height: 1.5;
   }
-  .delete-block {
-    margin-bottom: 20px;
-    padding: 12px;
-    background: var(--error-bg);
-    border: 1px solid var(--error);
-    border-radius: 8px;
-  }
+  /* Plain layout wrapper only — no tinted/bordered card. Deliberately unlike .enrich-block:
+     that box (padding + tint + border) reads as a highlighted, boxed "card" for a routine
+     brand-colored action, and doubling that treatment with --error's more attention-grabbing
+     red made Delete look like a heavy glowing warning box rather than a same-weight sibling
+     action to Enrich. Lives in the Description heading row now (sidebar-desc-header below),
+     not directly under the title — it shouldn't be the first/loudest thing in the panel.
+     Outlined by default rather than solid-filled, so it doesn't compete with the actual lead
+     content for attention; fills solid only on hover, still unambiguously a destructive
+     action without demanding notice up front. */
   .delete-btn {
-    background: var(--error);
-    color: var(--on-error);
-    border: none;
-    border-radius: 8px;
-    padding: 7px 16px;
+    background: transparent;
+    color: var(--error);
+    border: 1px solid var(--error);
+    border-radius: 6px;
+    padding: 3px 10px;
     font-family: inherit;
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
-  .delete-btn:hover { opacity: 0.9; }
+  .delete-btn:hover { background: var(--error); color: var(--on-error); }
   .delete-btn:disabled { cursor: not-allowed; opacity: 0.6; }
   .delete-status {
-    margin-top: 8px;
+    margin-top: 6px;
     font-size: 12px;
     color: var(--error);
     line-height: 1.5;
@@ -523,9 +528,19 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-weight: 500;
   }
   .detail-value { color: var(--text-secondary); word-break: break-word; }
-  .sidebar-desc-label {
+  /* Delete lives here now — same row as the Description heading, right-aligned, after every
+     metadata field and right before the description text — not the first thing under the
+     title. Row-level margins moved here from .sidebar-desc-label since the label no longer
+     owns its own spacing (the button needs to align on the same line). */
+  .sidebar-desc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin-top: 24px;
     margin-bottom: 10px;
+  }
+  .sidebar-desc-label {
     color: var(--accent);
     font-size: 12px;
     text-transform: uppercase;
@@ -622,6 +637,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   <div class="bulk-bar" id="bulk-bar" hidden>
     <span class="bulk-count" id="bulk-count"></span>
     <button id="bulk-enrich-btn" type="button">Enrich selected</button>
+    <button id="bulk-delete-btn" class="bulk-delete-btn" type="button">Delete selected</button>
     <span class="bulk-status" id="bulk-status"></span>
   </div>
   <div class="table-wrap">
@@ -657,6 +673,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // reload) and written here on toggle click; independent of the side panel's own 'sm_theme'
   // chrome.storage.local key — the two surfaces don't sync.
   var THEME_STORAGE_KEY = 'sm_dashboard_theme';
+  // Interpolated once, server-side, at render time — same pattern deleted-leads-page.ts uses
+  // for its own copy of this constant. Delete confirm messages below reference this as a
+  // plain client-side variable rather than re-interpolating ${LEAD_RETENTION_DAYS} inline at
+  // every call site.
+  var LEAD_RETENTION_DAYS = ${LEAD_RETENTION_DAYS};
   // Safety net only — a real "not installed/not reachable" failure surfaces via
   // chrome.runtime.lastError almost immediately, not via this timeout. This just guards
   // against the callback never firing at all (worst case: nav timeout 30s + settle 1s +
@@ -674,8 +695,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // can be minutes of Wellfound tab-deepening.
   var BULK_ENRICH_PORT_NAME = 'enrich-bulk';
   var bulkState = {
-    selected: {}, // leadId -> true
+    selected: {}, // leadId -> true, any lead regardless of detail status
     inFlight: false,
+    // 'enrich' | 'delete' | null — which of the two bulk actions is currently running, so the
+    // shared inFlight flag (constraint: only one bulk batch at a time) can still show the
+    // right progress text. Mutually exclusive by construction: both buttons check
+    // bulkState.inFlight before starting, so a second bulk action can't start from this tab
+    // while one is already running, regardless of mode.
+    mode: null,
     completed: 0,
     total: 0,
     status: '',
@@ -798,19 +825,21 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   // Header "select all currently filtered" checkbox — scoped to the not-detailed rows in the
   // current filter, same set clicking each row checkbox individually would reach.
+  // "Select all currently filtered" — every visible row now (not just not-detailed ones);
+  // Enrich/Delete each derive their own eligible subset from whatever ends up selected here.
   function buildSelectAllTh() {
     var th = document.createElement('th');
     th.className = 'checkbox-cell';
-    var checkable = getCheckableFiltered();
+    var visible = getFiltered();
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.disabled = bulkState.inFlight || checkable.length === 0;
-    var selectedCount = checkable.filter(function (l) { return bulkState.selected[l.id]; }).length;
-    checkbox.checked = checkable.length > 0 && selectedCount === checkable.length;
-    checkbox.indeterminate = selectedCount > 0 && selectedCount < checkable.length;
+    checkbox.disabled = bulkState.inFlight || visible.length === 0;
+    var selected = visible.filter(function (l) { return bulkState.selected[l.id]; }).length;
+    checkbox.checked = visible.length > 0 && selected === visible.length;
+    checkbox.indeterminate = selected > 0 && selected < visible.length;
     checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
     checkbox.addEventListener('change', function () {
-      checkable.forEach(function (l) {
+      visible.forEach(function (l) {
         if (checkbox.checked) bulkState.selected[l.id] = true;
         else delete bulkState.selected[l.id];
       });
@@ -876,11 +905,20 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     });
   }
 
-  // Rows eligible for bulk selection — same "not detailed" definition the single-lead Enrich
-  // button and the Detail filter both use (needsEnrich), scoped to whatever's currently
-  // filtered/visible so "select all" never grabs a hidden row.
-  function getCheckableFiltered() {
-    return getFiltered().filter(needsEnrich);
+  // Every currently-selected lead, any detail status — the base set both bulk actions work
+  // from. Deliberately NOT re-scoped by getFiltered(): a selection persists across filter
+  // changes (see pruneSelection below), so a lead selected under one filter and then hidden by
+  // a later filter change should still be acted on when the bulk button is clicked — only
+  // "select all" itself is bound to what's visible at click time.
+  function getSelectedLeads() {
+    return state.leads.filter(function (l) { return bulkState.selected[l.id]; });
+  }
+
+  // The subset "Enrich selected" actually acts on — same "not detailed" definition as the
+  // single-lead Enrich button and the Detail filter (needsEnrich). Already-detailed leads can
+  // still be selected/checked (for bulk delete), they just don't count toward Enrich's N.
+  function getSelectedNotDetailedLeads() {
+    return getSelectedLeads().filter(needsEnrich);
   }
 
   function clearSelection() {
@@ -967,17 +1005,22 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
 
   // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
-  // (any lead can be deleted, not just undetailed ones). No confirmation dialog: matches this
-  // page's existing single-click convention (Enrich, bulk enrich) and the delete is reversible
-  // for LEAD_RETENTION_DAYS via /dashboard/deleted's Restore action anyway.
-  function buildDeleteBlock(lead) {
-    var wrap = document.createElement('div');
-    wrap.className = 'delete-block';
-
+  // (any lead can be deleted, not just undetailed ones). Confirmed once, mentioning it's
+  // recoverable — distinct from /dashboard/deleted's "Delete permanently" confirm, which is
+  // irreversible and worded accordingly.
+  // Sits in the Description heading row (openSidebar), not as its own block under the title —
+  // returns the pieces separately since the button goes inline with the heading and the
+  // status message (failure text only; empty/invisible otherwise) goes on its own line below.
+  function buildDeleteControls(lead) {
     var button = el('button', { className: 'delete-btn', type: 'button', text: 'Delete' });
     var statusEl = el('div', { className: 'delete-status' });
 
     button.addEventListener('click', function () {
+      var confirmed = window.confirm(
+        'Delete "' + (lead.job_title || '(untitled)') + '"? You can restore it from Deleted leads within ' + LEAD_RETENTION_DAYS + ' days.',
+      );
+      if (!confirmed) return;
+
       button.disabled = true;
       statusEl.textContent = '';
       softDeleteLead(lead.id)
@@ -991,9 +1034,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         });
     });
 
-    wrap.appendChild(button);
-    wrap.appendChild(statusEl);
-    return wrap;
+    return { button: button, statusEl: statusEl };
   }
 
   // Extension messaging (background.ts's ENRICH_LEAD handler) — reuses the extension's own
@@ -1077,7 +1118,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (needsEnrich(lead)) {
       content.appendChild(buildEnrichBlock(lead));
     }
-    content.appendChild(buildDeleteBlock(lead));
 
     content.appendChild(buildDetailRow('Company', lead.company));
     content.appendChild(buildDetailRow('Website', lead.company_website, true));
@@ -1089,7 +1129,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     content.appendChild(buildDetailRow('Owner', lead.owner_display_name || lead.owner_email));
     content.appendChild(buildDetailRow('Scraped', formatKyiv(lead.scraped_at || lead.created_at, false)));
 
-    content.appendChild(el('div', { className: 'sidebar-desc-label', text: 'Description' }));
+    // Delete sits in the Description heading row (right-aligned), after every metadata field
+    // above and right before the description text — not the first thing under the title.
+    var deleteControls = buildDeleteControls(lead);
+    content.appendChild(el('div', { className: 'sidebar-desc-header' }, [
+      el('div', { className: 'sidebar-desc-label', text: 'Description' }),
+      deleteControls.button,
+    ]));
+    content.appendChild(deleteControls.statusEl);
     content.appendChild(el('div', { className: 'sidebar-desc', text: lead.description || 'No description yet.' }));
 
     document.getElementById('sidebar').classList.add('open');
@@ -1104,13 +1151,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     document.getElementById('backdrop').classList.remove('open');
   }
 
-  // Bulk-select checkbox — rendered only for rows matching the same "not detailed" definition
-  // as the single-lead Enrich button (needsEnrich); a lead that already has description +
-  // company_website has nothing this checkbox would add, so its cell stays empty.
+  // Bulk-select checkbox — every row now, regardless of detail status (bulk delete applies to
+  // any lead; bulk enrich just ignores the already-detailed ones it doesn't need — see
+  // getSelectedNotDetailedLeads).
   function buildCheckboxTd(lead) {
     var td = document.createElement('td');
     td.className = 'checkbox-cell';
-    if (!needsEnrich(lead)) return td;
 
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -1208,14 +1254,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return tr;
   }
 
-  // Drops selections for leads that no longer qualify (freshly enriched elsewhere, deleted,
-  // or gone after a reload) — keeps them across filter/sort changes otherwise, since those
-  // don't change what's actually selected, only what's currently visible.
+  // Drops selections for leads that no longer exist (deleted elsewhere, purged, gone after a
+  // reload) — keeps them across filter/sort changes and across becoming detailed otherwise,
+  // since selection is no longer tied to detail status; only presence in state.leads matters.
   function pruneSelection() {
-    var stillCheckable = {};
-    state.leads.forEach(function (lead) { if (needsEnrich(lead)) stillCheckable[lead.id] = true; });
+    var stillPresent = {};
+    state.leads.forEach(function (lead) { stillPresent[lead.id] = true; });
     Object.keys(bulkState.selected).forEach(function (id) {
-      if (!stillCheckable[id]) delete bulkState.selected[id];
+      if (!stillPresent[id]) delete bulkState.selected[id];
     });
   }
 
@@ -1230,14 +1276,28 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     bar.hidden = false;
 
     var countEl = document.getElementById('bulk-count');
-    var button = document.getElementById('bulk-enrich-btn');
+    var enrichBtn = document.getElementById('bulk-enrich-btn');
+    var deleteBtn = document.getElementById('bulk-delete-btn');
     var statusEl = document.getElementById('bulk-status');
+    var notDetailedCount = getSelectedNotDetailedLeads().length;
 
-    countEl.textContent = bulkState.inFlight
-      ? 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026'
-      : count + ' selected';
-    button.textContent = 'Enrich selected (' + count + ')';
-    button.disabled = bulkState.inFlight || count === 0;
+    if (bulkState.inFlight && bulkState.mode === 'enrich') {
+      countEl.textContent = 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
+    } else if (bulkState.inFlight && bulkState.mode === 'delete') {
+      countEl.textContent = 'Deleting\\u2026';
+    } else {
+      countEl.textContent = count + ' selected';
+    }
+
+    // Enrich only ever acts on the not-detailed subset of the selection — disabled (not
+    // hidden) when that subset is empty, same as every other "nothing to do" disabled state
+    // already used elsewhere on this page (filters, other buttons).
+    enrichBtn.textContent = 'Enrich selected (' + notDetailedCount + ')';
+    enrichBtn.disabled = bulkState.inFlight || notDetailedCount === 0;
+
+    deleteBtn.textContent = 'Delete selected (' + count + ')';
+    deleteBtn.disabled = bulkState.inFlight || count === 0;
+
     statusEl.textContent = bulkState.status;
   }
 
@@ -1362,8 +1422,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function startBulkEnrich() {
     if (bulkState.inFlight) return;
 
-    var targets = getCheckableFiltered()
-      .filter(function (l) { return bulkState.selected[l.id]; })
+    // Only the not-detailed subset of the selection — already-detailed selected leads (there
+    // for bulk delete's benefit) are silently skipped here, same as this button always ignored
+    // rows outside its own eligible set.
+    var targets = getSelectedNotDetailedLeads()
       .map(function (l) { return { leadId: l.id, sourceSite: l.source_site, sourceUrl: l.source_url }; });
     if (targets.length === 0) return;
 
@@ -1380,6 +1442,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
 
     bulkState.inFlight = true;
+    bulkState.mode = 'enrich';
     bulkState.completed = 0;
     bulkState.total = targets.length;
     bulkState.status = '';
@@ -1395,6 +1458,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       settled = true;
       clearTimeout(timeoutId);
       bulkState.inFlight = false;
+      bulkState.mode = null;
       bulkState.status = buildBulkSummary(result);
       clearSelection();
       render();
@@ -1433,6 +1497,48 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     } catch (err) {
       finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to enrich leads.' });
     }
+  }
+
+  // Bulk "Delete selected" — unlike bulk enrich, a plain DB write (PATCH /leads/bulk-delete),
+  // so no extension/messaging round-trip is needed; applies to the whole selection regardless
+  // of detail status. One confirm() for the whole batch, matching the "recoverable, mention
+  // the retention window" wording used for the single-lead delete confirm below.
+  function startBulkDelete() {
+    if (bulkState.inFlight) return;
+
+    var targets = getSelectedLeads();
+    if (targets.length === 0) return;
+
+    var confirmed = window.confirm(
+      'Delete ' + targets.length + ' lead' + (targets.length === 1 ? '' : 's') + '? ' +
+        'You can restore ' + (targets.length === 1 ? 'it' : 'them') + ' from Deleted leads within ' + LEAD_RETENTION_DAYS + ' days.',
+    );
+    if (!confirmed) return;
+
+    bulkState.inFlight = true;
+    bulkState.mode = 'delete';
+    bulkState.status = '';
+    render();
+
+    apiFetch('/leads/bulk-delete', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: targets.map(function (l) { return l.id; }) }),
+    })
+      .then(function (result) {
+        var n = result && typeof result.deleted === 'number' ? result.deleted : targets.length;
+        bulkState.status = n + ' lead' + (n === 1 ? '' : 's') + ' deleted';
+      })
+      .catch(function (err) {
+        bulkState.status = err.message;
+      })
+      .then(function () {
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        clearSelection();
+        render();
+        loadLeads();
+      });
   }
 
   // Light/dark toggle. The DOM attribute (set by the inline <head> script before first paint,
@@ -1489,6 +1595,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   });
   document.getElementById('refresh-btn').addEventListener('click', loadLeads);
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
+  document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
 
   var extensionIdInput = document.getElementById('extension-id');
   extensionIdInput.value = localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '';
