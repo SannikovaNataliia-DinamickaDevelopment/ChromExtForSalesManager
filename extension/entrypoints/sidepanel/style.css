@@ -169,6 +169,43 @@ h1 {
   font-size: 12px;
 }
 
+/* Initial-parse progress banner (content-script DOM scrape + one batch save — see App.tsx's
+   handleParse). Deliberately a distinct, visually louder plaque rather than another quiet
+   .hint row — this is the one step that requires the manager to physically stay on the job
+   site's tab, so it needs to actually catch the eye. Not to be confused with the Wellfound
+   deepening .hint text below it, which has a different constraint (tab can change, panel must
+   stay open) and is intentionally left as plain text. Indeterminate spinner, not a percentage
+   or ETA: parsing is one synchronous DOM pass + one batch save, not an incremental per-card
+   loop, so there's no honest "N of M" to show here (see runDeepen/runWellfoundDeepen above,
+   which DO have a real per-lead loop and DO show real counts).             */
+.parsing-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--chip-bg-accent);
+  border: 1px solid var(--pink);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid var(--border);
+  border-top-color: var(--pink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .error {
   margin-top: 8px;
   padding: 8px 10px;

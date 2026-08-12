@@ -385,6 +385,12 @@ export default function App() {
       <button className="parse-button" onClick={handleParse} disabled={!tabSupported || parsing}>
         {parsing ? 'Parsing…' : 'Parse current list page'}
       </button>
+      {parsing && (
+        <div className="parsing-banner" role="status" aria-live="polite">
+          <span className="spinner" aria-hidden="true" />
+          Parsing in progress — please stay on this page.
+        </div>
+      )}
       {!tabSupported && (
         <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, or DevITjobs job list page to enable parsing.</div>
       )}
@@ -411,7 +417,7 @@ export default function App() {
             max={todayIso()}
             value={targetDate}
             onChange={(e) => setTargetDate(e.target.value)}
-            disabled={multiPageRunning}
+            disabled={multiPageRunning || parsing}
           />
           <button
             className="parse-button"

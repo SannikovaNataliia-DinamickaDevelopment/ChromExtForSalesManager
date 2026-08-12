@@ -111,49 +111,78 @@ async function parseActiveTab() {
   if (!tab?.id || !isSupportedUrl(tab.url)) {
     return { ok: false as const, error: 'Active tab is not a supported job site.' };
   }
+  const tabId = tab.id;
 
   const token = await getToken();
   if (!token) {
     return { ok: false as const, error: 'Not signed in.', authError: true as const };
   }
 
-  let parseResponse: { ok: boolean; leads?: unknown; error?: string } | undefined;
+  // On-page "stay on this page" toast (content.ts) — spans the exact same work the side
+  // panel's own .parsing-banner does (App.tsx's `parsing` state), shown here and hidden in
+  // the finally below on every exit path (success, failure, content-script-unreachable).
+  // Best-effort: if the content script can't be reached, the PARSE_LIST call right after this
+  // fails the exact same way and surfaces its own error — the side panel banner already
+  // covers that case either way, so a swallowed failure here is harmless, not a silent bug.
+  await showParseOverlay(tabId);
   try {
-    parseResponse = await chrome.tabs.sendMessage(tab.id, { type: 'PARSE_LIST' });
+    let parseResponse: { ok: boolean; leads?: unknown; error?: string } | undefined;
+    try {
+      parseResponse = await chrome.tabs.sendMessage(tabId, { type: 'PARSE_LIST' });
+    } catch {
+      // No content-script listener on the other end — typically because this tab was
+      // already open before the extension was (re)loaded, so its content script is
+      // running against an invalidated extension context.
+      return {
+        ok: false as const,
+        error: 'Could not reach the page. Reload the Techjobs.ca tab and try parsing again.',
+      };
+    }
+    if (!parseResponse?.ok) {
+      return { ok: false as const, error: parseResponse?.error ?? 'Parsing failed.' };
+    }
+
+    const leads = parseResponse.leads;
+    if (!Array.isArray(leads) || leads.length === 0) {
+      return { ok: true as const, leadCount: 0, results: [] };
+    }
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/leads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(leads),
+      });
+      if (res.status === 401) {
+        return { ok: false as const, error: 'Session expired. Please sign in again.', authError: true as const };
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        return { ok: false as const, error: data?.error?.message ?? 'Backend rejected the batch.' };
+      }
+      return { ok: true as const, leadCount: leads.length, results: data };
+    } catch (err) {
+      return { ok: false as const, error: `Could not reach backend: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  } finally {
+    await hideParseOverlay(tabId);
+  }
+}
+
+async function showParseOverlay(tabId: number): Promise<void> {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_PARSE_OVERLAY' });
   } catch {
-    // No content-script listener on the other end — typically because this tab was
-    // already open before the extension was (re)loaded, so its content script is
-    // running against an invalidated extension context.
-    return {
-      ok: false as const,
-      error: 'Could not reach the page. Reload the Techjobs.ca tab and try parsing again.',
-    };
+    // See the comment above this call in parseActiveTab.
   }
-  if (!parseResponse?.ok) {
-    return { ok: false as const, error: parseResponse?.error ?? 'Parsing failed.' };
-  }
+}
 
-  const leads = parseResponse.leads;
-  if (!Array.isArray(leads) || leads.length === 0) {
-    return { ok: true as const, leadCount: 0, results: [] };
-  }
-
+async function hideParseOverlay(tabId: number): Promise<void> {
   try {
-    const res = await fetch(`${BACKEND_URL}/leads`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(leads),
-    });
-    if (res.status === 401) {
-      return { ok: false as const, error: 'Session expired. Please sign in again.', authError: true as const };
-    }
-    const data = await res.json();
-    if (!res.ok) {
-      return { ok: false as const, error: data?.error?.message ?? 'Backend rejected the batch.' };
-    }
-    return { ok: true as const, leadCount: leads.length, results: data };
-  } catch (err) {
-    return { ok: false as const, error: `Could not reach backend: ${err instanceof Error ? err.message : String(err)}` };
+    await chrome.tabs.sendMessage(tabId, { type: 'HIDE_PARSE_OVERLAY' });
+  } catch {
+    // Tab may have navigated away or closed by the time parsing finished — nothing to clean
+    // up in that case (the old page's DOM, overlay included, is already gone with it).
   }
 }
 
