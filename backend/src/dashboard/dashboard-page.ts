@@ -825,6 +825,67 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return typeof url === 'string' && /^https?:\\/\\//i.test(url);
   }
 
+  // Wellfound's JSON-LD JobPosting.description genuinely contains HTML markup (<p>, <strong>,
+  // lists, links) — confirmed against real stored data. Techjobs/ITjobs descriptions are plain
+  // text with none. Both are extracted verbatim from their own site's JSON-LD with identical
+  // logic (extension/lib/parsers/techjobs.ts vs. wellfound-detail-extract.ts — no source-
+  // specific stripping in either), so this isn't an extraction bug or a rendering-path
+  // inconsistency; it's that the sidebar only ever rendered descriptions as plain text
+  // (textContent), which happened to look right for two sources and wrong for the third.
+  //
+  // Allowlist-based sanitizer so the fix works for all three without ever trusting scraped
+  // HTML: only these tags survive (everything else is unwrapped — its own tag+attributes
+  // discarded, its already-sanitized children kept); every attribute on every surviving
+  // element is stripped by default, with only a scheme-validated href restored on <a>. A
+  // plain-text description (techjobs/itjobs) has no tags to begin with, so it round-trips
+  // through this unchanged — same visible result as before.
+  var DESCRIPTION_ALLOWED_TAGS = {
+    P: 1, BR: 1, STRONG: 1, B: 1, EM: 1, I: 1, U: 1,
+    UL: 1, OL: 1, LI: 1, A: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1,
+    BLOCKQUOTE: 1, HR: 1, SPAN: 1, DIV: 1,
+  };
+
+  function sanitizeDescriptionNode(parent) {
+    Array.from(parent.childNodes).forEach(function (node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        var tag = node.tagName.toUpperCase();
+        if (tag === 'SCRIPT' || tag === 'STYLE') {
+          parent.removeChild(node);
+          return;
+        }
+        if (!DESCRIPTION_ALLOWED_TAGS[tag]) {
+          // Sanitize the disallowed element's own subtree FIRST, then unwrap (hoist its now-
+          // clean children up, discard the tag and every attribute it had) — never the other
+          // way around, or a nested <script>/dangerous element inside an unknown wrapper tag
+          // would survive un-sanitized once hoisted.
+          sanitizeDescriptionNode(node);
+          while (node.firstChild) parent.insertBefore(node.firstChild, node);
+          parent.removeChild(node);
+          return;
+        }
+        var href = tag === 'A' ? node.getAttribute('href') : null;
+        Array.from(node.attributes).forEach(function (attr) { node.removeAttribute(attr.name); });
+        if (tag === 'A' && isSafeUrl(href)) {
+          node.setAttribute('href', href);
+          node.setAttribute('target', '_blank');
+          node.setAttribute('rel', 'noreferrer');
+        }
+        sanitizeDescriptionNode(node);
+      } else if (node.nodeType !== Node.TEXT_NODE) {
+        // Comments, processing instructions, etc. — no legitimate reason to keep them.
+        parent.removeChild(node);
+      }
+    });
+  }
+
+  // DOMParser never executes embedded <script> content or fetches resources while parsing —
+  // this is the standard safe way to turn an untrusted string into a DOM tree to sanitize.
+  function sanitizeDescriptionHtml(html) {
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    sanitizeDescriptionNode(doc.body);
+    return doc.body.innerHTML;
+  }
+
   function el(tag, props, children) {
     var node = document.createElement(tag);
     if (props) {
@@ -1152,7 +1213,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       deleteControls.button,
     ]));
     content.appendChild(deleteControls.statusEl);
-    content.appendChild(el('div', { className: 'sidebar-desc', text: lead.description || 'No description yet.' }));
+    var descEl = el('div', { className: 'sidebar-desc' });
+    if (lead.description) {
+      descEl.innerHTML = sanitizeDescriptionHtml(lead.description);
+    } else {
+      descEl.textContent = 'No description yet.';
+    }
+    content.appendChild(descEl);
 
     document.getElementById('sidebar').classList.add('open');
     document.getElementById('sidebar').setAttribute('aria-hidden', 'false');
