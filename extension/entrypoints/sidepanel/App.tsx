@@ -12,11 +12,37 @@ import {
   WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
   type WellfoundDeepenProgress,
 } from '../../lib/wellfound-deepen';
+import {
+  getBookmark,
+  setBookmark,
+  stripPageParam,
+  type WellfoundPaginationBookmark,
+} from '../../lib/wellfound-pagination-bookmark';
+import {
+  runWellfoundPagination,
+  WELLFOUND_PAGINATION_BATCH_SIZE,
+  type WellfoundPaginationProgress,
+  type WellfoundPaginationResult,
+} from '../../lib/wellfound-pagination';
 import type { JobLeadRecord, LeadStatus } from '../../lib/types';
 
 // Multi-page (scope D) only works on sites built on this template — confirmed identical
 // pagination/card structure for both (CLAUDE.md "Parser spec"). DevITjobs stays out (paused).
 const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
+
+// Separate, dedicated Wellfound-only list-pagination flow (see wellfound-pagination.ts) — not
+// the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
+const WELLFOUND_HOSTNAME = 'wellfound.com';
+
+function currentPageFromTabUrl(url: string): number {
+  try {
+    const raw = new URL(url).searchParams.get('page');
+    const n = raw ? parseInt(raw, 10) : 1;
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -76,6 +102,11 @@ export default function App() {
   const [multiPageSummary, setMultiPageSummary] = useState<string | null>(null);
   const [wellfoundDeepening, setWellfoundDeepening] = useState<WellfoundDeepenProgress | null>(null);
   const [wellfoundDeepenSummary, setWellfoundDeepenSummary] = useState<string | null>(null);
+  const [wellfoundListTabUrl, setWellfoundListTabUrl] = useState<string | null>(null);
+  const [wellfoundBookmark, setWellfoundBookmark] = useState<WellfoundPaginationBookmark | null>(null);
+  const [wellfoundPageRunning, setWellfoundPageRunning] = useState(false);
+  const [wellfoundPageProgress, setWellfoundPageProgress] = useState<WellfoundPaginationProgress | null>(null);
+  const [wellfoundPageSummary, setWellfoundPageSummary] = useState<string | null>(null);
   // Default is dark, matching the dashboard's current (only) look, until/unless the user's
   // stored choice loads from chrome.storage.local (see lib/theme.ts).
   const [theme, setTheme] = useState<Theme>('dark');
@@ -122,6 +153,28 @@ export default function App() {
     });
   };
 
+  // Keeps the "Continue" button's enabled/shown state (and its target page label) in sync with
+  // whichever Wellfound search context is currently open in the active tab — same trigger
+  // points (tab activated/updated) as refreshTabStatus above, just scoped to Wellfound and to
+  // whether a pagination bookmark exists for THIS search's base URL (page param stripped).
+  const refreshWellfoundContext = () => {
+    chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      let hostname = '';
+      try {
+        hostname = tab?.url ? new URL(tab.url).hostname : '';
+      } catch {
+        // leave hostname empty; falls through to the "not a Wellfound tab" branch below
+      }
+      if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
+        setWellfoundListTabUrl(null);
+        setWellfoundBookmark(null);
+        return;
+      }
+      setWellfoundListTabUrl(tab.url);
+      getBookmark(stripPageParam(tab.url)).then(setWellfoundBookmark);
+    });
+  };
+
   useEffect(() => {
     fetchMe()
       .then((me) => {
@@ -132,11 +185,16 @@ export default function App() {
       .finally(() => setAuthChecked(true));
 
     refreshTabStatus();
+    refreshWellfoundContext();
     chrome.tabs.onActivated.addListener(refreshTabStatus);
     chrome.tabs.onUpdated.addListener(refreshTabStatus);
+    chrome.tabs.onActivated.addListener(refreshWellfoundContext);
+    chrome.tabs.onUpdated.addListener(refreshWellfoundContext);
     return () => {
       chrome.tabs.onActivated.removeListener(refreshTabStatus);
       chrome.tabs.onUpdated.removeListener(refreshTabStatus);
+      chrome.tabs.onActivated.removeListener(refreshWellfoundContext);
+      chrome.tabs.onUpdated.removeListener(refreshWellfoundContext);
     };
   }, []);
 
@@ -332,6 +390,88 @@ export default function App() {
     }
   };
 
+  // CLAUDE.md scope D (Wellfound): a separate, dedicated flow from the block above — that one
+  // stays Techjobs/ITjobs-only (exact publish dates to stop on). Wellfound only has relative
+  // posted-time text, so this walks a fixed WELLFOUND_PAGINATION_BATCH_SIZE-page batch instead
+  // of stopping on a date. Shared by both "Continue" and "Parse from here" below; they only
+  // differ in how startPage is computed before calling this.
+  const runWellfoundPageBatch = async (startPage: number) => {
+    setError(null);
+    setWellfoundPageSummary(null);
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    let hostname = '';
+    try {
+      hostname = tab?.url ? new URL(tab.url).hostname : '';
+    } catch {
+      // leave hostname empty; falls through to the "not a Wellfound tab" error below
+    }
+    if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
+      setError('Open a Wellfound list page in this tab first.');
+      return;
+    }
+
+    const baseUrl = stripPageParam(tab.url);
+
+    setWellfoundPageRunning(true);
+    let result: WellfoundPaginationResult | undefined;
+    try {
+      result = await runWellfoundPagination(baseUrl, startPage, (progress) => {
+        setWellfoundPageProgress(progress);
+        loadLeads();
+      });
+
+      // Always overwrite (never merge) — "Parse from here" is an explicit override/safety
+      // valve (CLAUDE.md-style design note above), and "Continue" advancing is just the same
+      // write with a larger value. lastPageProcessed is startPage - 1 when nothing succeeded,
+      // which is a harmless no-op write (next run starts at the same place either way).
+      await setBookmark(baseUrl, result.lastPageProcessed);
+      setWellfoundBookmark(await getBookmark(baseUrl));
+
+      if (result.stopReason === 'auth_error') {
+        setUser(null);
+        setError('Please sign in again.');
+      } else if (result.pagesProcessed === 0 && result.stopReason === 'no_more_pages') {
+        setWellfoundPageSummary(`No results found starting from page ${startPage} — nothing to parse.`);
+      } else if (result.stopReason === 'circuit_breaker') {
+        const failedFrom = Math.max(startPage, result.lastPageAttempted - WELLFOUND_CIRCUIT_BREAKER_THRESHOLD + 1);
+        setWellfoundPageSummary(
+          `Parsed pages ${result.startPage}-${result.lastPageProcessed} (${result.leadsFound} lead(s) found, ${result.leadsSaved} new) — ` +
+            `stopped after ${WELLFOUND_CIRCUIT_BREAKER_THRESHOLD} consecutive failures (pages ${failedFrom}-${result.lastPageAttempted}), ` +
+            'possible bot-detection block. Leads already saved before the stop were kept. Use Continue to retry from where this left off.',
+        );
+      } else if (result.stopReason === 'no_more_pages') {
+        setWellfoundPageSummary(
+          `Parsed pages ${result.startPage}-${result.lastPageProcessed} — reached the end of this search's results ` +
+            `(${result.leadsFound} lead(s) found, ${result.leadsSaved} new).`,
+        );
+      } else {
+        setWellfoundPageSummary(
+          `Parsed pages ${result.startPage}-${result.lastPageProcessed} — ${result.leadsFound} lead(s) found, ${result.leadsSaved} new.`,
+        );
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWellfoundPageProgress(null);
+      setWellfoundPageRunning(false);
+      loadLeads();
+    }
+  };
+
+  const handleWellfoundParseFromHere = () => {
+    if (!wellfoundListTabUrl) {
+      setError('Open a Wellfound list page in this tab first.');
+      return;
+    }
+    runWellfoundPageBatch(currentPageFromTabUrl(wellfoundListTabUrl));
+  };
+
+  const handleWellfoundContinue = () => {
+    if (!wellfoundBookmark) return;
+    runWellfoundPageBatch(wellfoundBookmark.lastPage + 1);
+  };
+
   const handleStatusChange = async (id: string, status: LeadStatus) => {
     const previous = leads;
     setLeads((current) => current.map((lead) => (lead.id === id ? { ...lead, status } : lead)));
@@ -435,6 +575,41 @@ export default function App() {
         )}
         {multiPageSummary && <div className="hint">{multiPageSummary}</div>}
       </div>
+
+      {wellfoundListTabUrl && (
+        <div className="multipage-block">
+          <label>Parse Wellfound pages (fixed batch)</label>
+          <div className="multipage-row">
+            <button
+              className="parse-button"
+              onClick={handleWellfoundParseFromHere}
+              disabled={wellfoundPageRunning || parsing}
+            >
+              {wellfoundPageRunning ? 'Parsing pages…' : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl)})`}
+            </button>
+            {wellfoundBookmark && (
+              <button
+                className="parse-button"
+                onClick={handleWellfoundContinue}
+                disabled={wellfoundPageRunning || parsing}
+              >
+                {wellfoundPageRunning ? 'Parsing pages…' : `Continue (from page ${wellfoundBookmark.lastPage + 1})`}
+              </button>
+            )}
+          </div>
+          <div className="hint">
+            Wellfound only. Walks {WELLFOUND_PAGINATION_BATCH_SIZE} pages via ?page=N in a background tab, human-paced. No
+            deepening, no Gemini here — newly found leads can be enriched later from the dashboard.
+          </div>
+          {wellfoundPageProgress && (
+            <div className="hint">
+              Page {wellfoundPageProgress.page} (batch {wellfoundPageProgress.pageIndex}/{wellfoundPageProgress.batchSize}) ·{' '}
+              {wellfoundPageProgress.leadsFound} found, {wellfoundPageProgress.leadsSaved} new
+            </div>
+          )}
+          {wellfoundPageSummary && <div className="hint">{wellfoundPageSummary}</div>}
+        </div>
+      )}
 
       {error && <div className="error">{error}</div>}
 

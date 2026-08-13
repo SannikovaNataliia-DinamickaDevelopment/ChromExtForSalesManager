@@ -6,9 +6,11 @@ export const WELLFOUND_RUN_CAP = 20;
 export const WELLFOUND_CIRCUIT_BREAKER_THRESHOLD = 3;
 
 // Wellfound is known to be anti-bot-aggressive — meaningfully slower/more cautious pacing
-// than the 1.5-3s used for the plain-fetch strategy (deepen.ts).
-const MIN_TAB_DELAY_MS = 4000;
-const MAX_TAB_DELAY_MS = 8000;
+// than the 1.5-3s used for the plain-fetch strategy (deepen.ts). Exported so
+// wellfound-pagination.ts can reuse the exact same pace for its list-page walk instead of
+// inventing a second Wellfound pacing constant.
+export const MIN_TAB_DELAY_MS = 4000;
+export const MAX_TAB_DELAY_MS = 8000;
 const NAV_TIMEOUT_MS = 30000;
 // After navigation "complete", give the content script's onMessage listener a moment to be
 // registered before messaging it (same race multipage.ts guards against with its own settle
@@ -22,7 +24,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function navigateAndWaitForLoad(tabId: number, url: string): Promise<void> {
+// Exported so wellfound-pagination.ts can reuse the exact same "real top-level navigation,
+// wait for tabs.onUpdated 'complete'" mechanic for its own background tab instead of a third
+// copy of this (multipage.ts already has its own for Techjobs/ITjobs, left untouched).
+export function navigateAndWaitForLoad(tabId: number, url: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
