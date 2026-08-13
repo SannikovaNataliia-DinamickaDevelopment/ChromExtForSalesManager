@@ -501,6 +501,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   td.checkbox-cell, th.checkbox-cell { width: 40px; text-align: center; padding-left: 14px; padding-right: 4px; vertical-align: middle; cursor: pointer; }
   td.checkbox-cell input, th.checkbox-cell input { width: 17px; height: 17px; cursor: pointer; vertical-align: middle; accent-color: var(--pink); }
   td.checkbox-cell input:disabled, th.checkbox-cell input:disabled { cursor: not-allowed; }
+  /* Click-and-drag multi-select (checkbox column): toggled on <body> for the duration of a
+     drag (startDragSelect/endDragSelect) — belt-and-braces alongside the mousedown handler's
+     own preventDefault(), which already stops the drag from starting a native text selection
+     at its source; this covers any edge case that slips past that (e.g. a very fast drag
+     crossing into unrelated text before the first mousemove is processed). */
+  body.drag-selecting, body.drag-selecting * { user-select: none; -webkit-user-select: none; }
   .table-wrap {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -1405,6 +1411,167 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     });
   }
 
+  // ---- Click-and-drag multi-select over the checkbox column ----
+  //
+  // Design decision: dragging is a fixed-mode "paint", never a per-row toggle. Whatever the
+  // origin row's mousedown does to its own checkbox (select it or deselect it) becomes the
+  // mode for the WHOLE gesture — every row the cursor crosses afterward is forced into that
+  // same state; a row already in that state is left untouched (idempotent). A "toggle whatever
+  // the cursor crosses" model was considered and rejected: the cursor re-crossing a row it
+  // already touched (mouse jitter, or dragging back up slightly before continuing down) would
+  // flip it AGAIN, silently landing it in the opposite of the intended state with no visual
+  // cue anything went wrong. Idempotent painting can't do that — recrossing a row is a no-op.
+  // Same model most file managers/mail clients use for their own checkbox-column drag-select.
+  var dragSelect = null; // { mode: 'select'|'deselect', rows: HTMLElement[], lastRowIndex: number|null }
+  var dragAutoScrollRafId = null;
+  var dragAutoScrollDirection = 0;
+  var dragLastClientY = null;
+  var dragUIUpdatePending = false;
+  var DRAG_AUTO_SCROLL_EDGE_PX = 40;
+  var DRAG_AUTO_SCROLL_SPEED_PX = 12;
+
+  // Every real row in the table, in visual order — excludes the "No leads match..." empty-state
+  // row (its one <td> has no .checkbox-cell). Snapshotted once at drag start (startDragSelect)
+  // rather than re-queried on every pointer move: the set of rendered rows can't change mid-drag
+  // by construction (nothing here ever calls render()), so re-querying it repeatedly would just
+  // be wasted work.
+  function getDragSelectableRows() {
+    return Array.from(document.getElementById('table-body').children).filter(function (tr) {
+      return !!tr.querySelector('td.checkbox-cell');
+    });
+  }
+
+  // Idempotent — only touches this row if it isn't already in the drag's target state, per the
+  // design decision above.
+  function applyDragModeToRow(tr) {
+    var checkbox = tr.querySelector('td.checkbox-cell input');
+    if (!checkbox || checkbox.disabled) return;
+    var shouldBeChecked = dragSelect.mode === 'select';
+    if (checkbox.checked === shouldBeChecked) return;
+    checkbox.checked = shouldBeChecked;
+    var leadId = checkbox.dataset.leadId;
+    if (shouldBeChecked) bulkState.selected[leadId] = true;
+    else delete bulkState.selected[leadId];
+  }
+
+  // Paints every row between the last-processed index and the newly-reached index, inclusive —
+  // not just the single row currently under the cursor. A fast drag can skip several rows
+  // between two consecutive mousemove events (the browser doesn't fire one per pixel), so
+  // "only the row at this exact event" would silently miss rows the cursor visibly passed over.
+  function paintDragRange(toIndex) {
+    var rows = dragSelect.rows;
+    var fromIndex = dragSelect.lastRowIndex === null ? toIndex : dragSelect.lastRowIndex;
+    var lo = Math.min(fromIndex, toIndex);
+    var hi = Math.max(fromIndex, toIndex);
+    for (var i = lo; i <= hi; i++) applyDragModeToRow(rows[i]);
+    dragSelect.lastRowIndex = toIndex;
+  }
+
+  function dragRowIndexAtPoint(clientX, clientY) {
+    var el = document.elementFromPoint(clientX, clientY);
+    var tr = el ? el.closest('tr') : null;
+    if (!tr) return null;
+    var idx = dragSelect.rows.indexOf(tr);
+    return idx === -1 ? null : idx;
+  }
+
+  // Batches the (comparatively expensive, getFiltered()-scanning) header-checkbox/bulk-bar sync
+  // to at most once per animation frame — a fast drag can touch many rows within a single
+  // mousemove burst, and re-running onRowSelectionChanged() once per ROW rather than once per
+  // FRAME would reintroduce exactly the kind of O(rendered-row-count)-per-interaction cost the
+  // previous fix eliminated, just triggered by mousemove instead of by render().
+  function scheduleDragUIUpdate() {
+    if (dragUIUpdatePending) return;
+    dragUIUpdatePending = true;
+    requestAnimationFrame(function () {
+      dragUIUpdatePending = false;
+      if (dragSelect) onRowSelectionChanged();
+    });
+  }
+
+  function updateDragAutoScrollDirection(clientY) {
+    var wrap = document.querySelector('.table-wrap');
+    var rect = wrap.getBoundingClientRect();
+    if (clientY < rect.top + DRAG_AUTO_SCROLL_EDGE_PX && wrap.scrollTop > 0) {
+      dragAutoScrollDirection = -1;
+    } else if (clientY > rect.bottom - DRAG_AUTO_SCROLL_EDGE_PX && wrap.scrollTop < wrap.scrollHeight - wrap.clientHeight) {
+      dragAutoScrollDirection = 1;
+    } else {
+      dragAutoScrollDirection = 0;
+    }
+  }
+
+  function handleDragPointerMove(clientY) {
+    if (!dragSelect) return;
+    dragLastClientY = clientY;
+    updateDragAutoScrollDirection(clientY);
+    var idx = dragRowIndexAtPoint(dragSelect.lastClientX, clientY);
+    if (idx === null) return;
+    paintDragRange(idx);
+    scheduleDragUIUpdate();
+  }
+
+  // Runs continuously (via requestAnimationFrame) for the duration of a drag, independent of
+  // whether new mousemove events keep arriving — a user who drags to the edge and then just
+  // holds the cursor still there still expects continuous scrolling, which mousemove-only
+  // handling could never provide (mousemove doesn't fire for a stationary cursor).
+  function dragAutoScrollTick() {
+    if (!dragSelect) {
+      dragAutoScrollRafId = null;
+      return;
+    }
+    if (dragAutoScrollDirection !== 0) {
+      var wrap = document.querySelector('.table-wrap');
+      wrap.scrollTop += dragAutoScrollDirection * DRAG_AUTO_SCROLL_SPEED_PX;
+      // As the table scrolls under an otherwise-stationary cursor, the row under that fixed
+      // screen position keeps changing too — re-run the paint at the last known cursor Y so
+      // newly-revealed rows keep getting selected without requiring further mouse movement.
+      if (dragLastClientY !== null) handleDragPointerMove(dragLastClientY);
+    }
+    dragAutoScrollRafId = requestAnimationFrame(dragAutoScrollTick);
+  }
+
+  function onDocumentDragMouseMove(e) {
+    if (!dragSelect) return;
+    dragSelect.lastClientX = e.clientX;
+    handleDragPointerMove(e.clientY);
+  }
+
+  function onDocumentDragMouseUp() {
+    endDragSelect();
+  }
+
+  function startDragSelect(originTd, mode) {
+    var rows = getDragSelectableRows();
+    var originIndex = rows.indexOf(originTd.closest('tr'));
+    dragSelect = {
+      mode: mode,
+      rows: rows,
+      lastRowIndex: originIndex === -1 ? null : originIndex,
+      lastClientX: null,
+    };
+    document.body.classList.add('drag-selecting');
+    document.addEventListener('mousemove', onDocumentDragMouseMove);
+    document.addEventListener('mouseup', onDocumentDragMouseUp);
+    if (!dragAutoScrollRafId) dragAutoScrollRafId = requestAnimationFrame(dragAutoScrollTick);
+    // Covers the plain-click case (mousedown immediately followed by mouseup, no movement) —
+    // gives instant feedback rather than waiting up to one animation frame.
+    onRowSelectionChanged();
+  }
+
+  function endDragSelect() {
+    if (!dragSelect) return;
+    dragSelect = null;
+    dragAutoScrollDirection = 0;
+    dragLastClientY = null;
+    document.body.classList.remove('drag-selecting');
+    document.removeEventListener('mousemove', onDocumentDragMouseMove);
+    document.removeEventListener('mouseup', onDocumentDragMouseUp);
+    // Final synchronous sync — guarantees correctness even if a scheduleDragUIUpdate() rAF
+    // callback from the last few pixels of movement hadn't fired yet.
+    onRowSelectionChanged();
+  }
+
   function renderHeader() {
     var row = document.getElementById('header-row');
     row.innerHTML = '';
@@ -1816,6 +1983,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     checkbox.disabled = bulkState.inFlight;
     checkbox.checked = !!bulkState.selected[lead.id];
     checkbox.dataset.leadId = lead.id; // read back by syncRowCheckboxes on a "select all" toggle
+    // Kept for the keyboard path (Space/Enter on a focused checkbox) — see the click listener
+    // below for why the mouse path no longer relies on this at all.
     checkbox.addEventListener('change', function () {
       if (checkbox.checked) bulkState.selected[lead.id] = true;
       else delete bulkState.selected[lead.id];
@@ -1823,7 +1992,41 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       onRowSelectionChanged();
     });
     td.appendChild(checkbox);
-    td.addEventListener('click', function (e) { toggleCheckboxCell(e, checkbox); });
+
+    // Toggling (and starting a possible drag-select) happens here, in mousedown, not in the
+    // click handler below — see the "Click-and-drag multi-select" block's design-decision
+    // comment for why: a real drag (mousedown then move before releasing) never fires a native
+    // 'click' on the origin element at all, so waiting for click/change to learn "what did this
+    // row's own click just do" silently fails to start a drag for a real, non-pausing gesture.
+    td.addEventListener('mousedown', function (e) {
+      if (checkbox.disabled || e.button !== 0) return;
+      // Suppresses native text-selection-drag (and focus transfer) — does NOT cancel the
+      // later 'click' event's own default action, which the click listener below handles
+      // separately.
+      e.preventDefault();
+      checkbox.checked = !checkbox.checked;
+      if (checkbox.checked) bulkState.selected[lead.id] = true;
+      else delete bulkState.selected[lead.id];
+      bulkState.status = '';
+      startDragSelect(td, checkbox.checked ? 'select' : 'deselect');
+    });
+    td.addEventListener('click', function (e) {
+      // Keyboard activation (Space/Enter on a focused checkbox) synthesizes a click with
+      // detail === 0 — the standard way to tell it apart from a real mouse click (always
+      // detail >= 1). Nothing has toggled this yet for that case (mousedown above never fired),
+      // so let the browser's native default run normally, which fires this checkbox's own
+      // 'change' listener above. Still stop it from bubbling into the row's own
+      // click-to-open-sidebar handler.
+      if (e.detail === 0) {
+        e.stopPropagation();
+        return;
+      }
+      // Real mouse click — mousedown already did the actual toggle above. Without this, the
+      // browser's own default click behavior would flip .checked (and fire a second, native
+      // 'change') right back, undoing what mousedown just did.
+      e.preventDefault();
+      e.stopPropagation();
+    });
     return td;
   }
 
