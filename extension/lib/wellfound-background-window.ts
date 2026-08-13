@@ -22,6 +22,17 @@ interface BackgroundMessageResponse {
   ok?: boolean;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// See showOverlayWithRetry()'s comment for why this needs retrying at all. 5 attempts / 300ms
+// apart is a ~1.2s worst-case bound, paid only on the (rare, first-navigation-of-a-fresh-tab)
+// occasions the immediate attempt loses the race — every other navigation succeeds on attempt 1
+// same as before.
+const OVERLAY_SEND_MAX_ATTEMPTS = 5;
+const OVERLAY_SEND_RETRY_DELAY_MS = 300;
+
 export class WellfoundBackgroundWindow {
   private windowId: number | null = null;
   private tabId: number | null = null;
@@ -85,12 +96,35 @@ export class WellfoundBackgroundWindow {
     if (this.closed) {
       throw new WellfoundBackgroundWindowClosedError();
     }
-    try {
-      await chrome.tabs.sendMessage(tabId, { type: 'SHOW_BACKGROUND_OVERLAY', label: this.overlayLabel });
-    } catch {
-      // Best-effort — a failed overlay injection (e.g. content script not yet registered) must
-      // never abort real work. The overlay is a visual warning, not a safety mechanism.
+    await this.showOverlayWithRetry(tabId);
+  }
+
+  // chrome.tabs.onUpdated reporting 'complete' means the navigation itself is done, but the
+  // manifest-declared content script (content.ts, auto-injected — see wxt.config.ts) can still
+  // take a moment longer to actually attach and register its onMessage listener. On a tab
+  // that's already had at least one real page loaded, this gap is consistently smaller than the
+  // near-zero delay before this method used to fire its single sendMessage — but on the very
+  // first navigation of a freshly created tab (chrome.windows.create's initial about:blank ->
+  // the first real URL, in ensureTab() above), the gap is reliably bigger than that, so the one
+  // shot went out before anything was listening and was silently lost ("Could not establish
+  // connection. Receiving end does not exist."). EXTRACT_WELLFOUND_DETAIL/PARSE_LIST never hit
+  // this because their callers (wellfound-deepen.ts, wellfound-pagination.ts) each wait their
+  // own settle delay after navigate() returns before sending those — by then the content script
+  // is reliably up. Retrying here closes the same gap directly for the overlay, on every
+  // navigation, rather than depending on incidental timing in a caller.
+  private async showOverlayWithRetry(tabId: number): Promise<void> {
+    for (let attempt = 0; attempt < OVERLAY_SEND_MAX_ATTEMPTS; attempt++) {
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'SHOW_BACKGROUND_OVERLAY', label: this.overlayLabel });
+        return;
+      } catch {
+        if (attempt < OVERLAY_SEND_MAX_ATTEMPTS - 1) {
+          await sleep(OVERLAY_SEND_RETRY_DELAY_MS);
+        }
+      }
     }
+    // Best-effort even after exhausting retries — a failed overlay injection must never abort
+    // real work. The overlay is a visual warning, not a safety mechanism.
   }
 
   async sendMessage<T extends BackgroundMessageResponse>(message: unknown): Promise<T> {
