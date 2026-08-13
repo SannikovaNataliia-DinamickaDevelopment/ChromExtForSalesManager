@@ -3,14 +3,18 @@ import { getToken } from '../lib/auth';
 import { BACKEND_URL, isSupportedUrl } from '../lib/backend';
 import { FetchDeepening } from '../lib/deepen';
 import { deepenWellfoundLeads, WELLFOUND_RUN_CAP } from '../lib/wellfound-deepen';
+import { backfillWellfoundContact } from '../lib/wellfound-contact-backfill';
 
 const BULK_ENRICH_PORT_NAME = 'enrich-bulk';
 
-// Guards against two overlapping bulk runs (two dashboard tabs/windows, or a double-click that
-// slipped past the UI's own disabled state) — the service worker is a single shared process, so
-// a module-level flag is enough; a second connection is rejected outright rather than queued or
-// interleaved with the first run's Wellfound circuit breaker/window.
-let bulkEnrichInFlight = false;
+// Guards against two overlapping bulk runs — not just two ENRICH_LEADS runs, but any
+// combination of ENRICH_LEADS and BACKFILL_CONTACT_LEADS, since both ultimately drive the same
+// single dedicated Wellfound background window (WellfoundBackgroundWindow only ever expects one
+// caller at a time). Two dashboard tabs/windows, or a double-click that slipped past the UI's
+// own disabled state — the service worker is a single shared process, so a module-level flag is
+// enough; a second connection is rejected outright rather than queued or interleaved with the
+// first run's Wellfound circuit breaker/window.
+let wellfoundBulkInFlight = false;
 
 // Coordinator (CLAUDE.md phase 1): resolves the active tab, asks its content
 // script to parse the current list page, then forwards the batch to the
@@ -54,16 +58,19 @@ export default defineBackground(() => {
     return true;
   });
 
-  // Dashboard bulk "Enrich selected" — same externally_connectable channel as the single-lead
-  // ENRICH_LEAD message above, but a long-lived Port instead of one-shot sendMessage, since
-  // this needs to stream progress back over a run that can take minutes (Wellfound leads).
-  // Reuses the exact same FetchDeepening/deepenWellfoundLeads as enrichLead() and the batch
-  // "auto by all" flow — grouped by source, never a second Wellfound implementation.
+  // Dashboard bulk "Enrich selected" / "Backfill contact selected" — same externally_connectable
+  // channel as the single-lead ENRICH_LEAD message above, but a long-lived Port instead of
+  // one-shot sendMessage, since both need to stream progress back over a run that can take
+  // minutes (Wellfound leads). One port/listener handles both message types (rather than a
+  // second port) since they share the exact same in-flight guard and window — see
+  // wellfoundBulkInFlight's comment. Reuses the exact same FetchDeepening/deepenWellfoundLeads/
+  // backfillWellfoundContact as enrichLead() and the batch "auto by all" flow — grouped by
+  // source, never a second Wellfound implementation.
   chrome.runtime.onConnectExternal.addListener((port) => {
     if (port.name !== BULK_ENRICH_PORT_NAME) return;
 
     port.onMessage.addListener((message) => {
-      if (message?.type !== 'ENRICH_LEADS') return;
+      if (message?.type !== 'ENRICH_LEADS' && message?.type !== 'BACKFILL_CONTACT_LEADS') return;
 
       const send = (msg: unknown) => {
         try {
@@ -74,18 +81,22 @@ export default defineBackground(() => {
         }
       };
 
-      if (bulkEnrichInFlight) {
-        send({ type: 'DONE', ok: false, error: 'A bulk enrich run is already in progress. Wait for it to finish and try again.' });
+      if (wellfoundBulkInFlight) {
+        send({ type: 'DONE', ok: false, error: 'A bulk Wellfound run is already in progress. Wait for it to finish and try again.' });
         port.disconnect();
         return;
       }
 
-      bulkEnrichInFlight = true;
-      enrichLeadsBulk(message.leads, (progress) => send({ type: 'PROGRESS', ...progress }))
+      wellfoundBulkInFlight = true;
+      const run =
+        message.type === 'ENRICH_LEADS'
+          ? enrichLeadsBulk(message.leads, (progress) => send({ type: 'PROGRESS', ...progress }))
+          : backfillContactBulk(message.leads, (progress) => send({ type: 'PROGRESS', ...progress }));
+      run
         .then((result) => send({ type: 'DONE', ...result }))
         .catch((err) => send({ type: 'DONE', ok: false, error: err instanceof Error ? err.message : String(err) }))
         .finally(() => {
-          bulkEnrichInFlight = false;
+          wellfoundBulkInFlight = false;
           try {
             port.disconnect();
           } catch {
@@ -343,4 +354,61 @@ async function enrichLeadsBulk(
   }
 
   return { ok: true, succeeded, failed, skippedCapLeadIds, skippedCircuitBreakerLeadIds };
+}
+
+interface BulkContactResult {
+  ok: true;
+  found: number;
+  notSpecified: number;
+  // Definitive 404s, timeouts/blocks, and save failures — see backfillWellfoundContact's own
+  // doc comment. Left as 'not_checked' on the lead, so a later run retries them.
+  unresolved: number;
+  skippedCapLeadIds: string[];
+  skippedCircuitBreakerLeadIds: string[];
+}
+
+// Dashboard bulk "Backfill contact selected" (BACKFILL_CONTACT_LEADS). Wellfound-only by
+// construction — the dashboard only ever offers this button for Wellfound leads still
+// hiring_contact_status === 'not_checked' (see dashboard-page.ts's getSelectedNeedsContactCheck),
+// but this filters defensively too rather than trusting the caller. Reuses
+// backfillWellfoundContact (wellfound-contact-backfill.ts) unchanged — same cap/circuit-breaker/
+// pacing as every other Wellfound bulk action, never a second implementation.
+async function backfillContactBulk(
+  rawLeads: unknown,
+  onProgress: (progress: BulkEnrichProgress) => void,
+): Promise<BulkContactResult> {
+  const leads = normalizeBulkLeads(rawLeads).filter((l) => l.sourceSite === 'wellfound');
+
+  const token = await getToken();
+  if (!token) {
+    throw new Error('Not signed in to the extension.');
+  }
+
+  const capped = leads.slice(0, WELLFOUND_RUN_CAP);
+  const skippedCapLeadIds = leads.slice(WELLFOUND_RUN_CAP).map((l) => l.leadId);
+  const total = capped.length;
+
+  if (capped.length === 0) {
+    return { ok: true, found: 0, notSpecified: 0, unresolved: 0, skippedCapLeadIds, skippedCircuitBreakerLeadIds: [] };
+  }
+
+  const result = await backfillWellfoundContact(
+    capped.map((l) => ({ id: l.leadId, source_url: l.sourceUrl })),
+    (progress) => onProgress({ completed: progress.current, total }),
+  );
+
+  // Same "stoppedEarly means an untried tail, not a failure" reasoning as enrichLeadsBulk above
+  // — covers both the circuit breaker tripping and the background window being closed mid-run.
+  const skippedCircuitBreakerLeadIds = result.stoppedEarly
+    ? capped.slice(result.processed).map((l) => l.leadId)
+    : [];
+
+  return {
+    ok: true,
+    found: result.found,
+    notSpecified: result.notSpecified,
+    unresolved: result.unresolved,
+    skippedCapLeadIds,
+    skippedCircuitBreakerLeadIds,
+  };
 }

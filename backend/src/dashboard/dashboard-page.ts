@@ -827,6 +827,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="error">Error</option>
       </select>
     </span>
+    <span>
+      <label for="filter-contact">Contact</label>
+      <select id="filter-contact">
+        <option value="all">All</option>
+        <option value="found">Has contact person</option>
+        <option value="not_specified">Not specified</option>
+        <option value="not_checked">Not detailed for contact person</option>
+      </select>
+    </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
     <button class="refresh" id="export-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Export the leads currently visible under the active filters/search">Export</button>
     <span class="export-status" id="export-status"></span>
@@ -835,6 +844,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   <div class="bulk-bar" id="bulk-bar" hidden>
     <span class="bulk-count" id="bulk-count"></span>
     <button id="bulk-enrich-btn" type="button">Enrich selected</button>
+    <button id="bulk-contact-btn" type="button">Backfill contact selected</button>
     <button id="bulk-delete-btn" class="bulk-delete-btn" type="button">Delete selected</button>
     <span class="bulk-status" id="bulk-status"></span>
   </div>
@@ -984,6 +994,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterStatus: 'all',
     filterSource: 'all',
     filterDetail: 'all',
+    filterContact: 'all',
     search: '',
   };
 
@@ -1125,6 +1136,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // no risk of it drifting stale while closed.
   var IS_IT_FILTER_SUMMARY_LABELS = { it: 'IT only', not_it: 'not-IT only', unprocessed: 'Unprocessed only' };
   var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed', error: 'Error' };
+  var CONTACT_FILTER_SUMMARY_LABELS = { found: 'Has contact person', not_specified: 'Not specified', not_checked: 'Not detailed for contact person' };
 
   function buildExportFilterSummaryLines() {
     var lines = [];
@@ -1132,6 +1144,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterStatus !== 'all') lines.push('Status: ' + (STATUS_LABELS[state.filterStatus] || state.filterStatus));
     if (state.filterSource !== 'all') lines.push('Source: ' + state.filterSource);
     if (state.filterDetail !== 'all') lines.push('Detail: ' + (DETAIL_FILTER_SUMMARY_LABELS[state.filterDetail] || state.filterDetail));
+    if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
     if (state.search) lines.push('Search: "' + state.search + '"');
     return lines;
   }
@@ -1339,6 +1352,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       if (state.filterStatus !== 'all' && lead.status !== state.filterStatus) return false;
       if (state.filterSource !== 'all' && lead.source_site !== state.filterSource) return false;
       if (state.filterDetail !== 'all' && detailState(lead) !== state.filterDetail) return false;
+      // Value comes straight off the lead's own hiring_contact_status ('not_checked' | 'found' |
+      // 'not_specified') — no derived helper needed the way detailState() is, since this is
+      // already exactly the DB enum value, same relationship the IT filter has to lead.is_it.
+      if (state.filterContact !== 'all' && lead.hiring_contact_status !== state.filterContact) return false;
       if (state.search) {
         var q = state.search.toLowerCase();
         var titleMatch = (lead.job_title || '').toLowerCase().indexOf(q) !== -1;
@@ -1363,6 +1380,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // still be selected/checked (for bulk delete), they just don't count toward Enrich's N.
   function getSelectedNotDetailedLeads() {
     return getSelectedLeads().filter(needsEnrich);
+  }
+
+  // The subset "Backfill contact selected" acts on — Wellfound only (the only source this
+  // feature checks) and hiring_contact_status still 'not_checked', so a lead already resolved
+  // to 'found'/'not_specified' is never re-visited even if it stays selected across clicks.
+  function getSelectedNeedsContactCheck() {
+    return getSelectedLeads().filter(function (l) {
+      return l.source_site === 'wellfound' && l.hiring_contact_status === 'not_checked';
+    });
   }
 
   function clearSelection() {
@@ -1442,6 +1468,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // on error-flagged leads too, since clicking it IS the manual retry path for those).
   function needsEnrich(lead) {
     return detailState(lead) === 'not_detailed';
+  }
+
+  // Sidebar's "Contact" detail row value. 'found' renders "Name — Role (Location)" (Role/Location
+  // each omitted individually when absent — location in particular can be legitimately missing
+  // even when a contact was found, see wellfound-detail-extract.ts). 'not_specified' renders the
+  // Ukrainian marker — same "Ukrainian value labels, English everything else" convention this
+  // dashboard already uses for STATUS_LABELS — so it reads as a definite "checked, nothing there"
+  // rather than looking like a blank/never-checked field. 'not_checked' returns '' so
+  // buildDetailRow's own '—' fallback applies, same as every other genuinely-empty field.
+  function hiringContactDetailValue(lead) {
+    if (lead.hiring_contact_status === 'found') {
+      var text = lead.hiring_contact_name || '';
+      if (lead.hiring_contact_role) text += ' \\u2014 ' + lead.hiring_contact_role;
+      if (lead.hiring_contact_location) text += ' (' + lead.hiring_contact_location + ')';
+      return text;
+    }
+    if (lead.hiring_contact_status === 'not_specified') return 'не вказано';
+    return '';
   }
 
   function buildEnrichBlock(lead) {
@@ -1596,6 +1640,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     content.appendChild(buildDetailRow('Website', lead.company_website, true));
     content.appendChild(buildDetailRow('Job link', lead.source_url, true));
     content.appendChild(buildDetailRow('Location', lead.location));
+    content.appendChild(buildDetailRow('Contact', hiringContactDetailValue(lead)));
     content.appendChild(buildDetailRow('Published', formatKyiv(lead.published_at, true)));
     content.appendChild(buildDetailRow('Source', lead.source_site));
     content.appendChild(buildDetailRow('Status', STATUS_LABELS[lead.status] || lead.status));
@@ -1764,12 +1809,16 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
     var countEl = document.getElementById('bulk-count');
     var enrichBtn = document.getElementById('bulk-enrich-btn');
+    var contactBtn = document.getElementById('bulk-contact-btn');
     var deleteBtn = document.getElementById('bulk-delete-btn');
     var statusEl = document.getElementById('bulk-status');
     var notDetailedCount = getSelectedNotDetailedLeads().length;
+    var needsContactCount = getSelectedNeedsContactCheck().length;
 
     if (bulkState.inFlight && bulkState.mode === 'enrich') {
       countEl.textContent = 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
+    } else if (bulkState.inFlight && bulkState.mode === 'contact') {
+      countEl.textContent = 'Checking contacts ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'delete') {
       countEl.textContent = 'Deleting\\u2026';
     } else {
@@ -1781,6 +1830,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // already used elsewhere on this page (filters, other buttons).
     enrichBtn.textContent = 'Enrich selected (' + notDetailedCount + ')';
     enrichBtn.disabled = bulkState.inFlight || notDetailedCount === 0;
+
+    // Same "disabled when nothing eligible" pattern as Enrich above — eligible set is
+    // Wellfound + still-not_checked (see getSelectedNeedsContactCheck).
+    contactBtn.textContent = 'Backfill contact selected (' + needsContactCount + ')';
+    contactBtn.disabled = bulkState.inFlight || needsContactCount === 0;
 
     deleteBtn.textContent = 'Delete selected (' + count + ')';
     deleteBtn.disabled = bulkState.inFlight || count === 0;
@@ -1986,6 +2040,102 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
   }
 
+  function buildContactBulkSummary(result) {
+    if (!result || !result.ok) {
+      return (result && result.error) || 'Backfill contact failed.';
+    }
+    var parts = [result.found + ' found'];
+    if (result.notSpecified) parts.push(result.notSpecified + ' not specified');
+    if (result.unresolved) parts.push(result.unresolved + ' unresolved (left for a later run)');
+    var capSkipped = (result.skippedCapLeadIds || []).length;
+    var breakerSkipped = (result.skippedCircuitBreakerLeadIds || []).length;
+    if (capSkipped + breakerSkipped > 0) {
+      var reasons = [];
+      if (capSkipped) reasons.push('run cap reached');
+      if (breakerSkipped) reasons.push('repeated Wellfound failures, stopped early');
+      parts.push((capSkipped + breakerSkipped) + ' skipped \\u2014 ' + reasons.join('; '));
+    }
+    return parts.join(', ');
+  }
+
+  // Bulk "Backfill contact selected" — background.ts's BACKFILL_CONTACT_LEADS handler, same
+  // Port/connection mechanics as startBulkEnrich above (reused verbatim: extension-id lookup,
+  // timeout, PROGRESS/DONE message shape) just a different message type and result shape.
+  function startBulkContactBackfill() {
+    if (bulkState.inFlight) return;
+
+    var targets = getSelectedNeedsContactCheck()
+      .map(function (l) { return { leadId: l.id, sourceSite: l.source_site, sourceUrl: l.source_url }; });
+    if (targets.length === 0) return;
+
+    var extId = (localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '').trim();
+    if (!extId) {
+      bulkState.status = 'Set the Extension ID above first (see chrome://extensions), then try again.';
+      render();
+      return;
+    }
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.connect) {
+      bulkState.status = 'Install or open the Sales Manager extension in this browser to check contacts.';
+      render();
+      return;
+    }
+
+    bulkState.inFlight = true;
+    bulkState.mode = 'contact';
+    bulkState.completed = 0;
+    bulkState.total = targets.length;
+    bulkState.status = '';
+    render();
+
+    var settled = false;
+    var timeoutId = setTimeout(function () {
+      finish({ ok: false, error: 'Timed out waiting for the extension — it may still be working in the background. Try Refresh shortly.' });
+    }, Math.max(ENRICH_TIMEOUT_MS, ENRICH_TIMEOUT_MS * targets.length));
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      bulkState.inFlight = false;
+      bulkState.mode = null;
+      bulkState.status = buildContactBulkSummary(result);
+      clearSelection();
+      render();
+      loadLeads();
+    }
+
+    var port;
+    try {
+      port = chrome.runtime.connect(extId, { name: BULK_ENRICH_PORT_NAME });
+    } catch (err) {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to check contacts.' });
+      return;
+    }
+
+    port.onMessage.addListener(function (message) {
+      if (!message) return;
+      if (message.type === 'PROGRESS') {
+        bulkState.completed = message.completed;
+        bulkState.total = message.total;
+        render();
+        return;
+      }
+      if (message.type === 'DONE') {
+        finish(message);
+      }
+    });
+
+    port.onDisconnect.addListener(function () {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to check contacts.' });
+    });
+
+    try {
+      port.postMessage({ type: 'BACKFILL_CONTACT_LEADS', leads: targets });
+    } catch (err) {
+      finish({ ok: false, error: 'Install or open the Sales Manager extension in this browser to check contacts.' });
+    }
+  }
+
   // Bulk "Delete selected" — unlike bulk enrich, a plain DB write (PATCH /leads/bulk-delete),
   // so no extension/messaging round-trip is needed; applies to the whole selection regardless
   // of detail status. One confirm() for the whole batch, matching the "recoverable, mention
@@ -2071,6 +2221,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     state.filterDetail = e.target.value;
     render();
   });
+  document.getElementById('filter-contact').addEventListener('change', function (e) {
+    state.filterContact = e.target.value;
+    render();
+  });
   var searchDebounceId = null;
   document.getElementById('search-input').addEventListener('input', function (e) {
     var value = e.target.value;
@@ -2111,6 +2265,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   });
 
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
+  document.getElementById('bulk-contact-btn').addEventListener('click', startBulkContactBackfill);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
 
   var extensionIdInput = document.getElementById('extension-id');

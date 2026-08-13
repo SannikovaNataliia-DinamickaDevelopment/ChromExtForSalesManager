@@ -11,6 +11,7 @@ import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
+import { SetHiringContactDto } from './dto/set-hiring-contact.dto';
 import { EXPORT_COLUMNS } from './export-columns';
 import { GeminiClassifierService } from './gemini-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
@@ -283,6 +284,50 @@ export class LeadsService {
     }
 
     return { lead: updated, destination: destinationStatus };
+  }
+
+  // Wellfound "Hiring contact" tracking — deliberately a separate endpoint from deepen() above,
+  // not folded into DeepenLeadDto: this must NEVER touch description/company/company_website/
+  // enrichment_error, so a caller (the opportunistic save inside deepenWellfoundLeads, or the
+  // dedicated backfill run for already-deepened leads) can save just this field without any risk
+  // of clobbering content a normal deepen already got right. 'not_checked' is the column default
+  // and is never set here — this is only ever called once a deepening visit actually looked.
+  async setHiringContact(id: string, dto: SetHiringContactDto) {
+    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+
+    const [updated] = await this.db
+      .update(job_leads)
+      .set({
+        hiring_contact_status: dto.status,
+        hiring_contact_name: dto.status === 'found' ? dto.name ?? null : null,
+        hiring_contact_role: dto.status === 'found' ? dto.role ?? null : null,
+        hiring_contact_location: dto.status === 'found' ? dto.location ?? null : null,
+        updated_at: new Date(),
+      })
+      .where(eq(job_leads.id, id))
+      .returning();
+
+    const [owner] = await this.db
+      .select({ email: users.email, display_name: users.display_name })
+      .from(users)
+      .where(eq(users.id, updated.owner_user_id))
+      .limit(1);
+
+    try {
+      await this.destination.save({
+        ...updated,
+        owner_email: owner?.email ?? null,
+        owner_display_name: owner?.display_name ?? null,
+      });
+    } catch {
+      // Sheet push failure shouldn't fail the API call — the DB write already succeeded, same
+      // as every other mutation here.
+    }
+
+    return { lead: updated };
   }
 
   // CLAUDE.md scope C: broad IT/not-IT flag via Gemini. Idempotent/safe to re-run — a lead

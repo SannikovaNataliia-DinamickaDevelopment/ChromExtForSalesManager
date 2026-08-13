@@ -16,6 +16,16 @@ export interface DeepenErrorPatch {
   enrichment_error: string;
 }
 
+// Mirrors backend SetHiringContactDto. See LeadsService.setHiringContact's comment for why this
+// is a separate call/endpoint from DeepenPatch — it must never touch description/company/
+// company_website/enrichment_error.
+export interface HiringContactPatch {
+  status: 'found' | 'not_specified';
+  name?: string;
+  role?: string;
+  location?: string;
+}
+
 // Mirrors backend LeadsService.LeadSaveResult (POST /leads' per-item response shape).
 export interface LeadSaveResult {
   lead: JobLeadRecord;
@@ -91,6 +101,19 @@ export async function markLeadEnrichmentError(
 ): Promise<{ lead: JobLeadRecord; destination: 'ok' | 'failed' }> {
   const patch: DeepenErrorPatch = { enrichment_error: reason };
   const res = await fetch(`${BACKEND_URL}/leads/${id}/deepen`, {
+    method: 'PATCH',
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(patch),
+  });
+  return unwrap(res);
+}
+
+// Wellfound "Hiring contact" tracking (name/role/location) — called both opportunistically
+// (wellfound-deepen.ts, right after a successful normal deepen) and by the dedicated backfill
+// run (wellfound-contact-backfill.ts) for leads that were already deepened before this field
+// existed. Never sent for FetchDeepening (Techjobs/ITjobs) sources — see DeepenedFields.hiring_contact.
+export async function setLeadHiringContact(id: string, patch: HiringContactPatch): Promise<{ lead: JobLeadRecord }> {
+  const res = await fetch(`${BACKEND_URL}/leads/${id}/contact`, {
     method: 'PATCH',
     headers: await authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(patch),

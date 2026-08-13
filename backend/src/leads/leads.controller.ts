@@ -10,6 +10,7 @@ import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
+import { SetHiringContactDto } from './dto/set-hiring-contact.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { LEAD_STATUSES } from './lead-status';
 import { LeadsService } from './leads.service';
@@ -144,6 +145,23 @@ export class LeadsController {
       );
     }
     return this.leadsService.deepen(id, dto);
+  }
+
+  // Wellfound "Hiring contact" tracking — separate from :id/deepen on purpose, see
+  // LeadsService.setHiringContact's comment. Called both by the opportunistic save inside a
+  // normal Wellfound deepen and by the dedicated backfill run for already-deepened leads.
+  @Patch(':id/contact')
+  async setHiringContact(@Param('id') id: string, @Body() body: unknown) {
+    const dto = plainToInstance(SetHiringContactDto, body);
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: false });
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; '),
+      );
+    }
+    return this.leadsService.setHiringContact(id, dto);
   }
 
   // CLAUDE.md scope C: called once per deepened-but-unclassified lead by the extension's

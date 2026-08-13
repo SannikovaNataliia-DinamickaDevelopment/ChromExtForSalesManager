@@ -94,9 +94,10 @@ Priority order (A → C are the target; D only if time permits before the Tuesda
 
 - `users(id, email, display_name, created_at)`
 - `external_identities(id, user_id→users, provider, provider_user_id, email, created_at)`
-- `job_leads(id, owner_user_id→users [= created_by], source_site, source_url, external_job_id, company, company_website, job_title, location, description, salary, tech_stack, apply_url, ats, published_at, is_it, contact_name, contact_email, contact_phone, status, snapshot(jsonb), scraped_at, created_at, updated_at)`
+- `job_leads(id, owner_user_id→users [= created_by], source_site, source_url, external_job_id, company, company_website, job_title, location, description, salary, tech_stack, apply_url, ats, published_at, is_it, contact_name, contact_email, contact_phone, hiring_contact_status, hiring_contact_name, hiring_contact_role, hiring_contact_location, status, snapshot(jsonb), scraped_at, created_at, updated_at)`
 - `status` — enum `new | in_progress | done` (default `new`). Ukrainian UI labels («новий», «опрацьовується», «опрацьований») only; DB/API use English values.
 - `is_it` — enum `it | not_it | unprocessed` (default `unprocessed`).
+- `hiring_contact_status` — enum `not_checked | found | not_specified` (default `not_checked`). Wellfound-only (see "Hiring contact tracking" below); `hiring_contact_name/role/location` are only ever populated when status is `found`.
 - `published_at` — the vacancy's posted date (parsed from the card).
 - **Global dedup indexes:** unique `(source_site, external_job_id)`, unique `(source_url)`.
 
@@ -188,6 +189,55 @@ knowing how either works):
 
 ---
 
+## Hiring contact tracking (Wellfound) — added later in the project
+
+Some Wellfound postings show a "Hiring contact" section on the detail page (name, role — e.g.
+"Employee", "Co-Founder" — and location; location can be legitimately absent even when
+name/role are present). Not part of the original brief; added 2026-08-13 as an explicit,
+narrow exception to the contact-enrichment prohibition (see "What NOT to do" below) — this is
+Wellfound's own on-page data, not a third-party enrichment service, and never touches
+email/phone.
+
+- **Extraction** (`extension/lib/wellfound-detail-extract.ts`): anchored on the literal
+  "Hiring contact" header text (not a Tailwind class — this site's classes have already
+  survived one full redesign, see the Techjobs/ITjobs Parser spec history). Within that
+  header's container, the first three "leaf" text elements in document order are name, role,
+  location — confirmed against two live postings (one with all three, one with role but no
+  location element at all). Read at the same moment as the JobPosting JSON-LD (finding that is
+  the signal the page is actually hydrated), via `DeepenedFields.hiring_contact`, a three-way
+  result: `undefined` (this strategy doesn't check — Techjobs/ITjobs' `FetchDeepening` never
+  sets it), `null` (checked, section genuinely absent), or `{name, role, location}` (found).
+- **Three DB states, not a boolean** (`hiring_contact_status`): `not_checked` (default) →
+  `found` or `not_specified` once a deepening visit actually looked. Written via a dedicated
+  endpoint, `PATCH /leads/:id/contact` (`SetHiringContactDto`), deliberately separate from
+  `:id/deepen` — it must never touch description/company/company_website/enrichment_error.
+- **Opportunistic save**: every normal Wellfound deepening visit (`deepenWellfoundLeads` in
+  `wellfound-deepen.ts` — "auto by all", the dashboard's single-lead Enrich, and bulk Enrich)
+  saves whatever `hiring_contact` it found at zero extra cost, since the detail page is
+  already loaded. This is how new leads resolve out of `not_checked` going forward.
+- **Dedicated backfill** (`extension/lib/wellfound-contact-backfill.ts`,
+  `backfillWellfoundContact`) — for leads that were already deepened before this field existed
+  (or whose opportunistic save failed): revisits only leads a caller has pre-filtered to
+  `hiring_contact_status === 'not_checked'`, so a run — even run repeatedly — never re-touches
+  a lead already resolved to `found`/`not_specified`. Reuses `TabDeepening.deepenOne()` purely
+  for its extraction (no side effects of its own) plus the same `WELLFOUND_RUN_CAP` (30),
+  `WELLFOUND_CIRCUIT_BREAKER_THRESHOLD`, and human-pace delay as normal Wellfound deepening — a
+  definitive 404 leaves the lead `not_checked` (couldn't check) and doesn't count toward the
+  circuit breaker, same as normal deepening's 404 handling; a timeout/block does count.
+  Triggered from the dashboard's "Backfill contact selected" bulk button
+  (`BACKFILL_CONTACT_LEADS`, same Port/extension-messaging mechanism as bulk Enrich, sharing
+  its in-flight guard since both drive the one dedicated Wellfound background window).
+- **Dashboard**: a "Contact" filter (alongside Detail/Error) with options "Has contact person"
+  / "Not specified" / "Not detailed for contact person", mapping directly to the DB enum. The
+  sidebar shows the resolved value ("Name — Role (Location)"), the Ukrainian marker «не
+  вказано» for `not_specified` (same "Ukrainian value labels, English everything else"
+  convention as `status`), or the usual `—` for `not_checked`.
+- **Run cap**: bumped `WELLFOUND_RUN_CAP` 20 → 30 (2026-08-13, alongside the pagination
+  auto-deepen feature) — applies to every Wellfound bulk flow that imports the constant:
+  normal bulk enrich, the pagination auto-deepen, and this backfill.
+
+---
+
 ## What NOT to do (critical) — REVISED
 
 Reversals from the earlier brief (intentional, per the manager meeting):
@@ -196,7 +246,7 @@ Reversals from the earlier brief (intentional, per the manager meeting):
 - **REVERSED — multi-page:** paging via the URL `?page=N` param is allowed (deprioritized). Still **NO Selenium / no simulated clicks**.
 
 Still forbidden:
-- NO contact enrichment (Apollo/Hunter/PDL); NO scraping contact emails/phones. Company name + website only; contacts via LinkedIn manually.
+- NO contact enrichment (Apollo/Hunter/PDL); NO scraping contact emails/phones. Company name + website only; contacts via LinkedIn manually. **Narrow, explicitly-approved exception (2026-08-13):** Wellfound's own on-page "Hiring contact" section (name/role/location — never email/phone, never a third-party enrichment service) may be scraped and stored — see "Hiring contact tracking (Wellfound)" below. This does not reopen contact enrichment generally; every other source and every other form of contact data stays out of scope.
 - NO HubSpot. NO "chats".
 - The core stays destination-agnostic (only via the `Destination` interface).
 - `status` and `is_it` are server-validated enums, never free strings.
@@ -273,4 +323,4 @@ Current iteration (deadline Tuesday), in priority order:
 
 ## Decision log
 
-side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)** · **Wellfound.com added as a third source — own list selectors, deepens via a dedicated background browser tab (DeepeningStrategy abstraction: FetchDeepening vs TabDeepening) instead of a fetch because of DataDome bot-protection, Gemini stays permanently off for it**.
+side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)** · **Wellfound.com added as a third source — own list selectors, deepens via a dedicated background browser tab (DeepeningStrategy abstraction: FetchDeepening vs TabDeepening) instead of a fetch because of DataDome bot-protection, Gemini stays permanently off for it** · **Wellfound "Hiring contact" tracking added as a narrow, explicitly-approved exception to the contact-enrichment prohibition — name/role/location only, scraped from Wellfound's own page (never email/phone, never a third-party service); three-state (not_checked/found/not_specified), opportunistic during normal deepening plus a dedicated backfill for already-deepened leads, reusing the same run cap/circuit breaker**.

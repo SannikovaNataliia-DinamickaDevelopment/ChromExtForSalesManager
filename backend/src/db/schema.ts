@@ -3,6 +3,13 @@ import { index, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid, jsonb } fro
 
 export const leadStatusEnum = pgEnum('lead_status', ['new', 'in_progress', 'done']);
 export const leadIsItEnum = pgEnum('lead_is_it', ['it', 'not_it', 'unprocessed']);
+// Wellfound-only "Hiring contact" section (name/role/location), scraped from the detail page's
+// live DOM — a genuinely different concept from contact_name/contact_email/contact_phone below,
+// which stay manual/LinkedIn-only per CLAUDE.md. Three states, not a boolean: 'not_checked' (no
+// deepening visit has looked for this yet) must be distinguishable from 'not_specified' (a visit
+// looked and the section genuinely wasn't on the page) so a backfill run never re-visits a lead
+// that already resolved to "no contact" — see wellfound-contact-backfill.ts.
+export const hiringContactStatusEnum = pgEnum('hiring_contact_status', ['not_checked', 'found', 'not_specified']);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -49,6 +56,12 @@ export const job_leads = pgTable(
     contact_name: text('contact_name'),
     contact_email: text('contact_email'),
     contact_phone: text('contact_phone'),
+    // Wellfound "Hiring contact" section (see hiringContactStatusEnum above). Name/role/location
+    // are only ever populated when status is 'found' — null in both other states.
+    hiring_contact_status: hiringContactStatusEnum('hiring_contact_status').default('not_checked').notNull(),
+    hiring_contact_name: text('hiring_contact_name'),
+    hiring_contact_role: text('hiring_contact_role'),
+    hiring_contact_location: text('hiring_contact_location'),
     status: leadStatusEnum('status').default('new').notNull(),
     // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
     is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),

@@ -1,4 +1,4 @@
-import { deepenLead, markLeadEnrichmentError } from './api';
+import { deepenLead, markLeadEnrichmentError, setLeadHiringContact } from './api';
 import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepening-strategy';
 import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedError } from './wellfound-background-window';
 
@@ -170,6 +170,24 @@ export async function deepenWellfoundLeads(
             company_website: detail.company_website,
             ...(detail.published_at ? { published_at: detail.published_at } : {}),
           });
+          // Opportunistic: the detail page is already loaded, so save the "Hiring contact"
+          // section (if this extraction checked for one — see DeepenedFields.hiring_contact) at
+          // zero extra cost. Its own try/catch, separate from the block below: a contact-save
+          // failure must never turn a lead whose description/company/website already saved fine
+          // into a counted failure (saveFailed) or retroactively affect the circuit breaker.
+          if (detail.hiring_contact !== undefined) {
+            try {
+              await setLeadHiringContact(
+                target.id,
+                detail.hiring_contact === null
+                  ? { status: 'not_specified' }
+                  : { status: 'found', ...detail.hiring_contact },
+              );
+            } catch {
+              // Swallow — see comment above. A future backfill run picks this lead up again
+              // since hiring_contact_status stays 'not_checked' when this write never landed.
+            }
+          }
         }
       } catch (err) {
         if (err instanceof WellfoundBackgroundWindowClosedError || strategy.wasClosedByUser) {

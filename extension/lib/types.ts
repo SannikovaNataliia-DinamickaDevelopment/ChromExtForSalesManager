@@ -45,6 +45,13 @@ export interface JobLeadRecord extends JobLead {
   // Null = no error on record. Distinct from "no description/company_website yet", which just
   // means never attempted (or worth a normal auto-retry) — see wellfound-deepen.ts.
   enrichment_error: string | null;
+  // Wellfound "Hiring contact" tracking (name/role/location, scraped from the detail page's
+  // DOM, distinct from contact_name/contact_email/contact_phone above which stay manual/
+  // LinkedIn-only). name/role/location are only ever set when status is 'found'.
+  hiring_contact_status: 'not_checked' | 'found' | 'not_specified';
+  hiring_contact_name: string | null;
+  hiring_contact_role: string | null;
+  hiring_contact_location: string | null;
 }
 
 // FR-5: one manual click parses every card on the current list page (batch, current tab only).
