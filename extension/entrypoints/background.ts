@@ -211,8 +211,12 @@ async function enrichLead(message: EnrichLeadMessage) {
   // can never silently drift from the batch flow's behavior.
   if (sourceSite === 'wellfound') {
     const result = await deepenWellfoundLeads([{ id: leadId, source_url: sourceUrl }], () => {});
-    return result.succeeded === 1
-      ? { ok: true as const }
+    if (result.succeeded === 1) return { ok: true as const };
+    // Distinguishes a definitive 404 (posting removed/expired, already flagged with
+    // enrichment_error by deepenWellfoundLeads) from a genuine timeout/possible bot-detection
+    // block — the two have different causes and the message shouldn't blur them together.
+    return result.errorFlagged === 1
+      ? { ok: false as const, error: 'This posting no longer exists on Wellfound (404) — flagged, not a bot-detection block.' }
       : { ok: false as const, error: 'Could not enrich this Wellfound lead (bot-detection block or timeout).' };
   }
 

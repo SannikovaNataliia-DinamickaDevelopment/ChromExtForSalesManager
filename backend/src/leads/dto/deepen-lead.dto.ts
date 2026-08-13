@@ -8,4 +8,9 @@ export class DeepenLeadDto {
   @IsOptional() @IsString() company?: string;
   @IsOptional() @IsString() company_website?: string;
   @IsOptional() @IsISO8601() published_at?: string;
+  // A definitive, non-retriable deepening failure for this lead (e.g. a Wellfound posting
+  // that 404s — removed/expired, not a bot-block or a timeout). Presence of this field alone
+  // (no content fields) is how LeadsService.deepen() tells "record an error" apart from a
+  // normal successful save — see that method for the full contract.
+  @IsOptional() @IsString() enrichment_error?: string;
 }

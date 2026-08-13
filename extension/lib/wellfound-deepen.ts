@@ -1,4 +1,4 @@
-import { deepenLead } from './api';
+import { deepenLead, markLeadEnrichmentError } from './api';
 import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepening-strategy';
 import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedError } from './wellfound-background-window';
 
@@ -27,6 +27,7 @@ function sleep(ms: number): Promise<void> {
 interface ExtractResponse {
   ok: boolean;
   detail?: DeepenedFields;
+  notFound?: boolean;
   error?: string;
 }
 
@@ -45,8 +46,14 @@ interface ExtractResponse {
  */
 export class TabDeepening implements DeepeningStrategy {
   private readonly win = new WellfoundBackgroundWindow('deepening');
+  // Set by the most recent deepenOne() call when EXTRACT_WELLFOUND_DETAIL came back as a
+  // definitive "this posting doesn't exist" (Wellfound's own 404 page — see content.ts's
+  // WELLFOUND_NOT_FOUND_TITLE) rather than a timeout/possible-block. Reset at the start of
+  // every call, so it only ever reflects the outcome of the most recent one.
+  private lastNotFoundReason: string | null = null;
 
   async deepenOne(target: DeepeningTarget): Promise<DeepenedFields | null> {
+    this.lastNotFoundReason = null;
     await this.win.navigate(target.source_url);
     await sleep(CONTENT_SCRIPT_SETTLE_MS);
 
@@ -57,11 +64,22 @@ export class TabDeepening implements DeepeningStrategy {
       }),
     ]);
 
+    if (!res?.ok && res?.notFound) {
+      this.lastNotFoundReason = res.error ?? 'This posting no longer exists on Wellfound (404).';
+    }
+
     return res?.ok && res.detail ? res.detail : null;
   }
 
   get wasClosedByUser(): boolean {
     return this.win.wasClosedByUser;
+  }
+
+  // Non-null only immediately after a deepenOne() call whose failure was a definitive
+  // Wellfound 404, not a timeout/possible-block — the caller (deepenWellfoundLeads) uses this
+  // to keep that kind of failure out of the circuit breaker's consecutive-failure count.
+  get lastNotFound(): string | null {
+    return this.lastNotFoundReason;
   }
 
   // Exposes the shared window's interruptible human-pace delay without leaking the window
@@ -93,6 +111,10 @@ export interface WellfoundDeepenResult {
   // circuit breaker tripping) — lets callers give a more accurate "interrupted, resume via X"
   // message instead of the generic "possible bot-detection block" one.
   interrupted: boolean;
+  // Leads that hit a definitive Wellfound 404 (posting removed/expired) — flagged with
+  // enrichment_error and skipped, never counted toward stoppedEarly/the circuit breaker. A
+  // separate bucket from succeeded/failed so callers can report it distinctly.
+  errorFlagged: number;
 }
 
 /**
@@ -104,6 +126,13 @@ export interface WellfoundDeepenResult {
  * was already saved stays saved; there's no separate "resume" state to track here since the
  * next deepen attempt (a fresh parse, or the dashboard's Enrich button) simply retries whatever
  * lead is still missing a description.
+ *
+ * A definitive Wellfound 404 (the posting was removed/expired — confirmed via
+ * content.ts's WELLFOUND_NOT_FOUND_TITLE check, not a timeout or an ambiguous/blocked page) is
+ * NOT a sign of bot detection and must never count toward the circuit breaker: it's flagged via
+ * markLeadEnrichmentError and skipped immediately, leaving consecutiveFailures untouched either
+ * way (neither incremented nor reset), so a run of otherwise-genuine timeouts/blocks around it
+ * isn't masked by an unrelated 404 landing in between.
  */
 export async function deepenWellfoundLeads(
   targets: DeepeningTarget[],
@@ -117,6 +146,7 @@ export async function deepenWellfoundLeads(
   let stoppedEarly = false;
   let interrupted = false;
   let processed = 0;
+  let errorFlagged = 0;
 
   try {
     for (let i = 0; i < capped.length; i++) {
@@ -154,6 +184,31 @@ export async function deepenWellfoundLeads(
         break;
       }
 
+      const notFoundReason = strategy.lastNotFound;
+      if (!detail && notFoundReason) {
+        // Definitive 404 — flag the lead and move on immediately. Deliberately does NOT touch
+        // consecutiveFailures (see this function's doc comment) — never counts toward the
+        // circuit breaker.
+        try {
+          await markLeadEnrichmentError(target.id, notFoundReason);
+        } catch {
+          // Swallow: failing to record the flag must not abort the run — worst case this lead
+          // just gets attempted again next time, same as any other unflagged failure would.
+        }
+        processed++;
+        errorFlagged++;
+        onProgress({ current: processed, total: capped.length, succeeded, stoppedEarly: false });
+
+        if (i < capped.length - 1) {
+          if (await strategy.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
+            stoppedEarly = true;
+            interrupted = true;
+            break;
+          }
+        }
+        continue;
+      }
+
       processed++;
 
       if (detail && !saveFailed) {
@@ -183,5 +238,5 @@ export async function deepenWellfoundLeads(
     await strategy.close();
   }
 
-  return { processed, succeeded, stoppedEarly, interrupted };
+  return { processed, succeeded, stoppedEarly, interrupted, errorFlagged };
 }

@@ -52,6 +52,14 @@ export const job_leads = pgTable(
     status: leadStatusEnum('status').default('new').notNull(),
     // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
     is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),
+    // Set when a deepening attempt (TabDeepening, currently — any future strategy could set it
+    // too) hits a definitive, non-retriable failure for this specific lead (e.g. a Wellfound
+    // posting that 404s because it was removed/expired) — distinct from "not yet attempted"
+    // (still null description/company_website with no error) so automatic deepen queues can
+    // skip it instead of retrying forever. Null = no error on record. Cleared automatically the
+    // next time a deepen call actually saves real content (LeadsService.deepen) — i.e. a
+    // successful manual retry clears it.
+    enrichment_error: text('enrichment_error'),
     snapshot: jsonb('snapshot'),
     // The vacancy's posted date (parsed from the list card), distinct from scraped_at
     // (when we parsed it) and created_at (when the row was first saved).

@@ -40,6 +40,11 @@ export interface JobLeadRecord extends JobLead {
   is_it: LeadIsIt;
   created_at: string;
   updated_at: string;
+  // Set when a deepening attempt hit a definitive, non-retriable failure for this specific
+  // lead (e.g. a Wellfound posting that 404s — removed/expired, not a bot-block or a timeout).
+  // Null = no error on record. Distinct from "no description/company_website yet", which just
+  // means never attempted (or worth a normal auto-retry) — see wellfound-deepen.ts.
+  enrichment_error: string | null;
 }
 
 // FR-5: one manual click parses every card on the current list page (batch, current tab only).

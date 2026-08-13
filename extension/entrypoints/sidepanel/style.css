@@ -144,6 +144,32 @@ h1 {
   color: var(--pink);
 }
 
+/* Quick-launch row (App.tsx's QUICK_LAUNCH_SITES) — right under the heading, one small link
+   per supported site so the manager can jump to any of them without already having the right
+   page open. Deliberately plain links, not .parse-button-styled: these aren't actions on the
+   extension's own state, just external navigation. */
+.site-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.site-link {
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.site-link:hover {
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
 .parse-button {
   width: 100%;
   padding: 8px;
@@ -252,81 +278,3 @@ h1 {
   flex: 1;
 }
 
-.lead-list {
-  margin-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.lead-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
-}
-
-.lead-card .title {
-  font-weight: 600;
-  color: var(--text);
-}
-
-.owner-badge {
-  margin-left: 6px;
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--chip-bg-neutral);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.is-it-badge {
-  margin-left: 6px;
-  font-weight: 500;
-  font-size: 11px;
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.is-it-badge.it {
-  color: var(--pink);
-  background: var(--chip-bg-accent);
-}
-
-.is-it-badge.not_it {
-  color: var(--text-secondary);
-  background: var(--chip-bg-neutral);
-}
-
-.lead-card .meta {
-  color: var(--text-secondary);
-  font-size: 12px;
-  margin: 2px 0;
-}
-
-.lead-card a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.lead-card a:hover {
-  color: var(--pink);
-  text-decoration: underline;
-}
-
-.lead-card select {
-  margin-top: 6px;
-  width: 100%;
-  padding: 5px 8px;
-  background: var(--panel-alt);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.lead-card select:focus {
-  outline: 1px solid var(--accent);
-}

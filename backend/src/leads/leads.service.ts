@@ -249,6 +249,19 @@ export class LeadsService {
       update.published_at = new Date(patch.published_at);
     }
 
+    // Two distinct call shapes share this one endpoint: a normal successful deepen (content
+    // fields present, enrichment_error absent) and an error-marking call (enrichment_error
+    // present, no content — there's nothing to save). Presence of enrichment_error alone
+    // decides which one this is; a call carrying real content always clears any prior error —
+    // that's what makes a successful manual retry (dashboard's "Enrich" button, still shown on
+    // an error-flagged lead) clear the flag automatically, with no separate "clear" signal
+    // needed from the caller.
+    if (patch.enrichment_error !== undefined) {
+      update.enrichment_error = patch.enrichment_error;
+    } else if (patch.description !== undefined || patch.company !== undefined || patch.company_website !== undefined) {
+      update.enrichment_error = null;
+    }
+
     const [updated] = await this.db.update(job_leads).set(update).where(eq(job_leads.id, id)).returning();
 
     const [owner] = await this.db

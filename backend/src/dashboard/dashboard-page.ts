@@ -541,6 +541,26 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   .badge.it { background: rgba(201, 127, 176, 0.22); color: var(--pink); }
   .badge.not_it { background: var(--chip-bg-neutral); color: var(--text-secondary); }
   .badge.source { background: var(--accent-tint); color: var(--accent); text-transform: uppercase; }
+  /* Warning icon (title-cell, table row) — "System couldn't process this lead" tooltip on
+     hover, via the native title attribute (see buildRow/ERROR_TOOLTIP_TEXT). Small filled
+     circle rather than a bare "!" glyph so it reads as a status indicator at a glance, same
+     visual weight as .badge, not just loose text next to the title. */
+  .error-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--error);
+    color: var(--on-error);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    vertical-align: middle;
+  }
   .empty-state, .loading-state {
     padding: 40px;
     text-align: center;
@@ -602,6 +622,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     background: var(--accent-2-tint);
     border: 1px solid var(--border);
     border-radius: 8px;
+  }
+  /* Sidebar's "click" half of the warning icon's hover/click contract — sits above the Enrich
+     block (which stays visible/clickable here, per the manual-retry design) so the retry
+     affordance is right below the explanation of why it's needed. */
+  .error-banner {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background: var(--error-bg);
+    border: 1px solid var(--error);
+    border-radius: 8px;
+    color: var(--error);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .error-banner-reason {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.85;
   }
   .enrich-btn {
     background: var(--pink);
@@ -786,6 +824,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="all">All</option>
         <option value="not_detailed">Not detailed</option>
         <option value="detailed">Detailed</option>
+        <option value="error">Error</option>
       </select>
     </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
@@ -845,6 +884,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
   var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
   var COLUMN_COUNT = 12; // 11 data columns + the leading checkbox column
+  // Warning-icon tooltip (table row, hover) and the lead-in line of the sidebar's error banner
+  // (row click) — same wording either way, the sidebar just adds the specific stored reason
+  // underneath. See lead.enrichment_error's schema comment for how a lead gets into this state.
+  var ERROR_TOOLTIP_TEXT = "System couldn't process this lead \\u2014 try manually, or delete it if no longer relevant.";
   // "Enrich" button (extension-side deepening triggered from this page — see background.ts's
   // ENRICH_LEAD handler). Each dev/browser loads the extension with its own id
   // (chrome://extensions), so this can't be hardcoded — the manager pastes it in once and
@@ -1081,7 +1124,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // listeners below) since it's cheap to build and the panel is hidden most of the time anyway;
   // no risk of it drifting stale while closed.
   var IS_IT_FILTER_SUMMARY_LABELS = { it: 'IT only', not_it: 'not-IT only', unprocessed: 'Unprocessed only' };
-  var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed' };
+  var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed', error: 'Error' };
 
   function buildExportFilterSummaryLines() {
     var lines = [];
@@ -1295,11 +1338,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       if (state.filterIsIt !== 'all' && lead.is_it !== state.filterIsIt) return false;
       if (state.filterStatus !== 'all' && lead.status !== state.filterStatus) return false;
       if (state.filterSource !== 'all' && lead.source_site !== state.filterSource) return false;
-      if (state.filterDetail !== 'all') {
-        var notDetailed = needsEnrich(lead);
-        if (state.filterDetail === 'not_detailed' && !notDetailed) return false;
-        if (state.filterDetail === 'detailed' && notDetailed) return false;
-      }
+      if (state.filterDetail !== 'all' && detailState(lead) !== state.filterDetail) return false;
       if (state.search) {
         var q = state.search.toLowerCase();
         var titleMatch = (lead.job_title || '').toLowerCase().indexOf(q) !== -1;
@@ -1385,10 +1424,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   // Only one sidebar exists — opening a new lead just replaces its content, so there's
   // never more than one open at a time.
-  // Shown only for leads that fell out of deepening entirely (never attempted, failed, or
-  // timed out) — a lead with either field already populated has nothing this button would add.
+  //
+  // Three-way, not a boolean: 'error' (enrichment_error set — a definitive, non-retriable
+  // deepening failure, e.g. a Wellfound posting that 404s) needs to be distinguishable from
+  // plain 'not_detailed' (never attempted, or a transient failure worth auto-retrying) so
+  // automatic Enrich queues can skip the former without skipping the latter, and so the
+  // dashboard's Detail filter can surface error-flagged leads for triage instead of them
+  // silently blending into "not detailed" forever.
+  function detailState(lead) {
+    if (lead.enrichment_error) return 'error';
+    if (!lead.description && !lead.company_website) return 'not_detailed';
+    return 'detailed';
+  }
+
+  // Eligible for an AUTOMATIC enrich queue (bulk "Enrich selected" — the single-lead sidebar
+  // Enrich button below has its own, deliberately more permissive condition: it stays visible
+  // on error-flagged leads too, since clicking it IS the manual retry path for those).
   function needsEnrich(lead) {
-    return !lead.description && !lead.company_website;
+    return detailState(lead) === 'not_detailed';
   }
 
   function buildEnrichBlock(lead) {
@@ -1520,7 +1573,22 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       ]));
     }
 
-    if (needsEnrich(lead)) {
+    // "Click" half of the warning icon's hover/click contract (buildTitleCell below covers
+    // hover, via the icon's native title tooltip) — opening the sidebar is what a click on the
+    // row does, so this is where the fuller message lives, plus the actual stored reason.
+    if (lead.enrichment_error) {
+      content.appendChild(el('div', { className: 'error-banner' }, [
+        el('div', { text: ERROR_TOOLTIP_TEXT }),
+        el('div', { className: 'error-banner-reason', text: lead.enrichment_error }),
+      ]));
+    }
+
+    // Shown for 'not_detailed' (never attempted / worth a normal retry) AND 'error' (the
+    // explicit manual single-lead retry path for a lead an automatic queue already skipped) —
+    // NOT for 'detailed', which has nothing left for this button to add. Deliberately more
+    // permissive than needsEnrich() (used for the AUTOMATIC bulk-enrich eligible set), which
+    // excludes 'error' on purpose — see needsEnrich's own comment.
+    if (detailState(lead) !== 'detailed') {
       content.appendChild(buildEnrichBlock(lead));
     }
 
@@ -1642,7 +1710,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
     tr.appendChild(sourceTd);
 
-    tr.appendChild(el('td', { className: 'title-cell', text: lead.job_title || '(untitled)' }));
+    var titleTd = document.createElement('td');
+    titleTd.className = 'title-cell';
+    titleTd.appendChild(document.createTextNode(lead.job_title || '(untitled)'));
+    if (lead.enrichment_error) {
+      // Hover half of the warning icon's hover/click contract — click is covered by the row's
+      // own click-to-open-sidebar handler above, where the fuller error banner lives.
+      titleTd.appendChild(el('span', { className: 'error-icon', title: ERROR_TOOLTIP_TEXT, text: '!' }));
+    }
+    tr.appendChild(titleTd);
     tr.appendChild(buildLinkTd(lead.source_url, 'Open \\u2197'));
 
     var isItTd = document.createElement('td');

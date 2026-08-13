@@ -9,6 +9,13 @@ export interface DeepenPatch {
   published_at?: string;
 }
 
+// Presence alone (no content fields) tells the backend this is an error-marking call, not a
+// successful save — see LeadsService.deepen()'s contract. Kept as its own type rather than a
+// field on DeepenPatch so a caller can never accidentally send both in one call.
+export interface DeepenErrorPatch {
+  enrichment_error: string;
+}
+
 // Mirrors backend LeadsService.LeadSaveResult (POST /leads' per-item response shape).
 export interface LeadSaveResult {
   lead: JobLeadRecord;
@@ -66,6 +73,23 @@ export async function updateLeadStatus(id: string, status: LeadStatus): Promise<
 // what it found. published_at is a backfill suggestion only — the backend applies it solely
 // when the lead doesn't already have one (see LeadsService.deepen).
 export async function deepenLead(id: string, patch: DeepenPatch): Promise<{ lead: JobLeadRecord; destination: 'ok' | 'failed' }> {
+  const res = await fetch(`${BACKEND_URL}/leads/${id}/deepen`, {
+    method: 'PATCH',
+    headers: await authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(patch),
+  });
+  return unwrap(res);
+}
+
+// Records a definitive, non-retriable deepening failure for this lead (e.g. a Wellfound
+// posting that 404s) — same endpoint as deepenLead above, just a different, mutually exclusive
+// payload shape (see DeepenErrorPatch). A later successful deepenLead() call for the same lead
+// clears this automatically (LeadsService.deepen's contract) — nothing here needs to un-set it.
+export async function markLeadEnrichmentError(
+  id: string,
+  reason: string,
+): Promise<{ lead: JobLeadRecord; destination: 'ok' | 'failed' }> {
+  const patch: DeepenErrorPatch = { enrichment_error: reason };
   const res = await fetch(`${BACKEND_URL}/leads/${id}/deepen`, {
     method: 'PATCH',
     headers: await authHeaders({ 'Content-Type': 'application/json' }),

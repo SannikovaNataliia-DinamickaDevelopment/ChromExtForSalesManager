@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { AuthError, fetchLeads, updateLeadStatus, type LeadSaveResult } from '../../lib/api';
+import { AuthError, fetchLeads, type LeadSaveResult } from '../../lib/api';
 import { fetchMe, login, logout, type CurrentUser } from '../../lib/auth';
 import { classifyLeads, type ClassifyProgress } from '../../lib/classify';
 import { deepenLeads, type DeepenProgress } from '../../lib/deepen';
-import { formatKyivDate, formatKyivDateTime } from '../../lib/format-time';
 import { MAX_PAGES, runMultiPageParse, type MultiPageProgress } from '../../lib/multipage';
-import { STATUS_OPTIONS } from '../../lib/status-labels';
 import { getStoredTheme, setStoredTheme, type Theme } from '../../lib/theme';
 import {
   deepenWellfoundLeads,
@@ -25,7 +23,7 @@ import {
   type WellfoundPaginationProgress,
   type WellfoundPaginationResult,
 } from '../../lib/wellfound-pagination';
-import type { JobLeadRecord, LeadStatus } from '../../lib/types';
+import type { JobLeadRecord } from '../../lib/types';
 
 // Multi-page (scope D) only works on sites built on this template — confirmed identical
 // pagination/card structure for both (CLAUDE.md "Parser spec"). DevITjobs stays out (paused).
@@ -34,6 +32,22 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 // Separate, dedicated Wellfound-only list-pagination flow (see wellfound-pagination.ts) — not
 // the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
 const WELLFOUND_HOSTNAME = 'wellfound.com';
+
+// Quick-launch row (right under the heading) — lets the manager jump straight to a supported
+// site without already having the right page open. Three of the four go to a specific search
+// rather than a bare homepage (more useful as a one-click starting point); DevITjobs stays the
+// generic homepage since it has no equivalent dedicated search/pagination flow to mirror.
+const QUICK_LAUNCH_SITES = [
+  // Same path the parser's own baseUrl resolves to for real list cards — confirmed against
+  // spikes/techjobs_list.html's canonical URL (https://www.techjobs.ca/jobs/browse), not
+  // guessed. TechjobsListParser (parsers/techjobs.ts) and the back-to-date pagination
+  // (multipage.ts) both just append to whatever URL is already open rather than hardcoding
+  // this path themselves, so this is the one place in the codebase that spells it out.
+  { label: 'Techjobs.ca', url: 'https://www.techjobs.ca/jobs/browse' },
+  { label: 'ITjobs.ca', url: 'https://www.itjobs.ca/jobs?workplace=REMOTE&q=Software+engineer' },
+  { label: 'DevITjobs', url: 'https://devitjobs.nl' },
+  { label: 'Wellfound', url: 'https://wellfound.com/role/r/software-engineer?page=1' },
+];
 
 function currentPageFromTabUrl(url: string): number {
   try {
@@ -89,10 +103,8 @@ export default function App() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
-  const [leads, setLeads] = useState<JobLeadRecord[]>([]);
   const [tabSupported, setTabSupported] = useState(false);
   const [parsing, setParsing] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deepening, setDeepening] = useState<DeepenProgress | null>(null);
   const [classifying, setClassifying] = useState<ClassifyProgress | null>(null);
@@ -105,6 +117,11 @@ export default function App() {
   const [wellfoundDeepenSummary, setWellfoundDeepenSummary] = useState<string | null>(null);
   const [wellfoundListTabUrl, setWellfoundListTabUrl] = useState<string | null>(null);
   const [wellfoundBookmark, setWellfoundBookmark] = useState<WellfoundPaginationBookmark | null>(null);
+  // Active tab's hostname, kept in sync alongside wellfoundListTabUrl below (same refresh
+  // function/trigger points) — drives which site-specific control set renders (Techjobs'
+  // back-to-date block, Wellfound's pagination block, or neither), independent of tabSupported
+  // (which only says "is parsing possible here", not "which site").
+  const [activeHostname, setActiveHostname] = useState<string | null>(null);
   // Which button triggered the in-flight batch, if any — drives both buttons' disabled state
   // (non-null means "a batch is running", regardless of which button started it) and which one
   // shows the "Parsing pages…" label (only the button that was actually clicked).
@@ -150,25 +167,17 @@ export default function App() {
     }
   };
 
-  const loadLeads = () => {
-    setLoading(true);
-    fetchLeads()
-      .then(setLeads)
-      .catch(handleAuthAware)
-      .finally(() => setLoading(false));
-  };
-
   const refreshTabStatus = () => {
     chrome.runtime.sendMessage({ type: 'GET_TAB_STATUS' }).then((res) => {
       setTabSupported(!!res?.supported);
     });
   };
 
-  // Keeps the "Continue" button's enabled/shown state (and its target page label) in sync with
-  // whichever Wellfound search context is currently open in the active tab — same trigger
-  // points (tab activated/updated) as refreshTabStatus above, just scoped to Wellfound and to
-  // whether a pagination bookmark exists for THIS search's base URL (page param stripped).
-  const refreshWellfoundContext = () => {
+  // Keeps activeHostname (which site-specific control block renders) and, for Wellfound
+  // specifically, the "Continue" button's enabled/shown state + target page label in sync with
+  // whichever context is currently open in the active tab — same trigger points (tab
+  // activated/updated) as refreshTabStatus above.
+  const refreshActiveTabContext = () => {
     chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       let hostname = '';
       try {
@@ -176,6 +185,8 @@ export default function App() {
       } catch {
         // leave hostname empty; falls through to the "not a Wellfound tab" branch below
       }
+      setActiveHostname(hostname || null);
+
       if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
         setWellfoundListTabUrl(null);
         setWellfoundBookmark(null);
@@ -190,22 +201,21 @@ export default function App() {
     fetchMe()
       .then((me) => {
         setUser(me);
-        if (me) loadLeads();
       })
       .catch(handleAuthAware)
       .finally(() => setAuthChecked(true));
 
     refreshTabStatus();
-    refreshWellfoundContext();
+    refreshActiveTabContext();
     chrome.tabs.onActivated.addListener(refreshTabStatus);
     chrome.tabs.onUpdated.addListener(refreshTabStatus);
-    chrome.tabs.onActivated.addListener(refreshWellfoundContext);
-    chrome.tabs.onUpdated.addListener(refreshWellfoundContext);
+    chrome.tabs.onActivated.addListener(refreshActiveTabContext);
+    chrome.tabs.onUpdated.addListener(refreshActiveTabContext);
     return () => {
       chrome.tabs.onActivated.removeListener(refreshTabStatus);
       chrome.tabs.onUpdated.removeListener(refreshTabStatus);
-      chrome.tabs.onActivated.removeListener(refreshWellfoundContext);
-      chrome.tabs.onUpdated.removeListener(refreshWellfoundContext);
+      chrome.tabs.onActivated.removeListener(refreshActiveTabContext);
+      chrome.tabs.onUpdated.removeListener(refreshActiveTabContext);
     };
   }, []);
 
@@ -220,7 +230,6 @@ export default function App() {
       }
       const me = await fetchMe();
       setUser(me);
-      if (me) loadLeads();
     } finally {
       setSigningIn(false);
     }
@@ -229,7 +238,6 @@ export default function App() {
   const handleLogout = async () => {
     await logout();
     setUser(null);
-    setLeads([]);
   };
 
   // CLAUDE.md scope C: runs after deepening, human-paced (Gemini free-tier quota, not anti-ban).
@@ -258,7 +266,6 @@ export default function App() {
       finalUnprocessed = progress.unprocessed;
       finalStoppedEarly = progress.stoppedEarly;
       setClassifying(progress);
-      loadLeads();
     });
     setClassifying(null);
     if (finalStoppedEarly) {
@@ -272,28 +279,31 @@ export default function App() {
 
   // CLAUDE.md scope B ("Auto by all"): runs unattended after a list parse, human-paced,
   // deepening only leads with no description yet (skips already-deepened/pre-existing ones).
+  // Also skips any lead already carrying enrichment_error — an automatic queue never retries a
+  // flagged lead on its own; only an explicit manual retry (dashboard's Enrich button) does.
   const runDeepen = (results: unknown): Promise<void> => {
     const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
     const targets = items
-      .filter((r) => r?.lead && !r.lead.description)
+      .filter((r) => r?.lead && !r.lead.description && !r.lead.enrichment_error)
       .map((r) => ({ id: r.lead.id, source_url: r.lead.source_url }));
     if (targets.length === 0) return Promise.resolve();
 
     setDeepening({ current: 0, total: targets.length });
     return deepenLeads(targets, (progress) => {
       setDeepening(progress);
-      loadLeads();
     }).finally(() => setDeepening(null));
   };
 
   // CLAUDE.md scope D (Wellfound): TabDeepening instead of the plain-fetch strategy above —
   // Wellfound's DataDome bot-protection blocks a background fetch outright (confirmed via a
   // real curl: HTTP 403 challenge page). Deliberately does NOT chain into runClassify —
-  // Gemini stays off for Wellfound leads.
+  // Gemini stays off for Wellfound leads. Also skips any lead already carrying
+  // enrichment_error (e.g. a Wellfound posting that previously 404'd) — this automatic queue
+  // never retries a flagged lead on its own; only an explicit manual retry does.
   const runWellfoundDeepen = (results: unknown): Promise<void> => {
     const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
     const targets = items
-      .filter((r) => r?.lead && !r.lead.description)
+      .filter((r) => r?.lead && !r.lead.description && !r.lead.enrichment_error)
       .map((r) => ({ id: r.lead.id, source_url: r.lead.source_url }));
     if (targets.length === 0) return Promise.resolve();
 
@@ -301,7 +311,6 @@ export default function App() {
     setWellfoundDeepening({ current: 0, total: targets.length, succeeded: 0, stoppedEarly: false });
     return deepenWellfoundLeads(targets, (progress) => {
       setWellfoundDeepening(progress);
-      loadLeads();
     })
       .then((result) => {
         if (result.interrupted) {
@@ -335,7 +344,6 @@ export default function App() {
           setError(res?.error ?? 'Parsing failed.');
         }
       } else {
-        loadLeads();
         const results = Array.isArray(res.results) ? (res.results as LeadSaveResult[]) : [];
         const isWellfound = results.some((r) => r?.lead?.source_site === 'wellfound');
         if (isWellfound) {
@@ -379,7 +387,6 @@ export default function App() {
     try {
       const result = await runMultiPageParse(tab.id, targetDate, (progress) => {
         setMultiPageProgress(progress);
-        loadLeads();
       });
 
       if (result.stopReason === 'auth_error') {
@@ -403,7 +410,6 @@ export default function App() {
     } finally {
       setMultiPageProgress(null);
       setMultiPageRunning(false);
-      loadLeads();
     }
   };
 
@@ -443,7 +449,6 @@ export default function App() {
 
       result = await runWellfoundPagination(baseUrl, startPage, (progress) => {
         setWellfoundPageProgress(progress);
-        loadLeads();
       });
 
       // Always overwrite (never merge) — "Parse from here" is an explicit override/safety
@@ -490,7 +495,6 @@ export default function App() {
       wellfoundPageRunningRef.current = false;
       setWellfoundPageRunningSource(null);
       setWellfoundPageProgress(null);
-      loadLeads();
     }
   };
 
@@ -505,17 +509,6 @@ export default function App() {
   const handleWellfoundContinue = () => {
     if (!wellfoundBookmark || !isBookmarkFresh(wellfoundBookmark)) return;
     runWellfoundPageBatch(wellfoundBookmark.lastPage + 1, 'continue');
-  };
-
-  const handleStatusChange = async (id: string, status: LeadStatus) => {
-    const previous = leads;
-    setLeads((current) => current.map((lead) => (lead.id === id ? { ...lead, status } : lead)));
-    try {
-      await updateLeadStatus(id, status);
-    } catch (err) {
-      setLeads(previous);
-      handleAuthAware(err);
-    }
   };
 
   if (!authChecked) {
@@ -545,6 +538,10 @@ export default function App() {
     );
   }
 
+  // Same "only render when the matching site is actually open" gating already used for
+  // wellfoundListTabUrl below, generalized via activeHostname — see refreshActiveTabContext.
+  const isTechjobsHost = activeHostname !== null && MULTIPAGE_HOSTNAMES.includes(activeHostname);
+
   return (
     <div>
       <div className="account-bar">
@@ -557,17 +554,26 @@ export default function App() {
 
       <h1>Sales Manager — Leads</h1>
 
-      <button className="parse-button" onClick={handleParse} disabled={!tabSupported || parsing}>
-        {parsing ? 'Parsing…' : 'Parse current list page'}
-      </button>
+      <div className="site-links">
+        {QUICK_LAUNCH_SITES.map((site) => (
+          <a key={site.url} className="site-link" href={site.url} target="_blank" rel="noreferrer">
+            {site.label}
+          </a>
+        ))}
+      </div>
+
+      {tabSupported ? (
+        <button className="parse-button" onClick={handleParse} disabled={parsing}>
+          {parsing ? 'Parsing…' : 'Parse current list page'}
+        </button>
+      ) : (
+        <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, or DevITjobs job list page to enable parsing.</div>
+      )}
       {parsing && (
         <div className="parsing-banner" role="status" aria-live="polite">
           <span className="spinner" aria-hidden="true" />
           Parsing in progress — please stay on this page.
         </div>
-      )}
-      {!tabSupported && (
-        <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, or DevITjobs job list page to enable parsing.</div>
       )}
       {deepening && (
         <div className="hint">Deepening {deepening.current}/{deepening.total}…</div>
@@ -583,33 +589,35 @@ export default function App() {
       )}
       {wellfoundDeepenSummary && <div className="hint">{wellfoundDeepenSummary}</div>}
 
-      <div className="multipage-block">
-        <label htmlFor="target-date">Parse Techjobs back to date</label>
-        <div className="multipage-row">
-          <input
-            id="target-date"
-            type="date"
-            max={todayIso()}
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-            disabled={multiPageRunning || parsing}
-          />
-          <button
-            className="parse-button"
-            onClick={handleMultiPageParse}
-            disabled={!tabSupported || !targetDate || multiPageRunning || parsing}
-          >
-            {multiPageRunning ? 'Parsing pages…' : 'Parse pages back to date'}
-          </button>
-        </div>
-        <div className="hint">Techjobs.ca or ITjobs.ca only. Walks pages via ?page=N, up to {MAX_PAGES} pages. No Gemini here.</div>
-        {multiPageProgress && (
-          <div className="hint">
-            Page {multiPageProgress.page}/{MAX_PAGES} · Deepening {multiPageProgress.deepenCurrent}/{multiPageProgress.deepenTotal}
+      {isTechjobsHost && (
+        <div className="multipage-block">
+          <label htmlFor="target-date">Parse Techjobs back to date</label>
+          <div className="multipage-row">
+            <input
+              id="target-date"
+              type="date"
+              max={todayIso()}
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              disabled={multiPageRunning || parsing}
+            />
+            <button
+              className="parse-button"
+              onClick={handleMultiPageParse}
+              disabled={!targetDate || multiPageRunning || parsing}
+            >
+              {multiPageRunning ? 'Parsing pages…' : 'Parse pages back to date'}
+            </button>
           </div>
-        )}
-        {multiPageSummary && <div className="hint">{multiPageSummary}</div>}
-      </div>
+          <div className="hint">Techjobs.ca or ITjobs.ca only. Walks pages via ?page=N, up to {MAX_PAGES} pages. No Gemini here.</div>
+          {multiPageProgress && (
+            <div className="hint">
+              Page {multiPageProgress.page}/{MAX_PAGES} · Deepening {multiPageProgress.deepenCurrent}/{multiPageProgress.deepenTotal}
+            </div>
+          )}
+          {multiPageSummary && <div className="hint">{multiPageSummary}</div>}
+        </div>
+      )}
 
       {wellfoundListTabUrl && (
         <div className="multipage-block">
@@ -652,45 +660,6 @@ export default function App() {
       )}
 
       {error && <div className="error">{error}</div>}
-
-      <div className="lead-list">
-        {loading && <div>Loading…</div>}
-        {!loading && leads.length === 0 && <div className="hint">No leads yet.</div>}
-        {leads.map((lead) => (
-          <div className="lead-card" key={lead.id}>
-            <div className="title">
-              {lead.job_title || '(untitled)'}
-              {lead.is_it !== 'unprocessed' && (
-                <span className={`is-it-badge ${lead.is_it}`}>{lead.is_it === 'it' ? 'IT' : 'not-IT'}</span>
-              )}
-              {lead.owner_user_id !== user.id && (
-                <span className="owner-badge">by {lead.owner_display_name || lead.owner_email || 'someone else'}</span>
-              )}
-            </div>
-            <div className="meta">{lead.company || '—'} · {lead.location || '—'}</div>
-            {lead.company_website && (
-              <a className="meta" href={lead.company_website} target="_blank" rel="noreferrer">
-                {lead.company_website}
-              </a>
-            )}
-            <div className="meta">Posted: {lead.published_at ? formatKyivDate(lead.published_at) : '—'}</div>
-            <div className="meta">{formatKyivDateTime(lead.scraped_at || lead.created_at)}</div>
-            <a href={lead.source_url} target="_blank" rel="noreferrer">
-              {lead.source_url}
-            </a>
-            <select
-              value={lead.status}
-              onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

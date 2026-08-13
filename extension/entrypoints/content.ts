@@ -23,22 +23,38 @@ const PARSERS: Record<string, SiteParser> = {
 const WELLFOUND_POLL_INTERVAL_MS = 400;
 const WELLFOUND_POLL_TIMEOUT_MS = 15000;
 
+// Confirmed live against a real dead posting URL: Wellfound renders a genuine Next.js 404 page
+// with this exact document.title, immediately (no JSON-LD JobPosting ever appears for it). A
+// removed/expired posting is normal site behavior, not a sign of bot detection — distinguishing
+// it lets the caller (wellfound-deepen.ts) flag the lead and move on instead of waiting out the
+// full 15s poll and being miscounted as a possible-block failure toward the circuit breaker.
+const WELLFOUND_NOT_FOUND_TITLE = '404: Page not found';
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // Also covers a DataDome challenge page shown instead of the real job page: it never gets a
 // JobPosting JSON-LD either, so it falls through to the same timeout/failure path — no
-// separate challenge-page detection needed.
+// separate challenge-page detection needed. A definitive 404 (see WELLFOUND_NOT_FOUND_TITLE)
+// short-circuits immediately instead, since polling further can't change that outcome.
 async function pollForWellfoundDetail() {
   const start = Date.now();
   while (Date.now() - start < WELLFOUND_POLL_TIMEOUT_MS) {
+    if (document.title === WELLFOUND_NOT_FOUND_TITLE) {
+      return {
+        ok: false as const,
+        notFound: true as const,
+        error: 'This posting no longer exists on Wellfound (404) — likely removed or expired.',
+      };
+    }
     const detail = extractWellfoundJobPosting(document);
     if (detail) return { ok: true as const, detail };
     await sleep(WELLFOUND_POLL_INTERVAL_MS);
   }
   return {
     ok: false as const,
+    notFound: false as const,
     error: 'Timed out waiting for job posting data (15s) — possibly a bot-detection challenge page.',
   };
 }
