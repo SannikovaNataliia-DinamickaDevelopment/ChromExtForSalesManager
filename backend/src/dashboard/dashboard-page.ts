@@ -259,6 +259,148 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 12px;
     margin-left: auto;
   }
+  /* Export modal — same presentation pattern as the detail sidebar's own backdrop (dimmed
+     overlay, fade transition, escape/backdrop-click to close) but centered rather than
+     right-anchored, and on its own backdrop element rather than sharing #backdrop: the sidebar
+     and this modal are unrelated features that could otherwise fight over one shared open/close
+     state if they shared a DOM node. */
+  .export-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 6, 14, 0.6);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+    z-index: 40;
+  }
+  .export-modal-backdrop.open { opacity: 1; visibility: visible; }
+  .export-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: min(420px, 92vw);
+    max-height: min(600px, 84vh);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+    padding: 22px 24px 18px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(-50%, -50%) scale(0.98);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 50;
+  }
+  .export-modal.open { opacity: 1; visibility: visible; transform: translate(-50%, -50%) scale(1); }
+  .export-modal-title {
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .export-modal-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .export-modal-section { margin-bottom: 14px; }
+  .export-modal-section-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+  }
+  .export-filter-summary {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .export-filter-summary li {
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel-alt);
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .export-filter-summary li.empty {
+    color: var(--text-secondary);
+    background: none;
+    padding: 0;
+  }
+  .export-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .export-panel-header-actions button {
+    background: none;
+    border: none;
+    padding: 0 4px;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .export-panel-header-actions button:hover { color: var(--pink); }
+  .export-panel-columns {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .export-panel-columns label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .export-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .export-modal-cancel {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .export-modal-cancel:hover { color: var(--text); border-color: var(--accent); }
+  .export-modal-submit {
+    background: var(--pink);
+    color: #1A1420;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 18px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .export-modal-submit:disabled, .export-modal-cancel:disabled { cursor: not-allowed; opacity: 0.6; }
+  .export-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .export-status.error { color: var(--error); }
   .stats-strip {
     display: flex;
     flex-wrap: wrap;
@@ -647,6 +789,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       </select>
     </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
+    <button class="refresh" id="export-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Export the leads currently visible under the active filters/search">Export</button>
+    <span class="export-status" id="export-status"></span>
     <span class="count" id="count"></span>
   </div>
   <div class="bulk-bar" id="bulk-bar" hidden>
@@ -671,6 +815,30 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   <button class="sidebar-close" id="sidebar-close" type="button" aria-label="Close">&times;</button>
   <div id="sidebar-content"></div>
 </aside>
+<div class="export-modal-backdrop" id="export-modal-backdrop"></div>
+<div class="export-modal" id="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-modal-title" aria-hidden="true">
+  <div class="export-modal-title" id="export-modal-title">Export leads</div>
+  <div class="export-modal-body">
+    <div class="export-modal-section">
+      <div class="export-modal-section-label">Exporting</div>
+      <ul class="export-filter-summary" id="export-filter-summary"></ul>
+    </div>
+    <div class="export-modal-section">
+      <div class="export-panel-header">
+        <span>Columns to export</span>
+        <span class="export-panel-header-actions">
+          <button type="button" id="export-select-all">All</button>
+          <button type="button" id="export-select-none">None</button>
+        </span>
+      </div>
+      <div class="export-panel-columns" id="export-panel-columns"></div>
+    </div>
+  </div>
+  <div class="export-modal-footer">
+    <button type="button" class="export-modal-cancel" id="export-modal-cancel">Cancel</button>
+    <button type="button" class="export-modal-submit" id="export-columns-submit">Export</button>
+  </div>
+</div>
 <script>
 (function () {
   var COOKIE_NAME = 'sm_dashboard_session';
@@ -737,6 +905,34 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'scraped_at', label: 'Scraped' },
   ];
 
+  // Mirrors backend's EXPORT_COLUMNS (leads/export-columns.ts) key/label list and order exactly
+  // — the server is still the single source of truth for what each key actually maps to
+  // (POST /leads/export re-validates every key against its own copy of this list via IsIn), this
+  // is only for rendering the "Columns" panel's checkboxes. Deliberately a superset of the
+  // table's own COLUMNS above (it also includes fields the table never shows, e.g. description,
+  // salary, tech_stack, apply_url, ats — export's whole point is "all fields", not just what's
+  // in the table view).
+  var EXPORT_COLUMNS = [
+    { key: 'published_at', label: 'Published' },
+    { key: 'source_site', label: 'Source' },
+    { key: 'job_title', label: 'Title' },
+    { key: 'source_url', label: 'Job link' },
+    { key: 'is_it', label: 'IT?' },
+    { key: 'company', label: 'Company' },
+    { key: 'company_website', label: 'Website' },
+    { key: 'location', label: 'Location' },
+    { key: 'salary', label: 'Salary' },
+    { key: 'tech_stack', label: 'Tech stack' },
+    { key: 'description', label: 'Description' },
+    { key: 'apply_url', label: 'Apply link' },
+    { key: 'ats', label: 'ATS' },
+    { key: 'external_job_id', label: 'External job ID' },
+    { key: 'status', label: 'Status' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'scraped_at', label: 'Scraped (Kyiv)' },
+    { key: 'created_at', label: 'Created (Kyiv)' },
+  ];
+
   var state = {
     leads: [],
     sortKey: 'published_at',
@@ -788,6 +984,139 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         return data;
       });
     });
+  }
+
+  // Dashboard "Export" — a separate fetch wrapper rather than apiFetch above: apiFetch always
+  // parses the response as JSON, but a successful export response is an .xlsx binary blob, not
+  // JSON (only the *error* path, if any, is JSON, from the same AppError shape every other
+  // endpoint uses).
+  var exportInFlight = false;
+
+  function setExportStatus(text, isError) {
+    var el = document.getElementById('export-status');
+    el.textContent = text || '';
+    el.className = isError ? 'export-status error' : 'export-status';
+  }
+
+  function setExportControlsDisabled(disabled) {
+    document.getElementById('export-btn').disabled = disabled;
+    document.getElementById('export-columns-submit').disabled = disabled;
+    document.getElementById('export-modal-cancel').disabled = disabled;
+  }
+
+  // columns: omitted/null = every field; an array of EXPORT_COLUMNS keys = the panel's
+  // column-limited export. leadIds is always getFiltered() at click time — "the leads currently
+  // visible under the active filters/search", same set the table itself is showing, not the
+  // bulk-action row-selection checkboxes (a separate, unrelated selection mechanism — see
+  // bulkState above).
+  function runExport(columns) {
+    if (exportInFlight) return;
+    var leads = getFiltered();
+    if (leads.length === 0) {
+      setExportStatus('No leads match the current filters — nothing to export.', true);
+      return;
+    }
+    var token = getCookie(COOKIE_NAME);
+    if (!token) { clearCookieAndGoToLogin(); return; }
+
+    exportInFlight = true;
+    setExportControlsDisabled(true);
+    setExportStatus('Exporting ' + leads.length + ' lead' + (leads.length === 1 ? '' : 's') + '…', false);
+
+    var payload = { leadIds: leads.map(function (l) { return l.id; }) };
+    if (columns) payload.columns = columns;
+
+    fetch('/leads/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify(payload),
+    })
+      .then(function (res) {
+        if (res.status === 401) { clearCookieAndGoToLogin(); throw new Error('Session expired.'); }
+        if (!res.ok) {
+          return res.json().catch(function () { return null; }).then(function (data) {
+            throw new Error((data && data.error && data.error.message) || ('Export failed (' + res.status + ')'));
+          });
+        }
+        return res.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'leads-export-' + new Date().toISOString().slice(0, 10) + '.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setExportStatus('Exported ' + leads.length + ' lead' + (leads.length === 1 ? '' : 's') + '.', false);
+      })
+      .catch(function (err) {
+        setExportStatus('Export failed: ' + err.message, true);
+      })
+      .finally(function () {
+        exportInFlight = false;
+        setExportControlsDisabled(false);
+      });
+  }
+
+  function buildExportPanelColumns() {
+    var container = document.getElementById('export-panel-columns');
+    container.innerHTML = '';
+    EXPORT_COLUMNS.forEach(function (col) {
+      var label = document.createElement('label');
+      var checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = true;
+      checkbox.value = col.key;
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(col.label));
+      container.appendChild(label);
+    });
+  }
+
+  // Demo feedback: clicking "Export" should show the user exactly what they're about to get —
+  // filter/search scope and column selection — before anything downloads, not fire immediately.
+  // Rebuilt fresh every time the panel opens (rather than kept live via the filter/search change
+  // listeners below) since it's cheap to build and the panel is hidden most of the time anyway;
+  // no risk of it drifting stale while closed.
+  var IS_IT_FILTER_SUMMARY_LABELS = { it: 'IT only', not_it: 'not-IT only', unprocessed: 'Unprocessed only' };
+  var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed' };
+
+  function buildExportFilterSummaryLines() {
+    var lines = [];
+    if (state.filterIsIt !== 'all') lines.push('IT filter: ' + (IS_IT_FILTER_SUMMARY_LABELS[state.filterIsIt] || state.filterIsIt));
+    if (state.filterStatus !== 'all') lines.push('Status: ' + (STATUS_LABELS[state.filterStatus] || state.filterStatus));
+    if (state.filterSource !== 'all') lines.push('Source: ' + state.filterSource);
+    if (state.filterDetail !== 'all') lines.push('Detail: ' + (DETAIL_FILTER_SUMMARY_LABELS[state.filterDetail] || state.filterDetail));
+    if (state.search) lines.push('Search: "' + state.search + '"');
+    return lines;
+  }
+
+  function renderExportFilterSummary() {
+    var list = document.getElementById('export-filter-summary');
+    list.innerHTML = '';
+    var lines = buildExportFilterSummaryLines();
+    if (lines.length === 0) {
+      list.appendChild(el('li', { className: 'empty', text: 'No filters applied — exporting all leads.' }));
+      return;
+    }
+    lines.forEach(function (line) {
+      list.appendChild(el('li', { text: line }));
+    });
+  }
+
+  // Presentation: centered modal + full-page dimmed backdrop (same visual language as Google
+  // Docs' Share dialog, per demo feedback — the earlier corner-anchored popover was replaced
+  // wholesale, but everything it fed into (runExport, the column checkboxes, the filter summary
+  // builder above) is untouched). Own backdrop element rather than the sidebar's shared
+  // #backdrop — see the CSS comment on .export-modal-backdrop for why.
+  function setExportModalOpen(open) {
+    document.getElementById('export-modal').classList.toggle('open', open);
+    document.getElementById('export-modal-backdrop').classList.toggle('open', open);
+    document.getElementById('export-modal').setAttribute('aria-hidden', open ? 'false' : 'true');
+    document.getElementById('export-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) renderExportFilterSummary();
   }
 
   function updateLeadStatus(id, status) {
@@ -1676,6 +2005,35 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }, 300);
   });
   document.getElementById('refresh-btn').addEventListener('click', loadLeads);
+
+  buildExportPanelColumns();
+  document.getElementById('export-btn').addEventListener('click', function () {
+    setExportModalOpen(true);
+  });
+  document.getElementById('export-modal-backdrop').addEventListener('click', function () {
+    setExportModalOpen(false);
+  });
+  document.getElementById('export-modal-cancel').addEventListener('click', function () {
+    setExportModalOpen(false);
+  });
+  document.getElementById('export-select-all').addEventListener('click', function () {
+    document.querySelectorAll('#export-panel-columns input[type=checkbox]').forEach(function (cb) { cb.checked = true; });
+  });
+  document.getElementById('export-select-none').addEventListener('click', function () {
+    document.querySelectorAll('#export-panel-columns input[type=checkbox]').forEach(function (cb) { cb.checked = false; });
+  });
+  document.getElementById('export-columns-submit').addEventListener('click', function () {
+    var checked = Array.prototype.slice
+      .call(document.querySelectorAll('#export-panel-columns input[type=checkbox]:checked'))
+      .map(function (cb) { return cb.value; });
+    if (checked.length === 0) {
+      setExportStatus('Select at least one column.', true);
+      return;
+    }
+    setExportModalOpen(false);
+    runExport(checked);
+  });
+
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
 
@@ -1704,7 +2062,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('backdrop').addEventListener('click', closeSidebar);
   document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeSidebar();
+    if (e.key !== 'Escape') return;
+    closeSidebar();
+    if (document.getElementById('export-modal').classList.contains('open')) setExportModalOpen(false);
   });
 
   renderHeader();

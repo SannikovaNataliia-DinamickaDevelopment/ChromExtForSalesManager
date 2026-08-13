@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import * as ExcelJS from 'exceljs';
 import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
@@ -9,6 +10,8 @@ import { DESTINATION, Destination } from '../destinations/destination.interface'
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
+import { ExportLeadsDto } from './dto/export-leads.dto';
+import { EXPORT_COLUMNS } from './export-columns';
 import { GeminiClassifierService } from './gemini-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
 import { LEAD_RETENTION_DAYS } from './lead-retention';
@@ -115,6 +118,44 @@ export class LeadsService {
       bySource,
       byIsIt,
     };
+  }
+
+  // Dashboard "Export" (.xlsx). leadIds is the client's already-computed getFiltered() result
+  // (CLAUDE.md dashboard section: filters/search stay client-side) — re-fetched fresh from the
+  // DB by id rather than trusting any row data the client might send, same reasoning as every
+  // other id-driven bulk endpoint here. Soft-deleted leads excluded unconditionally, matching
+  // findAll() — an id that's been deleted since the dashboard last loaded simply drops out of
+  // the export rather than erroring, same as it would just vanish from the table on refresh.
+  //
+  // columns (if provided) is filtered against EXPORT_COLUMNS' own order, not the order the
+  // client happened to send ids/keys in — same "one source of truth for column order" rule
+  // sheets.destination.ts already follows, so re-checking/unchecking boxes can't silently
+  // reorder a manager's spreadsheet from one export to the next.
+  async exportXlsx(dto: ExportLeadsDto): Promise<ExcelJS.Buffer> {
+    const rows = await this.db
+      .select({
+        ...getTableColumns(job_leads),
+        owner_email: users.email,
+        owner_display_name: users.display_name,
+      })
+      .from(job_leads)
+      .leftJoin(users, eq(job_leads.owner_user_id, users.id))
+      .where(and(isNull(job_leads.deleted_at), inArray(job_leads.id, dto.leadIds)));
+
+    const columns = dto.columns && dto.columns.length > 0
+      ? EXPORT_COLUMNS.filter((c) => dto.columns!.includes(c.key))
+      : EXPORT_COLUMNS;
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Leads');
+    sheet.columns = columns.map((c) => ({ header: c.label, key: c.key, width: c.key === 'description' ? 60 : 22 }));
+    for (const row of rows) {
+      const record = { ...row, owner_email: row.owner_email ?? null, owner_display_name: row.owner_display_name ?? null };
+      sheet.addRow(Object.fromEntries(columns.map((c) => [c.key, c.value(record)])));
+    }
+    sheet.getRow(1).font = { bold: true };
+
+    return workbook.xlsx.writeBuffer();
   }
 
   /** POST /leads: DB write always happens; the destination push is separate and never loses the record (CLAUDE.md API). */

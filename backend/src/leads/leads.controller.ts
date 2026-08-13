@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpStatus, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
@@ -8,6 +9,7 @@ import { AppError } from '../common/app-error';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
+import { ExportLeadsDto } from './dto/export-leads.dto';
 import { UpdateLeadStatusDto } from './dto/update-lead-status.dto';
 import { LEAD_STATUSES } from './lead-status';
 import { LeadsService } from './leads.service';
@@ -44,6 +46,29 @@ export class LeadsController {
   @Get('stats')
   async stats() {
     return this.leadsService.getStats();
+  }
+
+  // Dashboard "Export" button. POST (not GET) because leadIds can be the entire filtered lead
+  // set (hundreds+) — too long/fragile for a query string. Literal 'export' path, same
+  // no-ambiguity reasoning as 'deleted'/'stats' above (doesn't collide with @Post() at the bare
+  // /leads root — different segment count, not just different literal text).
+  @Post('export')
+  async export(@Body() body: unknown, @Res() res: Response) {
+    const dto = plainToInstance(ExportLeadsDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; '),
+      );
+    }
+    const buffer = await this.leadsService.exportXlsx(dto);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="leads-export-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+    });
+    res.send(Buffer.from(buffer));
   }
 
   // Accepts a single lead or an array (CLAUDE.md: "POST /leads accepts a single lead OR an array for batch").

@@ -21,6 +21,7 @@
     "class-validator": "^0.14.1",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.36.4",
+    "exceljs": "^4.4.0",
     "googleapis": "^144.0.0",
     "jsonwebtoken": "^9.0.2",
     "openid-client": "^5.7.1",
