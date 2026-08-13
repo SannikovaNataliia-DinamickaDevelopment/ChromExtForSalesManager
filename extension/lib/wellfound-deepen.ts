@@ -1,5 +1,6 @@
 import { deepenLead } from './api';
 import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepening-strategy';
+import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedError } from './wellfound-background-window';
 
 // CLAUDE.md scope D (Wellfound): named + easy to raise once this is validated in practice.
 export const WELLFOUND_RUN_CAP = 20;
@@ -11,7 +12,6 @@ export const WELLFOUND_CIRCUIT_BREAKER_THRESHOLD = 3;
 // inventing a second Wellfound pacing constant.
 export const MIN_TAB_DELAY_MS = 4000;
 export const MAX_TAB_DELAY_MS = 8000;
-const NAV_TIMEOUT_MS = 30000;
 // After navigation "complete", give the content script's onMessage listener a moment to be
 // registered before messaging it (same race multipage.ts guards against with its own settle
 // delay). The content script itself then polls up to 15s for the JSON-LD to actually appear.
@@ -22,35 +22,6 @@ const EXTRACT_TIMEOUT_MS = 20000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// Exported so wellfound-pagination.ts can reuse the exact same "real top-level navigation,
-// wait for tabs.onUpdated 'complete'" mechanic for its own background tab instead of a third
-// copy of this (multipage.ts already has its own for Techjobs/ITjobs, left untouched).
-export function navigateAndWaitForLoad(tabId: number, url: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error('Navigation timed out.'));
-    }, NAV_TIMEOUT_MS);
-
-    function listener(updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) {
-      if (updatedTabId === tabId && changeInfo.status === 'complete') {
-        clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    }
-    chrome.tabs.onUpdated.addListener(listener);
-
-    chrome.tabs.update(tabId, { url }, () => {
-      if (chrome.runtime.lastError) {
-        clearTimeout(timeout);
-        chrome.tabs.onUpdated.removeListener(listener);
-        reject(new Error(chrome.runtime.lastError.message));
-      }
-    });
-  });
 }
 
 interface ExtractResponse {
@@ -67,45 +38,20 @@ interface ExtractResponse {
  * genuinely present once a real browser renders the page (confirmed against
  * spikes/Wellfound_detail.html) — it's an access problem, not a parsing problem.
  *
- * Runs ONE dedicated, minimized, unfocused popup window for the whole run — never the
- * manager's active window/tab — and reuses its single tab across every lead by navigating it,
- * the same tab-reuse pattern multipage.ts already uses for Techjobs pagination.
+ * Runs ONE dedicated, minimized, unfocused popup window for the whole run (WellfoundBackgroundWindow,
+ * shared with wellfound-pagination.ts) — never the manager's active window/tab — and reuses its
+ * single tab across every lead by navigating it, the same tab-reuse pattern multipage.ts
+ * already uses for Techjobs pagination.
  */
 export class TabDeepening implements DeepeningStrategy {
-  private windowId: number | null = null;
-  private tabId: number | null = null;
-
-  private async ensureTab(): Promise<number> {
-    if (this.tabId !== null) return this.tabId;
-
-    const win = await chrome.windows.create({
-      url: 'about:blank',
-      type: 'popup',
-      state: 'minimized',
-      focused: false,
-    });
-
-    this.windowId = win.id ?? null;
-    let tabId = win.tabs?.[0]?.id;
-    if (tabId === undefined && this.windowId !== null) {
-      const tabs = await chrome.tabs.query({ windowId: this.windowId });
-      tabId = tabs[0]?.id;
-    }
-    if (tabId === undefined) {
-      throw new Error('Could not create a background window for Wellfound deepening.');
-    }
-    this.tabId = tabId;
-    return tabId;
-  }
+  private readonly win = new WellfoundBackgroundWindow('deepening');
 
   async deepenOne(target: DeepeningTarget): Promise<DeepenedFields | null> {
-    const tabId = await this.ensureTab();
-
-    await navigateAndWaitForLoad(tabId, target.source_url);
+    await this.win.navigate(target.source_url);
     await sleep(CONTENT_SCRIPT_SETTLE_MS);
 
     const res = await Promise.race<ExtractResponse>([
-      chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_WELLFOUND_DETAIL' }),
+      this.win.sendMessage<ExtractResponse>({ type: 'EXTRACT_WELLFOUND_DETAIL' }),
       new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Extraction timed out.')), EXTRACT_TIMEOUT_MS);
       }),
@@ -114,18 +60,20 @@ export class TabDeepening implements DeepeningStrategy {
     return res?.ok && res.detail ? res.detail : null;
   }
 
-  // Closes the dedicated window. Call once at the end of a run (success, cap, or circuit
-  // breaker) — never leave an extra background window open.
+  get wasClosedByUser(): boolean {
+    return this.win.wasClosedByUser;
+  }
+
+  // Exposes the shared window's interruptible human-pace delay without leaking the window
+  // instance itself outside this class.
+  pacedDelay(minMs: number, maxMs: number): Promise<boolean> {
+    return pacedDelay(this.win, minMs, maxMs);
+  }
+
+  // Closes the dedicated window. Call once at the end of a run (success, cap, circuit
+  // breaker, or closure already detected) — never leave an extra background window open.
   async close(): Promise<void> {
-    if (this.windowId !== null) {
-      try {
-        await chrome.windows.remove(this.windowId);
-      } catch {
-        // Already closed — nothing to do.
-      }
-    }
-    this.windowId = null;
-    this.tabId = null;
+    await this.win.close();
   }
 }
 
@@ -139,14 +87,23 @@ export interface WellfoundDeepenProgress {
 export interface WellfoundDeepenResult {
   processed: number;
   succeeded: number;
+  // True if the run didn't finish all targets, for either reason below.
   stoppedEarly: boolean;
+  // True specifically when the background window was closed mid-run (as opposed to the
+  // circuit breaker tripping) — lets callers give a more accurate "interrupted, resume via X"
+  // message instead of the generic "possible bot-detection block" one.
+  interrupted: boolean;
 }
 
 /**
  * Sequential, human-paced, capped at WELLFOUND_RUN_CAP leads per run. Stops immediately (the
  * circuit breaker) after WELLFOUND_CIRCUIT_BREAKER_THRESHOLD consecutive failures rather than
  * continuing to hammer what's likely a blocked session — surfaced to the caller via
- * `stoppedEarly`, never silently swallowed (NFR-12/13).
+ * `stoppedEarly`, never silently swallowed (NFR-12/13). Also stops cleanly (and distinctly,
+ * via `interrupted`) if the manager closes the dedicated background window mid-run — whatever
+ * was already saved stays saved; there's no separate "resume" state to track here since the
+ * next deepen attempt (a fresh parse, or the dashboard's Enrich button) simply retries whatever
+ * lead is still missing a description.
  */
 export async function deepenWellfoundLeads(
   targets: DeepeningTarget[],
@@ -158,6 +115,7 @@ export async function deepenWellfoundLeads(
   let succeeded = 0;
   let consecutiveFailures = 0;
   let stoppedEarly = false;
+  let interrupted = false;
   let processed = 0;
 
   try {
@@ -165,6 +123,7 @@ export async function deepenWellfoundLeads(
       const target = capped[i];
       let detail: DeepenedFields | null = null;
       let saveFailed = false;
+      let closed = false;
 
       try {
         detail = await strategy.deepenOne(target);
@@ -176,12 +135,25 @@ export async function deepenWellfoundLeads(
             ...(detail.published_at ? { published_at: detail.published_at } : {}),
           });
         }
-      } catch {
-        // Swallow: one bad tab/lead must not abort the run — counted as a failure below.
-        // If `detail` is already set, deepenOne() succeeded and the backend PATCH failed;
-        // otherwise deepenOne() itself failed and `detail` is still its initial null.
-        if (detail) saveFailed = true;
+      } catch (err) {
+        if (err instanceof WellfoundBackgroundWindowClosedError || strategy.wasClosedByUser) {
+          closed = true;
+        } else if (detail) {
+          // deepenOne() succeeded and the backend PATCH failed — swallow, counted as a
+          // failure below (one bad lead must not abort the run).
+          saveFailed = true;
+        }
+        // Otherwise deepenOne() itself failed and `detail` is still its initial null —
+        // swallowed the same way, also counted as a failure below.
       }
+
+      if (closed) {
+        stoppedEarly = true;
+        interrupted = true;
+        onProgress({ current: processed, total: capped.length, succeeded, stoppedEarly: true });
+        break;
+      }
+
       processed++;
 
       if (detail && !saveFailed) {
@@ -200,12 +172,16 @@ export async function deepenWellfoundLeads(
       onProgress({ current: processed, total: capped.length, succeeded, stoppedEarly: false });
 
       if (i < capped.length - 1) {
-        await sleep(MIN_TAB_DELAY_MS + Math.random() * (MAX_TAB_DELAY_MS - MIN_TAB_DELAY_MS));
+        if (await strategy.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
+          stoppedEarly = true;
+          interrupted = true;
+          break;
+        }
       }
     }
   } finally {
     await strategy.close();
   }
 
-  return { processed, succeeded, stoppedEarly };
+  return { processed, succeeded, stoppedEarly, interrupted };
 }

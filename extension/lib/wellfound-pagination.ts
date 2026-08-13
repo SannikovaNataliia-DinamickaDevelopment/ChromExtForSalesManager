@@ -1,10 +1,6 @@
 import { AuthError, saveLeads, type LeadSaveResult } from './api';
-import {
-  MAX_TAB_DELAY_MS,
-  MIN_TAB_DELAY_MS,
-  WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
-  navigateAndWaitForLoad,
-} from './wellfound-deepen';
+import { MAX_TAB_DELAY_MS, MIN_TAB_DELAY_MS, WELLFOUND_CIRCUIT_BREAKER_THRESHOLD } from './wellfound-deepen';
+import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedError } from './wellfound-background-window';
 import type { JobLead } from './types';
 
 // A fixed page-count batch, not date-based: unlike Techjobs/ITjobs (multipage.ts), Wellfound's
@@ -46,69 +42,43 @@ interface ParseListResponse {
   error?: string;
 }
 
-// Dedicated, minimized, unfocused popup window + single reused tab — the exact same mechanic
-// TabDeepening (wellfound-deepen.ts) uses for detail pages, applied to list pages instead of a
-// detail page. A separate small class rather than reusing TabDeepening directly: its
-// DeepeningStrategy contract (deepenOne returns one lead's detail fields) doesn't fit "parse a
-// whole list page's worth of cards" — but the window lifecycle (create once, reuse the tab by
-// navigating it, close once at the end) is identical, and copied for that reason.
+// Dedicated, minimized, unfocused popup window + single reused tab — WellfoundBackgroundWindow
+// (shared with wellfound-deepen.ts's TabDeepening) applied to list pages instead of a detail
+// page. A thin wrapper rather than using WellfoundBackgroundWindow directly everywhere below:
+// keeps the "navigate, settle, PARSE_LIST, read final URL" sequence in one place.
 class BackgroundListTab {
-  private windowId: number | null = null;
-  private tabId: number | null = null;
-
-  private async ensureTab(): Promise<number> {
-    if (this.tabId !== null) return this.tabId;
-
-    const win = await chrome.windows.create({
-      url: 'about:blank',
-      type: 'popup',
-      state: 'minimized',
-      focused: false,
-    });
-
-    this.windowId = win.id ?? null;
-    let tabId = win.tabs?.[0]?.id;
-    if (tabId === undefined && this.windowId !== null) {
-      const tabs = await chrome.tabs.query({ windowId: this.windowId });
-      tabId = tabs[0]?.id;
-    }
-    if (tabId === undefined) {
-      throw new Error('Could not create a background window for Wellfound pagination.');
-    }
-    this.tabId = tabId;
-    return tabId;
-  }
+  private readonly win = new WellfoundBackgroundWindow('pagination');
 
   // Navigates to the given list page URL and returns both the parsed leads and the tab's final
   // URL (post any site-side redirect) — the caller uses the final URL to detect an out-of-range
-  // page (see runWellfoundPagination's "no more pages" check).
+  // page (see runWellfoundPagination's "no more pages" check). Throws
+  // WellfoundBackgroundWindowClosedError if the background window is gone.
   async loadPage(url: string): Promise<{ leads: JobLead[]; finalUrl: string | null }> {
-    const tabId = await this.ensureTab();
-    await navigateAndWaitForLoad(tabId, url);
+    await this.win.navigate(url);
     await sleep(PAGE_SETTLE_DELAY_MS);
 
-    const tab = await chrome.tabs.get(tabId);
-    const res = (await chrome.tabs.sendMessage(tabId, { type: 'PARSE_LIST' })) as ParseListResponse | undefined;
+    const finalUrl = await this.win.getTabUrl();
+    const res = await this.win.sendMessage<ParseListResponse>({ type: 'PARSE_LIST' });
 
     if (!res?.ok || !Array.isArray(res.leads)) {
       throw new Error(res?.error ?? 'Could not parse this page.');
     }
 
-    return { leads: res.leads as JobLead[], finalUrl: tab.url ?? null };
+    return { leads: res.leads as JobLead[], finalUrl };
+  }
+
+  get wasClosedByUser(): boolean {
+    return this.win.wasClosedByUser;
+  }
+
+  pacedDelay(minMs: number, maxMs: number): Promise<boolean> {
+    return pacedDelay(this.win, minMs, maxMs);
   }
 
   // Closes the dedicated window. Call once at the end of a run — never leave an extra
   // background window open (same rule as TabDeepening.close()).
   async close(): Promise<void> {
-    if (this.windowId !== null) {
-      try {
-        await chrome.windows.remove(this.windowId);
-      } catch {
-        // Already closed — nothing to do.
-      }
-    }
-    this.windowId = null;
-    this.tabId = null;
+    await this.win.close();
   }
 }
 
@@ -124,14 +94,15 @@ export type WellfoundPaginationStopReason =
   | 'batch_size'
   | 'no_more_pages'
   | 'circuit_breaker'
+  | 'window_closed'
   | 'auth_error'
   | 'fatal_error';
 
 export interface WellfoundPaginationResult {
   startPage: number;
   // Last page successfully parsed AND saved. startPage - 1 if none succeeded — this is what
-  // the caller bookmarks, so a failed page is retried on the next "Continue" rather than
-  // silently skipped.
+  // the caller bookmarks, so a failed page (or a window-closed interruption) is retried on the
+  // next "Continue" rather than silently skipped.
   lastPageProcessed: number;
   // Last page number the loop actually attempted, success or failure — startPage - 1 if the
   // loop never ran an iteration. Lets the caller report exactly which page a circuit-breaker
@@ -162,7 +133,11 @@ export interface WellfoundPaginationResult {
  *
  * A failure (page load error, or the save call itself failing) does not stop the run by
  * itself — it counts toward the circuit breaker and the walk moves on to the next page number,
- * same as deepenWellfoundLeads' one-attempt-per-item model (no same-page retry).
+ * same as deepenWellfoundLeads' one-attempt-per-item model (no same-page retry). Closing the
+ * background window mid-run stops the walk immediately and distinctly (stopReason
+ * 'window_closed', not counted against the circuit breaker) — whatever was already saved stays
+ * saved, and lastPageProcessed reflects exactly how far the walk got, so the caller's bookmark
+ * (and therefore "Continue") picks up from the right place.
  */
 export async function runWellfoundPagination(
   baseUrl: string,
@@ -180,6 +155,8 @@ export async function runWellfoundPagination(
   let stopReason: WellfoundPaginationStopReason = 'batch_size';
   let errorMessage: string | undefined;
 
+  const isClosedError = (err: unknown) => err instanceof WellfoundBackgroundWindowClosedError || tab.wasClosedByUser;
+
   try {
     for (let i = 0; i < WELLFOUND_PAGINATION_BATCH_SIZE; i++) {
       const page = startPage + i;
@@ -191,6 +168,10 @@ export async function runWellfoundPagination(
       try {
         ({ leads, finalUrl } = await tab.loadPage(pageUrl));
       } catch (err) {
+        if (isClosedError(err)) {
+          stopReason = 'window_closed';
+          break;
+        }
         errorMessage = err instanceof Error ? err.message : String(err);
         consecutiveFailures++;
         if (consecutiveFailures >= WELLFOUND_CIRCUIT_BREAKER_THRESHOLD) {
@@ -199,7 +180,10 @@ export async function runWellfoundPagination(
         }
         onProgress({ pageIndex: i + 1, page, batchSize: WELLFOUND_PAGINATION_BATCH_SIZE, leadsFound, leadsSaved });
         if (i < WELLFOUND_PAGINATION_BATCH_SIZE - 1) {
-          await sleep(MIN_TAB_DELAY_MS + Math.random() * (MAX_TAB_DELAY_MS - MIN_TAB_DELAY_MS));
+          if (await tab.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
+            stopReason = 'window_closed';
+            break;
+          }
         }
         continue;
       }
@@ -232,7 +216,10 @@ export async function runWellfoundPagination(
         }
         onProgress({ pageIndex: i + 1, page, batchSize: WELLFOUND_PAGINATION_BATCH_SIZE, leadsFound, leadsSaved });
         if (i < WELLFOUND_PAGINATION_BATCH_SIZE - 1) {
-          await sleep(MIN_TAB_DELAY_MS + Math.random() * (MAX_TAB_DELAY_MS - MIN_TAB_DELAY_MS));
+          if (await tab.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
+            stopReason = 'window_closed';
+            break;
+          }
         }
         continue;
       }
@@ -246,7 +233,10 @@ export async function runWellfoundPagination(
       onProgress({ pageIndex: i + 1, page, batchSize: WELLFOUND_PAGINATION_BATCH_SIZE, leadsFound, leadsSaved });
 
       if (i < WELLFOUND_PAGINATION_BATCH_SIZE - 1) {
-        await sleep(MIN_TAB_DELAY_MS + Math.random() * (MAX_TAB_DELAY_MS - MIN_TAB_DELAY_MS));
+        if (await tab.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
+          stopReason = 'window_closed';
+          break;
+        }
       }
     }
   } finally {

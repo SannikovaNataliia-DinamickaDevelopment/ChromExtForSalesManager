@@ -293,7 +293,13 @@ export default function App() {
       loadLeads();
     })
       .then((result) => {
-        if (result.stoppedEarly) {
+        if (result.interrupted) {
+          setWellfoundDeepenSummary(
+            `Wellfound deepening was interrupted — the background window was closed. ` +
+              `${result.succeeded} of ${result.processed} attempted lead(s) completed before that; already-saved leads were kept. ` +
+              'The rest are still missing a description — re-run "Parse current list page", or use the dashboard\'s Enrich button, to retry them.',
+          );
+        } else if (result.stoppedEarly) {
           setWellfoundDeepenSummary(
             `Wellfound deepening stopped after ${WELLFOUND_CIRCUIT_BREAKER_THRESHOLD} consecutive failures — ` +
               `possible bot-detection block. ${result.succeeded} of ${result.processed} attempted lead(s) succeeded.`,
@@ -431,6 +437,15 @@ export default function App() {
       if (result.stopReason === 'auth_error') {
         setUser(null);
         setError('Please sign in again.');
+      } else if (result.stopReason === 'window_closed') {
+        setWellfoundPageSummary(
+          result.pagesProcessed > 0
+            ? `Wellfound pagination was interrupted — the background window was closed. ` +
+                `Parsed pages ${result.startPage}-${result.lastPageProcessed} before that (${result.leadsFound} lead(s) found, ${result.leadsSaved} new); ` +
+                'already-saved leads were kept. Click Continue to resume.'
+            : `Wellfound pagination was interrupted — the background window was closed before page ${startPage} finished. ` +
+                'Click Continue to resume.',
+        );
       } else if (result.pagesProcessed === 0 && result.stopReason === 'no_more_pages') {
         setWellfoundPageSummary(`No results found starting from page ${startPage} — nothing to parse.`);
       } else if (result.stopReason === 'circuit_breaker') {
