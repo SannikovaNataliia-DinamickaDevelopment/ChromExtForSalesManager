@@ -473,6 +473,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     border-radius: 10px;
   }
   .bulk-bar[hidden] { display: none; }
+  /* Company-LinkedIn backfill banner — same visual language as .bulk-bar (bordered, tinted
+     strip) but --accent-colored, not --pink, and deliberately NOT inside .bulk-bar: this job
+     isn't scoped to the row-selection mechanism .bulk-bar belongs to (see this feature's
+     CLAUDE.md section — the batch is chosen server-side, not from checked rows). A soft "stay
+     to watch progress" notice, not a hard warning: the job is server-side and keeps running
+     even if this tab closes. */
+  .job-banner {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: var(--accent-tint);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .job-banner[hidden] { display: none; }
   .bulk-bar .bulk-count { color: var(--text); font-size: 13px; font-weight: 500; }
   .bulk-bar button {
     background: var(--pink);
@@ -836,10 +854,23 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="not_checked">Not detailed for contact person</option>
       </select>
     </span>
+    <span>
+      <label for="filter-company-linkedin">Company LinkedIn</label>
+      <select id="filter-company-linkedin">
+        <option value="all">All</option>
+        <option value="found">Has company LinkedIn</option>
+        <option value="not_specified">Not specified</option>
+        <option value="not_checked">Not detailed</option>
+      </select>
+    </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
     <button class="refresh" id="export-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Export the leads currently visible under the active filters/search">Export</button>
     <span class="export-status" id="export-status"></span>
+    <button class="refresh" id="company-linkedin-backfill-btn" type="button" title="Fetches each not-yet-checked lead's company_website and scans it for LinkedIn links">Backfill company LinkedIn</button>
     <span class="count" id="count"></span>
+  </div>
+  <div class="job-banner" id="company-linkedin-banner" hidden>
+    <span id="company-linkedin-banner-text"></span>
   </div>
   <div class="bulk-bar" id="bulk-bar" hidden>
     <span class="bulk-count" id="bulk-count"></span>
@@ -893,7 +924,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var COOKIE_NAME = 'sm_dashboard_session';
   var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
   var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
-  var COLUMN_COUNT = 12; // 11 data columns + the leading checkbox column
+  var COLUMN_COUNT = 13; // 12 data columns + the leading checkbox column
   // Warning-icon tooltip (table row, hover) and the lead-in line of the sidebar's error banner
   // (row click) — same wording either way, the sidebar just adds the specific stored reason
   // underneath. See lead.enrichment_error's schema comment for how a lead gets into this state.
@@ -952,6 +983,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'is_it', label: 'IT?' },
     { key: 'company', label: 'Company' },
     { key: 'company_website', label: 'Website' },
+    { key: 'company_linkedin', label: 'Company LinkedIn' },
     { key: 'location', label: 'Location' },
     { key: 'status', label: 'Status' },
     { key: 'owner', label: 'Owner' },
@@ -995,6 +1027,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterSource: 'all',
     filterDetail: 'all',
     filterContact: 'all',
+    filterCompanyLinkedin: 'all',
     search: '',
   };
 
@@ -1137,6 +1170,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var IS_IT_FILTER_SUMMARY_LABELS = { it: 'IT only', not_it: 'not-IT only', unprocessed: 'Unprocessed only' };
   var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed', error: 'Error' };
   var CONTACT_FILTER_SUMMARY_LABELS = { found: 'Has contact person', not_specified: 'Not specified', not_checked: 'Not detailed for contact person' };
+  var COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS = { found: 'Has company LinkedIn', not_specified: 'Not specified', not_checked: 'Not detailed' };
 
   function buildExportFilterSummaryLines() {
     var lines = [];
@@ -1145,6 +1179,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterSource !== 'all') lines.push('Source: ' + state.filterSource);
     if (state.filterDetail !== 'all') lines.push('Detail: ' + (DETAIL_FILTER_SUMMARY_LABELS[state.filterDetail] || state.filterDetail));
     if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
+    if (state.filterCompanyLinkedin !== 'all') lines.push('Company LinkedIn: ' + (COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS[state.filterCompanyLinkedin] || state.filterCompanyLinkedin));
     if (state.search) lines.push('Search: "' + state.search + '"');
     return lines;
   }
@@ -1341,6 +1376,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   function sortValue(lead, key) {
     if (key === 'owner') return (lead.owner_display_name || lead.owner_email || '').toLowerCase();
+    // Not a real column on the lead object (the real fields are company_linkedin_status/urls) —
+    // sorts by the first found URL, same "empty string sorts first" behavior every other blank
+    // field already gets here.
+    if (key === 'company_linkedin') return ((lead.company_linkedin_urls && lead.company_linkedin_urls[0]) || '').toLowerCase();
     var v = lead[key];
     if (v === null || v === undefined) return '';
     return typeof v === 'string' ? v.toLowerCase() : v;
@@ -1356,6 +1395,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       // 'not_specified') — no derived helper needed the way detailState() is, since this is
       // already exactly the DB enum value, same relationship the IT filter has to lead.is_it.
       if (state.filterContact !== 'all' && lead.hiring_contact_status !== state.filterContact) return false;
+      if (state.filterCompanyLinkedin !== 'all' && lead.company_linkedin_status !== state.filterCompanyLinkedin) return false;
       if (state.search) {
         var q = state.search.toLowerCase();
         var titleMatch = (lead.job_title || '').toLowerCase().indexOf(q) !== -1;
@@ -1486,6 +1526,35 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
     if (lead.hiring_contact_status === 'not_specified') return 'не вказано';
     return '';
+  }
+
+  // Sidebar's "Company LinkedIn" detail row — a plain container (not buildDetailRow's own
+  // text-value path) since 'found' can hold multiple links, each rendered as its own clickable
+  // line rather than mashed into one comma-separated string. Same not_specified/not_checked
+  // convention as hiringContactDetailValue above.
+  function buildCompanyLinkedinRow(lead) {
+    var row = document.createElement('div');
+    row.className = 'detail-row';
+    row.appendChild(el('span', { className: 'detail-label', text: 'Company LinkedIn' }));
+
+    var valueWrap = document.createElement('span');
+    valueWrap.className = 'detail-value';
+    if (lead.company_linkedin_status === 'found' && (lead.company_linkedin_urls || []).length > 0) {
+      lead.company_linkedin_urls.forEach(function (url, i) {
+        if (i > 0) valueWrap.appendChild(document.createElement('br'));
+        if (isSafeUrl(url)) {
+          valueWrap.appendChild(el('a', { className: 'website-link', href: url, target: '_blank', rel: 'noreferrer', text: url }));
+        } else {
+          valueWrap.appendChild(document.createTextNode(url));
+        }
+      });
+    } else if (lead.company_linkedin_status === 'not_specified') {
+      valueWrap.textContent = 'не вказано';
+    } else {
+      valueWrap.textContent = '—';
+    }
+    row.appendChild(valueWrap);
+    return row;
   }
 
   function buildEnrichBlock(lead) {
@@ -1641,6 +1710,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     content.appendChild(buildDetailRow('Job link', lead.source_url, true));
     content.appendChild(buildDetailRow('Location', lead.location));
     content.appendChild(buildDetailRow('Contact', hiringContactDetailValue(lead)));
+    content.appendChild(buildCompanyLinkedinRow(lead));
     content.appendChild(buildDetailRow('Published', formatKyiv(lead.published_at, true)));
     content.appendChild(buildDetailRow('Source', lead.source_site));
     content.appendChild(buildDetailRow('Status', STATUS_LABELS[lead.status] || lead.status));
@@ -1740,6 +1810,32 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
+  // Table cell for the "Company LinkedIn" column — compact "Open ↗" (+N more) rather than the
+  // full URL text company_website's own column uses, since a found lead can hold several links
+  // and a raw URL list would blow out the row width. Same not_specified/not_checked convention
+  // as the sidebar's buildCompanyLinkedinRow (не вказано / —), just condensed for table density.
+  function buildCompanyLinkedinTd(lead) {
+    var td = document.createElement('td');
+    var urls = lead.company_linkedin_urls || [];
+    if (lead.company_linkedin_status === 'found' && urls.length > 0) {
+      if (isSafeUrl(urls[0])) {
+        var a = el('a', { className: 'website-link', href: urls[0], target: '_blank', rel: 'noreferrer', text: 'Open \\u2197' });
+        a.addEventListener('click', function (e) { e.stopPropagation(); });
+        td.appendChild(a);
+      } else {
+        td.appendChild(document.createTextNode(urls[0]));
+      }
+      if (urls.length > 1) {
+        td.appendChild(document.createTextNode(' (+' + (urls.length - 1) + ' more)'));
+      }
+    } else if (lead.company_linkedin_status === 'not_specified') {
+      td.textContent = 'не вказано';
+    } else {
+      td.textContent = '\\u2014';
+    }
+    return td;
+  }
+
   function buildRow(lead) {
     var tr = document.createElement('tr');
     tr.addEventListener('click', function () { openSidebar(lead); });
@@ -1777,6 +1873,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
     tr.appendChild(el('td', { text: lead.company || '\\u2014' }));
     tr.appendChild(buildLinkTd(lead.company_website, lead.company_website));
+    tr.appendChild(buildCompanyLinkedinTd(lead));
 
     tr.appendChild(el('td', { text: lead.location || '\\u2014' }));
     tr.appendChild(buildStatusTd(lead));
@@ -2178,6 +2275,93 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  // Company-LinkedIn discovery (CLAUDE.md) — a server-side background job (company-linkedin.
+  // service.ts), NOT extension-driven and NOT scoped to row selection like the bulk-bar actions
+  // above: the batch is chosen server-side (every not_checked lead with a company_website),
+  // so there's nothing here to select. Closing this tab does NOT stop the run — see the
+  // banner's own wording — so companyLinkedinWasRunning below exists purely to tell "this page
+  // session watched a run finish" apart from "a stale run finished before this page ever
+  // loaded", so a fresh page load never resurrects an old completion message.
+  var COMPANY_LINKEDIN_POLL_MS = 1000;
+  var companyLinkedinPollId = null;
+  var companyLinkedinWasRunning = false;
+
+  function renderCompanyLinkedinBanner(status) {
+    var banner = document.getElementById('company-linkedin-banner');
+    var textEl = document.getElementById('company-linkedin-banner-text');
+    var btn = document.getElementById('company-linkedin-backfill-btn');
+
+    btn.disabled = status.running;
+    btn.textContent = status.running ? 'Backfill running\\u2026' : 'Backfill company LinkedIn';
+
+    if (status.running) {
+      banner.hidden = false;
+      textEl.textContent = 'Company-LinkedIn backfill running: ' + status.processed + '/' + status.total +
+        ' checked (' + status.found + ' found, ' + status.notSpecified + ' not specified) \\u2014 ' +
+        'this keeps running even if you close this tab; stay here to watch live progress.';
+      return;
+    }
+
+    if (companyLinkedinWasRunning) {
+      banner.hidden = false;
+      var skipped = status.skippedCircuitBreakerCount;
+      textEl.textContent = 'Company-LinkedIn backfill finished: ' + status.processed + ' checked, ' +
+        status.found + ' found, ' + status.notSpecified + ' not specified' +
+        (skipped ? ', ' + skipped + ' skipped (stopped early after repeated failures)' : '') + '.';
+      companyLinkedinWasRunning = false;
+      loadLeads();
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  function pollCompanyLinkedinStatus() {
+    apiFetch('/leads/company-linkedin/status')
+      .then(function (status) {
+        if (status.running) companyLinkedinWasRunning = true;
+        renderCompanyLinkedinBanner(status);
+        if (status.running) {
+          if (!companyLinkedinPollId) {
+            companyLinkedinPollId = setInterval(pollCompanyLinkedinStatus, COMPANY_LINKEDIN_POLL_MS);
+          }
+        } else if (companyLinkedinPollId) {
+          clearInterval(companyLinkedinPollId);
+          companyLinkedinPollId = null;
+        }
+      })
+      .catch(function () {
+        // Best-effort — a failed status poll shouldn't spam errors; the next interval tick (or
+        // the next page load) just retries.
+      });
+  }
+
+  function startCompanyLinkedinBackfill() {
+    var btn = document.getElementById('company-linkedin-backfill-btn');
+    btn.disabled = true;
+    apiFetch('/leads/company-linkedin/backfill', { method: 'POST' })
+      .then(function (result) {
+        if (result.started) {
+          pollCompanyLinkedinStatus();
+          return;
+        }
+        btn.disabled = false;
+        var banner = document.getElementById('company-linkedin-banner');
+        banner.hidden = false;
+        document.getElementById('company-linkedin-banner-text').textContent = result.reason || 'Nothing to backfill.';
+        // "Already running" (e.g. triggered from another tab) is a real in-progress run this
+        // page should still attach its live banner to — anything else (nothing to backfill) is
+        // just a one-off message, left alone rather than immediately overwritten by a
+        // not-running poll result.
+        if (result.alreadyRunning) pollCompanyLinkedinStatus();
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        var banner = document.getElementById('company-linkedin-banner');
+        banner.hidden = false;
+        document.getElementById('company-linkedin-banner-text').textContent = err.message;
+      });
+  }
+
   // Light/dark toggle. The DOM attribute (set by the inline <head> script before first paint,
   // or defaulted to absent = dark) is the single source of truth — read from it rather than
   // tracking a separate JS variable that could drift out of sync with what's actually painted.
@@ -2225,6 +2409,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     state.filterContact = e.target.value;
     render();
   });
+  document.getElementById('filter-company-linkedin').addEventListener('change', function (e) {
+    state.filterCompanyLinkedin = e.target.value;
+    render();
+  });
   var searchDebounceId = null;
   document.getElementById('search-input').addEventListener('input', function (e) {
     var value = e.target.value;
@@ -2267,6 +2455,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
   document.getElementById('bulk-contact-btn').addEventListener('click', startBulkContactBackfill);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
+  document.getElementById('company-linkedin-backfill-btn').addEventListener('click', startCompanyLinkedinBackfill);
 
   var extensionIdInput = document.getElementById('extension-id');
   extensionIdInput.value = localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '';
@@ -2300,6 +2489,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   renderHeader();
   loadLeads();
+  // Resumes the banner/polling if a run is already in progress server-side (started from this
+  // tab before a reload, or from a different tab/window entirely) — the whole point of this job
+  // living in the backend process rather than the page (see CLAUDE.md's Company-LinkedIn
+  // discovery section).
+  pollCompanyLinkedinStatus();
 })();
 </script>
 </body>

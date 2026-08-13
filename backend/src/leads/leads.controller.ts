@@ -6,6 +6,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
+import { CompanyLinkedinService } from './company-linkedin.service';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
@@ -18,7 +19,10 @@ import { LeadsService } from './leads.service';
 @Controller('leads')
 @UseGuards(AuthGuard)
 export class LeadsController {
-  constructor(private readonly leadsService: LeadsService) {}
+  constructor(
+    private readonly leadsService: LeadsService,
+    private readonly companyLinkedinService: CompanyLinkedinService,
+  ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead.
   @Get()
@@ -47,6 +51,24 @@ export class LeadsController {
   @Get('stats')
   async stats() {
     return this.leadsService.getStats();
+  }
+
+  // Company-LinkedIn discovery (CLAUDE.md) — a server-side background job, not extension-driven
+  // (see company-linkedin.service.ts's own doc comment for why). POST kicks off a batch and
+  // returns immediately; GET is polled by the dashboard for live progress and reflects this
+  // process's own in-memory state, so it also correctly reports "still running" across a
+  // dashboard page reload. Literal 'company-linkedin/...' path, same no-route-collision
+  // reasoning as 'deleted'/'stats'/'export' below (two literal segments, never matches the
+  // single-segment :id routes further down regardless of registration order, but kept up here
+  // for the same readability convention).
+  @Post('company-linkedin/backfill')
+  async startCompanyLinkedinBackfill() {
+    return this.companyLinkedinService.startBackfill();
+  }
+
+  @Get('company-linkedin/status')
+  async companyLinkedinStatus() {
+    return this.companyLinkedinService.getStatus();
   }
 
   // Dashboard "Export" button. POST (not GET) because leadIds can be the entire filtered lead

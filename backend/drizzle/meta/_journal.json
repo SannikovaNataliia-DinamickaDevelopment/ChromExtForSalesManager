@@ -64,6 +64,13 @@
       "when": 1786648744281,
       "tag": "0008_tricky_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786651441288,
+      "tag": "0009_lively_blacklash",
+      "breakpoints": true
     }
   ]
 }

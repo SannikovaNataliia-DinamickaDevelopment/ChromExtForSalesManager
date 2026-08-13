@@ -10,6 +10,13 @@ export const leadIsItEnum = pgEnum('lead_is_it', ['it', 'not_it', 'unprocessed']
 // looked and the section genuinely wasn't on the page) so a backfill run never re-visits a lead
 // that already resolved to "no contact" — see wellfound-contact-backfill.ts.
 export const hiringContactStatusEnum = pgEnum('hiring_contact_status', ['not_checked', 'found', 'not_specified']);
+// Company-LinkedIn discovery: a plain fetch() of the lead's own company_website, scanning for
+// <a href> values containing "linkedin.com" — no AI/LLM disambiguation this pass, just every
+// unique link collected as-is (company-linkedin.service.ts). Same three-state shape as
+// hiringContactStatusEnum above and same reason: 'not_checked' must be distinguishable from
+// 'not_specified' (fetched fine, genuinely no LinkedIn link on the page — or the fetch itself
+// failed, treated the same per spec) so a backfill run never re-touches an already-resolved lead.
+export const companyLinkedinStatusEnum = pgEnum('company_linkedin_status', ['not_checked', 'found', 'not_specified']);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -62,6 +69,13 @@ export const job_leads = pgTable(
     hiring_contact_name: text('hiring_contact_name'),
     hiring_contact_role: text('hiring_contact_role'),
     hiring_contact_location: text('hiring_contact_location'),
+    // Company-LinkedIn discovery (see companyLinkedinStatusEnum above). urls is null until
+    // checked; an empty array (not null) once checked and genuinely nothing was found — only
+    // the status field is load-bearing for "checked or not", but an explicit [] vs. null makes
+    // "checked, found nothing" distinguishable from "never checked" even by inspecting the
+    // array alone.
+    company_linkedin_status: companyLinkedinStatusEnum('company_linkedin_status').default('not_checked').notNull(),
+    company_linkedin_urls: text('company_linkedin_urls').array(),
     status: leadStatusEnum('status').default('new').notNull(),
     // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
     is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),

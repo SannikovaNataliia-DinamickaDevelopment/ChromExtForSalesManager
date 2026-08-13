@@ -94,10 +94,11 @@ Priority order (A → C are the target; D only if time permits before the Tuesda
 
 - `users(id, email, display_name, created_at)`
 - `external_identities(id, user_id→users, provider, provider_user_id, email, created_at)`
-- `job_leads(id, owner_user_id→users [= created_by], source_site, source_url, external_job_id, company, company_website, job_title, location, description, salary, tech_stack, apply_url, ats, published_at, is_it, contact_name, contact_email, contact_phone, hiring_contact_status, hiring_contact_name, hiring_contact_role, hiring_contact_location, status, snapshot(jsonb), scraped_at, created_at, updated_at)`
+- `job_leads(id, owner_user_id→users [= created_by], source_site, source_url, external_job_id, company, company_website, job_title, location, description, salary, tech_stack, apply_url, ats, published_at, is_it, contact_name, contact_email, contact_phone, hiring_contact_status, hiring_contact_name, hiring_contact_role, hiring_contact_location, company_linkedin_status, company_linkedin_urls, status, snapshot(jsonb), scraped_at, created_at, updated_at)`
 - `status` — enum `new | in_progress | done` (default `new`). Ukrainian UI labels («новий», «опрацьовується», «опрацьований») only; DB/API use English values.
 - `is_it` — enum `it | not_it | unprocessed` (default `unprocessed`).
 - `hiring_contact_status` — enum `not_checked | found | not_specified` (default `not_checked`). Wellfound-only (see "Hiring contact tracking" below); `hiring_contact_name/role/location` are only ever populated when status is `found`.
+- `company_linkedin_status` — enum `not_checked | found | not_specified` (default `not_checked`), same shape as `hiring_contact_status` but NOT source-scoped — applies to any lead with a `company_website`. `company_linkedin_urls` (`text[]`) is null until checked, `[]` once checked and nothing found, the collected link list once `found` — see "Company-LinkedIn discovery" below.
 - `published_at` — the vacancy's posted date (parsed from the card).
 - **Global dedup indexes:** unique `(source_site, external_job_id)`, unique `(source_url)`.
 
@@ -238,6 +239,59 @@ email/phone.
 
 ---
 
+## Company-LinkedIn discovery — added later in the project
+
+Given a lead's existing `company_website`, fetch that page and scan it for `<a href>` values
+containing "linkedin.com" — the company's own LinkedIn profile (and possibly others, e.g. a
+founder's personal profile in the same footer). Added 2026-08-13. **No AI/LLM disambiguation
+this pass** — every unique link (exact-duplicate dedupe only, no normalization) is collected
+and saved as-is; a future pass could add disambiguation if the raw list turns out noisy.
+
+- **Architecture — deliberately server-side, NOT extension-driven** (unlike every other
+  deepening/backfill flow in this project): this is a plain `fetch()` of an arbitrary external
+  company website, not a job-site detail page — genuinely different from Wellfound (needs a
+  real browser tab for DataDome) or Techjobs/ITjobs (extension-driven because job-site fetches
+  go through the extension's own `host_permissions`). No CORS-safe way exists for the
+  dashboard's own JS to read an arbitrary external site's response body, so the real fetch has
+  to happen server-side regardless — and once it's server-side, there's no reason to make the
+  *looping* client-driven too. `backend/src/leads/company-linkedin.service.ts`'s
+  `startBackfill()` kicks off an in-process async batch that is **never awaited by its HTTP
+  caller** and keeps running in the Node process regardless of whether the dashboard tab that
+  triggered it stays open. `GET /leads/company-linkedin/status` is polled by the dashboard
+  (every 1s while running) for live progress, and correctly resumes the banner across a
+  dashboard page reload since the state lives in this process, not the client. **No extension
+  involvement at all for this feature.**
+- **Extraction**: regex over the raw HTML (`<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')`),
+  same "no DOM library needed, works headless" precedent as the JSON-LD JobPosting extraction —
+  no `cheerio`/`jsdom` dependency added for this. A fetch failure, timeout (8s), non-2xx
+  response, or malformed `company_website` are all treated identically to "fetched fine, found
+  nothing" → `not_specified` — deliberately no failure-reason distinction the way Wellfound's
+  404-vs-timeout split has one, per this feature's own spec.
+- **Own cap/circuit-breaker**, not reusing `WELLFOUND_RUN_CAP`: `COMPANY_LINKEDIN_RUN_CAP` (50)
+  and `CIRCUIT_BREAKER_THRESHOLD` (8, higher than Wellfound's 3) — each request targets a
+  *different* external domain, so consecutive failures are a much weaker "we're blocked" signal
+  than Wellfound repeatedly failing against the one site it's walking; the breaker here guards
+  against a systemic problem (outbound network down), not any single site's own behavior. A
+  small fixed 300ms delay between requests (not Wellfound's randomized human-pace — no anti-bot
+  reason to vary it here) keeps a run from firing a burst of outbound connections at once.
+- **Dashboard**: a "Company LinkedIn" filter (Has company LinkedIn / Not specified / Not
+  detailed), a sidebar row listing every found link, and a standalone "Backfill company
+  LinkedIn" button — **not row-selection-scoped** like the Wellfound bulk actions, since the
+  batch is chosen server-side (every `not_checked` lead with a non-null `company_website`, up
+  to the cap). A soft progress banner ("this keeps running even if you close this tab") reflects
+  the genuinely different tab-closure semantics from Wellfound's hard "please don't close this
+  window" warning — see the architecture note above for why.
+- **NFR-3 scope note**: the backend now also fetches arbitrary public company marketing pages
+  (read-only, no lead/user data sent to them) in addition to backend/Sheets/Gemini — a new kind
+  of outbound call, though not a new category of *data leaving* the system the way NFR-3 is
+  really concerned with.
+- **Deferred, not built**: some company sites are JS-rendered SPAs where a plain fetch won't see
+  footer links a real browser would render. Not addressed this pass — if a first backfill run
+  shows fetch failing/coming up empty on a meaningful share of sites, that's a signal to scope a
+  TabDeepening-style fallback separately, not something to build preemptively.
+
+---
+
 ## What NOT to do (critical) — REVISED
 
 Reversals from the earlier brief (intentional, per the manager meeting):
@@ -323,4 +377,4 @@ Current iteration (deadline Tuesday), in priority order:
 
 ## Decision log
 
-side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)** · **Wellfound.com added as a third source — own list selectors, deepens via a dedicated background browser tab (DeepeningStrategy abstraction: FetchDeepening vs TabDeepening) instead of a fetch because of DataDome bot-protection, Gemini stays permanently off for it** · **Wellfound "Hiring contact" tracking added as a narrow, explicitly-approved exception to the contact-enrichment prohibition — name/role/location only, scraped from Wellfound's own page (never email/phone, never a third-party service); three-state (not_checked/found/not_specified), opportunistic during normal deepening plus a dedicated backfill for already-deepened leads, reusing the same run cap/circuit breaker**.
+side panel · thin client + backend · Drizzle · IdP abstraction (Google implemented, Microsoft later) · destination adapter (Sheets) · dedup GLOBAL in the DB (source_url + external_job_id) · owner = created_by, shown only for others in the panel, always in the Sheet · shared visibility (all users see all leads) · status enum + dropdown, shared per lead · UTC in DB, Kyiv on display · snapshot in the DB, flat fields in Sheets · **focus TechJobs, DevITjobs paused** · **deepen description + company website (auto, human pace)** · **Gemini free API for IT-classification (flag, don't delete)** · **contact enrichment stays out — LinkedIn manual** · multi-page via URL param deprioritized · **ITjobs.ca added as a second source, same template/parser as Techjobs.ca, still goes through Gemini (not IT-only despite the name)** · **Wellfound.com added as a third source — own list selectors, deepens via a dedicated background browser tab (DeepeningStrategy abstraction: FetchDeepening vs TabDeepening) instead of a fetch because of DataDome bot-protection, Gemini stays permanently off for it** · **Wellfound "Hiring contact" tracking added as a narrow, explicitly-approved exception to the contact-enrichment prohibition — name/role/location only, scraped from Wellfound's own page (never email/phone, never a third-party service); three-state (not_checked/found/not_specified), opportunistic during normal deepening plus a dedicated backfill for already-deepened leads, reusing the same run cap/circuit breaker** · **Company-LinkedIn discovery added — plain fetch() of company_website scanning for linkedin.com links, no AI disambiguation; deliberately server-side (not extension-driven) since it's an arbitrary external fetch with no CORS-safe client path, own cap/circuit-breaker, dashboard button not row-selection-scoped since the batch is server-picked, soft "keeps running after tab close" banner instead of Wellfound's hard warning**.
