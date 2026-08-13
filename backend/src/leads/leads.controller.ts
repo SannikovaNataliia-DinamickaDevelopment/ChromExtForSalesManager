@@ -7,6 +7,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
 import { CompanyLinkedinService } from './company-linkedin.service';
+import { BackfillCompanyLinkedinDto } from './dto/backfill-company-linkedin.dto';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
@@ -53,17 +54,27 @@ export class LeadsController {
     return this.leadsService.getStats();
   }
 
-  // Company-LinkedIn discovery (CLAUDE.md) — a server-side background job, not extension-driven
-  // (see company-linkedin.service.ts's own doc comment for why). POST kicks off a batch and
-  // returns immediately; GET is polled by the dashboard for live progress and reflects this
-  // process's own in-memory state, so it also correctly reports "still running" across a
-  // dashboard page reload. Literal 'company-linkedin/...' path, same no-route-collision
-  // reasoning as 'deleted'/'stats'/'export' below (two literal segments, never matches the
-  // single-segment :id routes further down regardless of registration order, but kept up here
-  // for the same readability convention).
+  // Company-LinkedIn discovery (CLAUDE.md) — row-selection-scoped like the dashboard's other
+  // bulk actions (leadIds = whatever the dashboard's checkboxes selected), but still a
+  // server-side background job under the hood, not extension-driven (see company-linkedin.
+  // service.ts's own doc comment for why). POST kicks off a batch and returns immediately; GET
+  // is polled by the dashboard for live progress and reflects this process's own in-memory
+  // state. Literal 'company-linkedin/...' path, same no-route-collision reasoning as
+  // 'deleted'/'stats'/'export' below (two literal segments, never matches the single-segment
+  // :id routes further down regardless of registration order, but kept up here for the same
+  // readability convention).
   @Post('company-linkedin/backfill')
-  async startCompanyLinkedinBackfill() {
-    return this.companyLinkedinService.startBackfill();
+  async startCompanyLinkedinBackfill(@Body() body: unknown) {
+    const dto = plainToInstance(BackfillCompanyLinkedinDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        'leadIds must be a non-empty array of lead id strings',
+      );
+    }
+    return this.companyLinkedinService.startBackfill(dto.leadIds);
   }
 
   @Get('company-linkedin/status')

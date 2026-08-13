@@ -473,24 +473,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     border-radius: 10px;
   }
   .bulk-bar[hidden] { display: none; }
-  /* Company-LinkedIn backfill banner — same visual language as .bulk-bar (bordered, tinted
-     strip) but --accent-colored, not --pink, and deliberately NOT inside .bulk-bar: this job
-     isn't scoped to the row-selection mechanism .bulk-bar belongs to (see this feature's
-     CLAUDE.md section — the batch is chosen server-side, not from checked rows). A soft "stay
-     to watch progress" notice, not a hard warning: the job is server-side and keeps running
-     even if this tab closes. */
-  .job-banner {
-    display: flex;
-    align-items: center;
-    margin-bottom: 16px;
-    padding: 10px 14px;
-    background: var(--accent-tint);
-    border: 1px solid var(--accent);
-    border-radius: 10px;
-    font-size: 13px;
-    color: var(--text);
-  }
-  .job-banner[hidden] { display: none; }
   .bulk-bar .bulk-count { color: var(--text); font-size: 13px; font-weight: 500; }
   .bulk-bar button {
     background: var(--pink);
@@ -866,16 +848,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
     <button class="refresh" id="export-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Export the leads currently visible under the active filters/search">Export</button>
     <span class="export-status" id="export-status"></span>
-    <button class="refresh" id="company-linkedin-backfill-btn" type="button" title="Fetches each not-yet-checked lead's company_website and scans it for LinkedIn links">Backfill company LinkedIn</button>
     <span class="count" id="count"></span>
-  </div>
-  <div class="job-banner" id="company-linkedin-banner" hidden>
-    <span id="company-linkedin-banner-text"></span>
   </div>
   <div class="bulk-bar" id="bulk-bar" hidden>
     <span class="bulk-count" id="bulk-count"></span>
     <button id="bulk-enrich-btn" type="button">Enrich selected</button>
     <button id="bulk-contact-btn" type="button">Backfill contact selected</button>
+    <button id="bulk-company-linkedin-btn" type="button" title="Fetches each selected lead's company_website and scans it for LinkedIn links (capped at 50/run)">Backfill LinkedIn selected</button>
     <button id="bulk-delete-btn" class="bulk-delete-btn" type="button">Delete selected</button>
     <span class="bulk-status" id="bulk-status"></span>
   </div>
@@ -1907,15 +1886,19 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var countEl = document.getElementById('bulk-count');
     var enrichBtn = document.getElementById('bulk-enrich-btn');
     var contactBtn = document.getElementById('bulk-contact-btn');
+    var linkedinBtn = document.getElementById('bulk-company-linkedin-btn');
     var deleteBtn = document.getElementById('bulk-delete-btn');
     var statusEl = document.getElementById('bulk-status');
     var notDetailedCount = getSelectedNotDetailedLeads().length;
     var needsContactCount = getSelectedNeedsContactCheck().length;
+    var needsLinkedinCount = getSelectedNeedsCompanyLinkedinCheck().length;
 
     if (bulkState.inFlight && bulkState.mode === 'enrich') {
       countEl.textContent = 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'contact') {
       countEl.textContent = 'Checking contacts ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
+    } else if (bulkState.inFlight && bulkState.mode === 'linkedin') {
+      countEl.textContent = 'Checking company LinkedIn ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'delete') {
       countEl.textContent = 'Deleting\\u2026';
     } else {
@@ -1932,6 +1915,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // Wellfound + still-not_checked (see getSelectedNeedsContactCheck).
     contactBtn.textContent = 'Backfill contact selected (' + needsContactCount + ')';
     contactBtn.disabled = bulkState.inFlight || needsContactCount === 0;
+
+    // Uncapped count here (the true eligible-in-selection total) — the 50/run cap is enforced
+    // server-side, with any excess reported as skippedCap in the run summary rather than
+    // silently hidden from this label.
+    linkedinBtn.textContent = 'Backfill LinkedIn selected (' + needsLinkedinCount + ')';
+    linkedinBtn.disabled = bulkState.inFlight || needsLinkedinCount === 0;
 
     deleteBtn.textContent = 'Delete selected (' + count + ')';
     deleteBtn.disabled = bulkState.inFlight || count === 0;
@@ -2275,90 +2264,122 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
-  // Company-LinkedIn discovery (CLAUDE.md) — a server-side background job (company-linkedin.
-  // service.ts), NOT extension-driven and NOT scoped to row selection like the bulk-bar actions
-  // above: the batch is chosen server-side (every not_checked lead with a company_website),
-  // so there's nothing here to select. Closing this tab does NOT stop the run — see the
-  // banner's own wording — so companyLinkedinWasRunning below exists purely to tell "this page
-  // session watched a run finish" apart from "a stale run finished before this page ever
-  // loaded", so a fresh page load never resurrects an old completion message.
+  // Company-LinkedIn discovery (CLAUDE.md) — row-selection-scoped like the other bulk-bar
+  // actions above (same bulkState.inFlight/mode gating, so this and Enrich/Backfill
+  // contact/Delete can never run concurrently from this tab), but still a server-side job under
+  // the hood (company-linkedin.service.ts): the POST returns immediately and this tab polls
+  // GET status for progress, same reasoning as before — no CORS-safe way for this page's own JS
+  // to read an arbitrary external site's response body, so the real fetch has to be server-side
+  // regardless of how the batch gets chosen. Unlike Wellfound's bulk actions, closing this tab
+  // does NOT stop an in-flight run (it's not extension-driven) — worth knowing, though the UI
+  // here doesn't call special attention to it the way the old standalone banner did, to match
+  // the other three buttons' plain "Xing N/M…" bulk-bar treatment.
   var COMPANY_LINKEDIN_POLL_MS = 1000;
   var companyLinkedinPollId = null;
-  var companyLinkedinWasRunning = false;
 
-  function renderCompanyLinkedinBanner(status) {
-    var banner = document.getElementById('company-linkedin-banner');
-    var textEl = document.getElementById('company-linkedin-banner-text');
-    var btn = document.getElementById('company-linkedin-backfill-btn');
-
-    btn.disabled = status.running;
-    btn.textContent = status.running ? 'Backfill running\\u2026' : 'Backfill company LinkedIn';
-
-    if (status.running) {
-      banner.hidden = false;
-      textEl.textContent = 'Company-LinkedIn backfill running: ' + status.processed + '/' + status.total +
-        ' checked (' + status.found + ' found, ' + status.notSpecified + ' not specified) \\u2014 ' +
-        'this keeps running even if you close this tab; stay here to watch live progress.';
-      return;
-    }
-
-    if (companyLinkedinWasRunning) {
-      banner.hidden = false;
-      var skipped = status.skippedCircuitBreakerCount;
-      textEl.textContent = 'Company-LinkedIn backfill finished: ' + status.processed + ' checked, ' +
-        status.found + ' found, ' + status.notSpecified + ' not specified' +
-        (skipped ? ', ' + skipped + ' skipped (stopped early after repeated failures)' : '') + '.';
-      companyLinkedinWasRunning = false;
-      loadLeads();
-    } else {
-      banner.hidden = true;
-    }
+  // Selected leads still eligible for a check: not yet checked AND actually has a
+  // company_website to fetch — same "eligible subset of the selection" pattern as
+  // getSelectedNotDetailedLeads/getSelectedNeedsContactCheck above. Uncapped here (the button's
+  // own label shows the true selected-eligible count); COMPANY_LINKEDIN_RUN_CAP (50) is enforced
+  // server-side, with the untried remainder reported back as skippedCap in the run summary.
+  function getSelectedNeedsCompanyLinkedinCheck() {
+    return getSelectedLeads().filter(function (l) {
+      return !!l.company_website && l.company_linkedin_status === 'not_checked';
+    });
   }
 
-  function pollCompanyLinkedinStatus() {
+  function buildCompanyLinkedinBulkSummary(result) {
+    var parts = [result.found + ' found'];
+    if (result.notSpecified) parts.push(result.notSpecified + ' not specified');
+    if (result.skippedCap) parts.push(result.skippedCap + ' skipped \\u2014 over the 50/run cap');
+    if (result.skippedIneligible) parts.push(result.skippedIneligible + ' already resolved/ineligible, skipped');
+    return parts.join(', ');
+  }
+
+  function pollCompanyLinkedinBulkStatus() {
     apiFetch('/leads/company-linkedin/status')
       .then(function (status) {
-        if (status.running) companyLinkedinWasRunning = true;
-        renderCompanyLinkedinBanner(status);
+        bulkState.completed = status.processed;
+        bulkState.total = status.total;
+        render();
+
         if (status.running) {
           if (!companyLinkedinPollId) {
-            companyLinkedinPollId = setInterval(pollCompanyLinkedinStatus, COMPANY_LINKEDIN_POLL_MS);
+            companyLinkedinPollId = setInterval(pollCompanyLinkedinBulkStatus, COMPANY_LINKEDIN_POLL_MS);
           }
-        } else if (companyLinkedinPollId) {
+          return;
+        }
+
+        if (companyLinkedinPollId) {
           clearInterval(companyLinkedinPollId);
           companyLinkedinPollId = null;
         }
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = buildCompanyLinkedinBulkSummary(status);
+        clearSelection();
+        render();
+        loadLeads();
       })
       .catch(function () {
-        // Best-effort — a failed status poll shouldn't spam errors; the next interval tick (or
-        // the next page load) just retries.
+        // Best-effort — a failed status poll shouldn't spam errors or abort the run; the next
+        // interval tick just retries. The run itself is unaffected (it's server-side).
       });
   }
 
-  function startCompanyLinkedinBackfill() {
-    var btn = document.getElementById('company-linkedin-backfill-btn');
-    btn.disabled = true;
-    apiFetch('/leads/company-linkedin/backfill', { method: 'POST' })
+  // Bulk "Backfill LinkedIn selected" — see company-linkedin.service.ts's startBackfill for how
+  // the >50-selected case is handled: the server filters the selection down to eligible leads,
+  // caps at COMPANY_LINKEDIN_RUN_CAP (50), and reports both skippedCap (eligible but over the
+  // cap) and skippedIneligible (already resolved, or no company_website) counts back separately
+  // in the final summary — never silently drops either.
+  function startBulkCompanyLinkedin() {
+    if (bulkState.inFlight) return;
+
+    var targets = getSelectedNeedsCompanyLinkedinCheck().map(function (l) { return l.id; });
+    if (targets.length === 0) return;
+
+    bulkState.inFlight = true;
+    bulkState.mode = 'linkedin';
+    bulkState.completed = 0;
+    bulkState.total = Math.min(targets.length, 50);
+    bulkState.status = '';
+    render();
+
+    apiFetch('/leads/company-linkedin/backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: targets }),
+    })
       .then(function (result) {
-        if (result.started) {
-          pollCompanyLinkedinStatus();
+        if (!result.started) {
+          // "Already running" (e.g. triggered from another tab) is a real in-progress run this
+          // tab should still attach its own progress polling to — anything else (nothing
+          // eligible after server-side filtering) is a one-off message and there's nothing to
+          // poll.
+          if (result.alreadyRunning) {
+            bulkState.total = 0;
+            pollCompanyLinkedinBulkStatus();
+            return;
+          }
+          bulkState.inFlight = false;
+          bulkState.mode = null;
+          bulkState.status = result.reason || 'Nothing to backfill.';
+          render();
           return;
         }
-        btn.disabled = false;
-        var banner = document.getElementById('company-linkedin-banner');
-        banner.hidden = false;
-        document.getElementById('company-linkedin-banner-text').textContent = result.reason || 'Nothing to backfill.';
-        // "Already running" (e.g. triggered from another tab) is a real in-progress run this
-        // page should still attach its live banner to — anything else (nothing to backfill) is
-        // just a one-off message, left alone rather than immediately overwritten by a
-        // not-running poll result.
-        if (result.alreadyRunning) pollCompanyLinkedinStatus();
+        // skippedIneligible/skippedCap are set once server-side at run start and stay on
+        // CompanyLinkedinStatus for the run's whole lifetime, so pollCompanyLinkedinBulkStatus's
+        // completion summary (built from GET status) picks them up without this needing to pass
+        // them along itself.
+        bulkState.total = result.total;
+        render();
+        pollCompanyLinkedinBulkStatus();
       })
       .catch(function (err) {
-        btn.disabled = false;
-        var banner = document.getElementById('company-linkedin-banner');
-        banner.hidden = false;
-        document.getElementById('company-linkedin-banner-text').textContent = err.message;
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = err.message;
+        render();
       });
   }
 
@@ -2454,8 +2475,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
   document.getElementById('bulk-contact-btn').addEventListener('click', startBulkContactBackfill);
+  document.getElementById('bulk-company-linkedin-btn').addEventListener('click', startBulkCompanyLinkedin);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
-  document.getElementById('company-linkedin-backfill-btn').addEventListener('click', startCompanyLinkedinBackfill);
 
   var extensionIdInput = document.getElementById('extension-id');
   extensionIdInput.value = localStorage.getItem(EXTENSION_ID_STORAGE_KEY) || '';
@@ -2489,11 +2510,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   renderHeader();
   loadLeads();
-  // Resumes the banner/polling if a run is already in progress server-side (started from this
-  // tab before a reload, or from a different tab/window entirely) — the whole point of this job
-  // living in the backend process rather than the page (see CLAUDE.md's Company-LinkedIn
-  // discovery section).
-  pollCompanyLinkedinStatus();
 })();
 </script>
 </body>
