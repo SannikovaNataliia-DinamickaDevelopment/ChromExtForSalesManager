@@ -3,7 +3,7 @@ import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepe
 import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedError } from './wellfound-background-window';
 
 // CLAUDE.md scope D (Wellfound): named + easy to raise once this is validated in practice.
-export const WELLFOUND_RUN_CAP = 20;
+export const WELLFOUND_RUN_CAP = 30;
 export const WELLFOUND_CIRCUIT_BREAKER_THRESHOLD = 3;
 
 // Wellfound is known to be anti-bot-aggressive — meaningfully slower/more cautious pacing
@@ -86,6 +86,12 @@ export class TabDeepening implements DeepeningStrategy {
   // instance itself outside this class.
   pacedDelay(minMs: number, maxMs: number): Promise<boolean> {
     return pacedDelay(this.win, minMs, maxMs);
+  }
+
+  // Exposes the shared window's live-progress-text overlay update without leaking the window
+  // instance itself outside this class.
+  setProgress(text: string): void {
+    this.win.setProgress(text);
   }
 
   // Closes the dedicated window. Call once at the end of a run (success, cap, circuit
@@ -198,6 +204,7 @@ export async function deepenWellfoundLeads(
         processed++;
         errorFlagged++;
         onProgress({ current: processed, total: capped.length, succeeded, stoppedEarly: false });
+        strategy.setProgress(`${processed}/${capped.length} lead(s) processed, ${succeeded} succeeded`);
 
         if (i < capped.length - 1) {
           if (await strategy.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
@@ -225,6 +232,7 @@ export async function deepenWellfoundLeads(
       }
 
       onProgress({ current: processed, total: capped.length, succeeded, stoppedEarly: false });
+      strategy.setProgress(`${processed}/${capped.length} lead(s) processed, ${succeeded} succeeded`);
 
       if (i < capped.length - 1) {
         if (await strategy.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {

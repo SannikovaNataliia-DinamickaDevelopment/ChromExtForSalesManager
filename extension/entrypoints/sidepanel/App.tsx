@@ -8,6 +8,7 @@ import { getStoredTheme, setStoredTheme, type Theme } from '../../lib/theme';
 import {
   deepenWellfoundLeads,
   WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
+  WELLFOUND_RUN_CAP,
   type WellfoundDeepenProgress,
 } from '../../lib/wellfound-deepen';
 import {
@@ -392,7 +393,11 @@ export default function App() {
       if (result.stopReason === 'auth_error') {
         setUser(null);
         setError('Please sign in again.');
-      } else if (result.stopReason === 'glitch_error' || result.stopReason === 'nav_error') {
+      } else if (
+        result.stopReason === 'glitch_error' ||
+        result.stopReason === 'nav_error' ||
+        result.stopReason === 'pagination_unsupported'
+      ) {
         setError(result.errorMessage ?? 'Multi-page parse stopped unexpectedly.');
       } else if (result.stopReason === 'max_pages') {
         setMultiPageSummary(
@@ -489,6 +494,15 @@ export default function App() {
           `Parsed pages ${result.startPage}-${result.lastPageProcessed} — ${result.leadsFound} lead(s) found, ${result.leadsSaved} new.`,
         );
       }
+
+      // Auto-deepen exactly what THIS run parsed and saved — result.savedLeads is scoped to
+      // this run only (see runWellfoundPagination's own doc comment), never a broader "every
+      // lead in the DB still missing a description" sweep. Not awaited, same fire-and-forget
+      // pattern handleParse already uses for the single-page Wellfound flow: the pagination
+      // UI state above clears normally while deepening continues independently, surfaced via
+      // the existing wellfoundDeepening/wellfoundDeepenSummary hints (shared with that flow,
+      // nothing new to render here).
+      runWellfoundDeepen(result.savedLeads);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -646,8 +660,9 @@ export default function App() {
             <div className="hint">Previous progress is from a different day — start a new run with "Parse from here".</div>
           )}
           <div className="hint">
-            Wellfound only. Walks {WELLFOUND_PAGINATION_BATCH_SIZE} pages via ?page=N in a background tab, human-paced. No
-            deepening, no Gemini here — newly found leads can be enriched later from the dashboard.
+            Wellfound only. Walks {WELLFOUND_PAGINATION_BATCH_SIZE} pages via ?page=N in a background tab, human-paced.
+            Automatically deepens the leads this batch found afterward (own background window, capped at {WELLFOUND_RUN_CAP} —
+            see the deepening progress below). No Gemini here.
           </div>
           {wellfoundPageProgress && (
             <div className="hint">

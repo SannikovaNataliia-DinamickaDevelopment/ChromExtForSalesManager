@@ -26,7 +26,13 @@ export interface MultiPageProgress {
   deepenTotal: number;
 }
 
-export type MultiPageStopReason = 'reached_target' | 'max_pages' | 'glitch_error' | 'auth_error' | 'nav_error';
+export type MultiPageStopReason =
+  | 'reached_target'
+  | 'max_pages'
+  | 'glitch_error'
+  | 'auth_error'
+  | 'nav_error'
+  | 'pagination_unsupported';
 
 export interface MultiPageResult {
   pagesProcessed: number;
@@ -39,6 +45,15 @@ function buildPageUrl(baseUrl: string, page: number): string {
   const url = new URL(baseUrl);
   url.searchParams.set('page', String(page));
   return url.toString();
+}
+
+function actualPageParam(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).searchParams.get('page');
+  } catch {
+    return null;
+  }
 }
 
 // Resolves once the tab finishes loading the new URL — a real top-level navigation (not a
@@ -134,6 +149,28 @@ export async function runMultiPageParse(
         errorMessage: `Could not load page ${page}: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+
+    // Techjobs/ITjobs' redesigned site (confirmed live) silently redirects an out-of-range or
+    // no-longer-supported ?page=N back to the bare list URL instead of erroring — the list is
+    // infinite-scroll now, not URL-paginated, so page 2 onward just serves page 1's content
+    // again under a stripped URL. Without this check the loop would grind through MAX_PAGES
+    // re-saving identical page-1 leads (harmless to dedup, but a silent waste of up to ~15
+    // navigations) and never detect it, since published_at is always null on this site now and
+    // can never trigger the "reached target date" stop below. Same redirect-detection trick
+    // already used for Wellfound's pagination (wellfound-pagination.ts) — check the tab's
+    // actual URL against what was requested right after navigating, before parsing anything.
+    const tabAfterNav = await chrome.tabs.get(tabId);
+    if (actualPageParam(tabAfterNav.url) !== String(page)) {
+      return {
+        pagesProcessed: page - 1,
+        totalLeadsSaved,
+        stopReason: 'pagination_unsupported',
+        errorMessage:
+          "This site no longer supports paged navigation (?page=N) — it redirected back to the first page instead of loading page " +
+          `${page}. The list is infinite-scroll now, so "parse back to date" isn't currently possible here; use "Parse current list page" instead.`,
+      };
+    }
+
     await sleep(PAGE_SETTLE_DELAY_MS);
 
     let leads = await fetchPageLeads(tabId);

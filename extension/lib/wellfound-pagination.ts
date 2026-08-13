@@ -75,6 +75,12 @@ class BackgroundListTab {
     return pacedDelay(this.win, minMs, maxMs);
   }
 
+  // Exposes the shared window's live-progress-text overlay update without leaking the window
+  // instance itself outside this class.
+  setProgress(text: string): void {
+    this.win.setProgress(text);
+  }
+
   // Closes the dedicated window. Call once at the end of a run — never leave an extra
   // background window open (same rule as TabDeepening.close()).
   async close(): Promise<void> {
@@ -114,6 +120,12 @@ export interface WellfoundPaginationResult {
   // which counts every card parsed off every page including ones that turned out to be
   // dedup updates to an already-known lead.
   leadsSaved: number;
+  // Every saveLeads() result across every successfully-saved page in this run, in save order —
+  // exactly (and only) what THIS run parsed and saved, never a broader "everything still
+  // pending in the DB" set. Exists so a caller can auto-deepen precisely this run's leads by
+  // reusing the same LeadSaveResult[] shape App.tsx's single-page-parse flow already deepens
+  // from (runWellfoundDeepen), rather than needing a separate DB query.
+  savedLeads: LeadSaveResult[];
   stopReason: WellfoundPaginationStopReason;
   errorMessage?: string;
 }
@@ -154,6 +166,7 @@ export async function runWellfoundPagination(
   let consecutiveFailures = 0;
   let stopReason: WellfoundPaginationStopReason = 'batch_size';
   let errorMessage: string | undefined;
+  const savedLeads: LeadSaveResult[] = [];
 
   const isClosedError = (err: unknown) => err instanceof WellfoundBackgroundWindowClosedError || tab.wasClosedByUser;
 
@@ -227,10 +240,16 @@ export async function runWellfoundPagination(
       consecutiveFailures = 0;
       leadsFound += leads.length;
       leadsSaved += saveResults.filter((r) => r?.lead && !r.deduplicated).length;
+      savedLeads.push(...saveResults);
       lastPageProcessed = page;
       pagesProcessed++;
 
       onProgress({ pageIndex: i + 1, page, batchSize: WELLFOUND_PAGINATION_BATCH_SIZE, leadsFound, leadsSaved });
+      // Live count in the "don't close this window" overlay, shown on the NEXT navigate() —
+      // reflects pages actually completed so far, matching pagesProcessed's own semantics
+      // (successful saves only, not attempts) so the two numbers a manager might compare stay
+      // consistent.
+      tab.setProgress(`Page ${pagesProcessed}/${WELLFOUND_PAGINATION_BATCH_SIZE} processed, ${leadsFound} lead(s) found so far`);
 
       if (i < WELLFOUND_PAGINATION_BATCH_SIZE - 1) {
         if (await tab.pacedDelay(MIN_TAB_DELAY_MS, MAX_TAB_DELAY_MS)) {
@@ -243,5 +262,5 @@ export async function runWellfoundPagination(
     await tab.close();
   }
 
-  return { startPage, lastPageProcessed, lastPageAttempted, pagesProcessed, leadsFound, leadsSaved, stopReason, errorMessage };
+  return { startPage, lastPageProcessed, lastPageAttempted, pagesProcessed, leadsFound, leadsSaved, savedLeads, stopReason, errorMessage };
 }

@@ -191,16 +191,19 @@ function hideParseOverlay(): void {
 // way to block a window from being closed, so this can't prevent it, only make it obvious while
 // the window is doing real work (see wellfound-background-window.ts for the closure-detection
 // half of this feature). `label` names what's running ("deepening" / "pagination") so the copy
-// is accurate for whichever flow opened the window. No corresponding hide: every navigate()
-// call is a real top-level navigation (see wellfound-background-window.ts), which wipes the
-// previous page's DOM — overlay included — and the window is destroyed outright at the end of
-// a run, so there's no point in the run where the overlay needs removing without a new one
-// about to replace it or the whole tab going away.
-function showBackgroundOverlay(label: string): void {
+// is accurate for whichever flow opened the window. `progress` is a live running-count string
+// (e.g. "Page 2/5 processed, 18 lead(s) found so far") the caller's own loop maintains — empty
+// on the very first navigation, before anything's completed yet. No corresponding hide: every
+// navigate() call is a real top-level navigation (see wellfound-background-window.ts), which
+// wipes the previous page's DOM — overlay included — and the window is destroyed outright at
+// the end of a run, so there's no point in the run where the overlay needs removing without a
+// new one about to replace it or the whole tab going away.
+function showBackgroundOverlay(label: string, progress: string): void {
   const what = label === 'pagination' ? 'Wellfound page parsing' : 'Wellfound deepening';
+  const progressSuffix = progress ? ` (${progress})` : '';
   createFullPageOverlay(
     BACKGROUND_OVERLAY_HOST_ID,
-    `${what} in progress — closing this window will interrupt it. Already-saved leads are kept.`,
+    `${what} in progress${progressSuffix} — closing this window will interrupt it. Already-saved leads are kept.`,
     false,
   );
 }
@@ -249,7 +252,10 @@ export default defineContentScript({
       }
 
       if (message?.type === 'SHOW_BACKGROUND_OVERLAY') {
-        showBackgroundOverlay(typeof message.label === 'string' ? message.label : '');
+        showBackgroundOverlay(
+          typeof message.label === 'string' ? message.label : '',
+          typeof message.progress === 'string' ? message.progress : '',
+        );
         sendResponse({ ok: true });
         return;
       }

@@ -44,6 +44,16 @@ export class WellfoundBackgroundWindow {
   // the message text, e.g. "deepening" or "pagination".
   constructor(private readonly overlayLabel: string) {}
 
+  // Live running-count text (e.g. "Page 2/5 processed, 18 lead(s) found so far") folded into
+  // the overlay's warning message — set by the caller's loop after each item completes, read
+  // by showOverlayWithRetry on the NEXT navigate() call. Starts empty (nothing completed yet);
+  // the overlay just omits the count suffix in that case rather than showing "0 of N".
+  private progressText = '';
+
+  setProgress(text: string): void {
+    this.progressText = text;
+  }
+
   get wasClosedByUser(): boolean {
     return this.closed;
   }
@@ -115,7 +125,11 @@ export class WellfoundBackgroundWindow {
   private async showOverlayWithRetry(tabId: number): Promise<void> {
     for (let attempt = 0; attempt < OVERLAY_SEND_MAX_ATTEMPTS; attempt++) {
       try {
-        await chrome.tabs.sendMessage(tabId, { type: 'SHOW_BACKGROUND_OVERLAY', label: this.overlayLabel });
+        await chrome.tabs.sendMessage(tabId, {
+          type: 'SHOW_BACKGROUND_OVERLAY',
+          label: this.overlayLabel,
+          progress: this.progressText,
+        });
         return;
       } catch {
         if (attempt < OVERLAY_SEND_MAX_ATTEMPTS - 1) {
