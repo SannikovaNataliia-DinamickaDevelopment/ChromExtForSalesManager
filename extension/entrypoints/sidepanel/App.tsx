@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AuthError, fetchLeads, updateLeadStatus, type LeadSaveResult } from '../../lib/api';
 import { fetchMe, login, logout, type CurrentUser } from '../../lib/auth';
 import { classifyLeads, type ClassifyProgress } from '../../lib/classify';
@@ -104,7 +104,17 @@ export default function App() {
   const [wellfoundDeepenSummary, setWellfoundDeepenSummary] = useState<string | null>(null);
   const [wellfoundListTabUrl, setWellfoundListTabUrl] = useState<string | null>(null);
   const [wellfoundBookmark, setWellfoundBookmark] = useState<WellfoundPaginationBookmark | null>(null);
-  const [wellfoundPageRunning, setWellfoundPageRunning] = useState(false);
+  // Which button triggered the in-flight batch, if any — drives both buttons' disabled state
+  // (non-null means "a batch is running", regardless of which button started it) and which one
+  // shows the "Parsing pages…" label (only the button that was actually clicked).
+  const [wellfoundPageRunningSource, setWellfoundPageRunningSource] = useState<'parse_from_here' | 'continue' | null>(null);
+  // Synchronous, render-independent guard against a double-trigger: a fast double-click (or
+  // clicking the other button) in the brief window before setWellfoundPageRunningSource's
+  // update actually re-renders and disables the DOM buttons. Checked-and-set as the very first,
+  // non-awaited statement in runWellfoundPageBatch, so a second invocation is rejected
+  // synchronously before it does anything — see that function for why the state above alone
+  // isn't enough.
+  const wellfoundPageRunningRef = useRef(false);
   const [wellfoundPageProgress, setWellfoundPageProgress] = useState<WellfoundPaginationProgress | null>(null);
   const [wellfoundPageSummary, setWellfoundPageSummary] = useState<string | null>(null);
   // Default is dark, matching the dashboard's current (only) look, until/unless the user's
@@ -401,27 +411,35 @@ export default function App() {
   // posted-time text, so this walks a fixed WELLFOUND_PAGINATION_BATCH_SIZE-page batch instead
   // of stopping on a date. Shared by both "Continue" and "Parse from here" below; they only
   // differ in how startPage is computed before calling this.
-  const runWellfoundPageBatch = async (startPage: number) => {
+  const runWellfoundPageBatch = async (startPage: number, source: 'parse_from_here' | 'continue') => {
+    // Synchronous guard, checked and set before any `await` — a second call (fast double-click,
+    // or clicking the other button in the brief window before React re-renders and disables
+    // the DOM buttons) hits this line before doing anything else and bails out immediately.
+    // The wellfoundPageRunningSource state below drives the UI (disabled attribute, which
+    // button shows "Parsing pages…") but its update isn't visible to the DOM synchronously, so
+    // it alone can't close this race — see the ref's declaration.
+    if (wellfoundPageRunningRef.current) return;
+    wellfoundPageRunningRef.current = true;
+    setWellfoundPageRunningSource(source);
     setError(null);
     setWellfoundPageSummary(null);
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let hostname = '';
-    try {
-      hostname = tab?.url ? new URL(tab.url).hostname : '';
-    } catch {
-      // leave hostname empty; falls through to the "not a Wellfound tab" error below
-    }
-    if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
-      setError('Open a Wellfound list page in this tab first.');
-      return;
-    }
-
-    const baseUrl = stripPageParam(tab.url);
-
-    setWellfoundPageRunning(true);
     let result: WellfoundPaginationResult | undefined;
     try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      let hostname = '';
+      try {
+        hostname = tab?.url ? new URL(tab.url).hostname : '';
+      } catch {
+        // leave hostname empty; falls through to the "not a Wellfound tab" error below
+      }
+      if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
+        setError('Open a Wellfound list page in this tab first.');
+        return;
+      }
+
+      const baseUrl = stripPageParam(tab.url);
+
       result = await runWellfoundPagination(baseUrl, startPage, (progress) => {
         setWellfoundPageProgress(progress);
         loadLeads();
@@ -468,8 +486,9 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      wellfoundPageRunningRef.current = false;
+      setWellfoundPageRunningSource(null);
       setWellfoundPageProgress(null);
-      setWellfoundPageRunning(false);
       loadLeads();
     }
   };
@@ -479,12 +498,12 @@ export default function App() {
       setError('Open a Wellfound list page in this tab first.');
       return;
     }
-    runWellfoundPageBatch(currentPageFromTabUrl(wellfoundListTabUrl));
+    runWellfoundPageBatch(currentPageFromTabUrl(wellfoundListTabUrl), 'parse_from_here');
   };
 
   const handleWellfoundContinue = () => {
     if (!wellfoundBookmark) return;
-    runWellfoundPageBatch(wellfoundBookmark.lastPage + 1);
+    runWellfoundPageBatch(wellfoundBookmark.lastPage + 1, 'continue');
   };
 
   const handleStatusChange = async (id: string, status: LeadStatus) => {
@@ -598,17 +617,19 @@ export default function App() {
             <button
               className="parse-button"
               onClick={handleWellfoundParseFromHere}
-              disabled={wellfoundPageRunning || parsing}
+              disabled={wellfoundPageRunningSource !== null || parsing}
             >
-              {wellfoundPageRunning ? 'Parsing pages…' : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl)})`}
+              {wellfoundPageRunningSource === 'parse_from_here'
+                ? 'Parsing pages…'
+                : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl)})`}
             </button>
             {wellfoundBookmark && (
               <button
                 className="parse-button"
                 onClick={handleWellfoundContinue}
-                disabled={wellfoundPageRunning || parsing}
+                disabled={wellfoundPageRunningSource !== null || parsing}
               >
-                {wellfoundPageRunning ? 'Parsing pages…' : `Continue (from page ${wellfoundBookmark.lastPage + 1})`}
+                {wellfoundPageRunningSource === 'continue' ? 'Parsing pages…' : `Continue (from page ${wellfoundBookmark.lastPage + 1})`}
               </button>
             )}
           </div>
