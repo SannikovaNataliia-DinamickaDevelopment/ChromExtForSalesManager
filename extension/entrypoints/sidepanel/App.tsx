@@ -14,6 +14,7 @@ import {
 } from '../../lib/wellfound-deepen';
 import {
   getBookmark,
+  isBookmarkFresh,
   setBookmark,
   stripPageParam,
   type WellfoundPaginationBookmark,
@@ -502,7 +503,7 @@ export default function App() {
   };
 
   const handleWellfoundContinue = () => {
-    if (!wellfoundBookmark) return;
+    if (!wellfoundBookmark || !isBookmarkFresh(wellfoundBookmark)) return;
     runWellfoundPageBatch(wellfoundBookmark.lastPage + 1, 'continue');
   };
 
@@ -623,7 +624,7 @@ export default function App() {
                 ? 'Parsing pages…'
                 : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl)})`}
             </button>
-            {wellfoundBookmark && (
+            {wellfoundBookmark && isBookmarkFresh(wellfoundBookmark) && (
               <button
                 className="parse-button"
                 onClick={handleWellfoundContinue}
@@ -633,6 +634,9 @@ export default function App() {
               </button>
             )}
           </div>
+          {wellfoundBookmark && !isBookmarkFresh(wellfoundBookmark) && (
+            <div className="hint">Previous progress is from a different day — start a new run with "Parse from here".</div>
+          )}
           <div className="hint">
             Wellfound only. Walks {WELLFOUND_PAGINATION_BATCH_SIZE} pages via ?page=N in a background tab, human-paced. No
             deepening, no Gemini here — newly found leads can be enriched later from the dashboard.
