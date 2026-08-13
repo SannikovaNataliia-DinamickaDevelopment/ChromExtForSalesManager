@@ -488,8 +488,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   .bulk-bar button:disabled { cursor: not-allowed; opacity: 0.6; }
   .bulk-bar .bulk-delete-btn { background: var(--error); color: var(--on-error); }
   .bulk-bar .bulk-status { color: var(--text-secondary); font-size: 12px; }
-  td.checkbox-cell, th.checkbox-cell { width: 34px; text-align: center; padding-left: 14px; padding-right: 4px; }
-  td.checkbox-cell input, th.checkbox-cell input { cursor: pointer; }
+  /* Selection column: fixed width (uniform across every row regardless of that row's own
+     content — buildCheckboxTd always renders exactly one <input>, nothing else, so this was
+     already consistent before the sizing change below) and vertical-align: middle, overriding
+     tbody td's own top-alignment default (set for reading wrapped multi-line text) so the
+     checkbox sits centered in the row's actual height instead of pinned to the top — row height
+     itself is still driven entirely by the tallest cell in that row (e.g. wrapped company/title
+     text), so this only changes where within that height the checkbox sits, never the height
+     itself. Click target is the whole cell (buildCheckboxTd/buildSelectAllTh's own click
+     listener + toggleCheckboxCell), not just the input — width bumped slightly (34px →
+     40px) to give the larger checkbox the same breathing room it had before. */
+  td.checkbox-cell, th.checkbox-cell { width: 40px; text-align: center; padding-left: 14px; padding-right: 4px; vertical-align: middle; cursor: pointer; }
+  td.checkbox-cell input, th.checkbox-cell input { width: 17px; height: 17px; cursor: pointer; vertical-align: middle; accent-color: var(--pink); }
   td.checkbox-cell input:disabled, th.checkbox-cell input:disabled { cursor: not-allowed; }
   .table-wrap {
     background: var(--panel);
@@ -1298,6 +1308,39 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return node;
   }
 
+  // Shared by buildSelectAllTh/buildCheckboxTd: makes the WHOLE cell a click target, not just
+  // the <input> itself. stopPropagation always runs first — this cell's own listener is what
+  // makes that possible, but a click still bubbles past it toward any ancestor listener unless
+  // stopped; for buildCheckboxTd specifically, that ancestor is the row's own click-to-open-
+  // sidebar handler (buildRow), which a selection click must never also trigger. Harmless for
+  // buildSelectAllTh's <th> (no sort listener lives on that particular element — each header
+  // cell owns its own independent listener), kept here anyway so both call sites share one
+  // rule rather than one of them being a special case.
+  //
+  // If the click landed directly on the checkbox, the browser has already flipped .checked and
+  // will fire its own native 'change' event — nothing more to do here, or a cell-level toggle
+  // on top of that would flip it right back. Anywhere else in the cell (padding, the rest of
+  // the box), there's no native toggle to piggyback on, so this flips .checked itself and fires
+  // a synthetic 'change' — reusing the exact same change listener both paths already share,
+  // rather than duplicating the selection-toggling logic here.
+  function toggleCheckboxCell(e, checkbox) {
+    e.stopPropagation();
+    if (e.target === checkbox || checkbox.disabled) return;
+    checkbox.checked = !checkbox.checked;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Shared by buildSelectAllTh (initial render) and updateSelectAllCheckboxState (the cheap
+  // post-toggle path below) — one place computing the header checkbox's checked/indeterminate/
+  // disabled state, so the two call sites can't drift out of sync with each other.
+  function applySelectAllCheckboxState(checkbox) {
+    var visible = getFiltered();
+    var selected = visible.filter(function (l) { return bulkState.selected[l.id]; }).length;
+    checkbox.disabled = bulkState.inFlight || visible.length === 0;
+    checkbox.checked = visible.length > 0 && selected === visible.length;
+    checkbox.indeterminate = selected > 0 && selected < visible.length;
+  }
+
   // Header "select all currently filtered" checkbox — scoped to the not-detailed rows in the
   // current filter, same set clicking each row checkbox individually would reach.
   // "Select all currently filtered" — every visible row now (not just not-detailed ones);
@@ -1305,24 +1348,61 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function buildSelectAllTh() {
     var th = document.createElement('th');
     th.className = 'checkbox-cell';
-    var visible = getFiltered();
     var checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
-    checkbox.disabled = bulkState.inFlight || visible.length === 0;
-    var selected = visible.filter(function (l) { return bulkState.selected[l.id]; }).length;
-    checkbox.checked = visible.length > 0 && selected === visible.length;
-    checkbox.indeterminate = selected > 0 && selected < visible.length;
-    checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
     checkbox.addEventListener('change', function () {
-      visible.forEach(function (l) {
+      // Deliberately NOT render() — see buildCheckboxTd's own comment on why a selection
+      // toggle never needs the full filtered-rows rebuild. This one action DOES change many
+      // rows' selected flags at once (unlike a single-row toggle), so — unlike that cheap
+      // path — every currently-rendered row checkbox needs its .checked resynced; still much
+      // cheaper than recreating each row's DOM from scratch (syncRowCheckboxes just writes an
+      // existing property, no element creation).
+      getFiltered().forEach(function (l) {
         if (checkbox.checked) bulkState.selected[l.id] = true;
         else delete bulkState.selected[l.id];
       });
       bulkState.status = '';
-      render();
+      syncRowCheckboxes();
+      // The native click already set .checked correctly, but never touches .indeterminate —
+      // that's a plain DOM property with no automatic link to .checked, so without this it can
+      // be left stale (e.g. still true from an earlier partial selection) even once every
+      // visible lead is now fully selected or fully deselected. applySelectAllCheckboxState
+      // recomputes all three properties from the current (just-updated) bulkState.selected, so
+      // this corrects itself regardless of what .indeterminate happened to be before the click.
+      applySelectAllCheckboxState(checkbox);
+      renderBulkBar();
     });
     th.appendChild(checkbox);
+    th.addEventListener('click', function (e) { toggleCheckboxCell(e, checkbox); });
+    applySelectAllCheckboxState(checkbox);
     return th;
+  }
+
+  // Cheap post-toggle path for a SINGLE row's checkbox (buildCheckboxTd) — deliberately not
+  // render(). The clicked checkbox's own .checked is already correct (native toggle, or
+  // toggleCheckboxCell's manual flip) and no other row's DOM depends on this lead's selected
+  // state, so the only other UI that can go stale is the header "select all" checkbox
+  // (checked/indeterminate depends on how many of the currently-visible leads are selected) and
+  // the bulk-bar (counts/button labels) — both cheap to recompute without touching <tbody>.
+  function onRowSelectionChanged() {
+    updateSelectAllCheckboxState();
+    renderBulkBar();
+  }
+
+  function updateSelectAllCheckboxState() {
+    var headerCheckbox = document.querySelector('#header-row th.checkbox-cell input');
+    if (headerCheckbox) applySelectAllCheckboxState(headerCheckbox);
+  }
+
+  // Used only by the header "select all" toggle (buildSelectAllTh) — writes .checked directly
+  // on each already-existing row checkbox (matched via the data-lead-id set in buildCheckboxTd)
+  // rather than rebuilding any row's DOM. A plain property write on up to a few thousand
+  // existing <input> elements is orders of magnitude cheaper than render()'s buildRow() × N,
+  // which recreates every cell (badges, links, selects, their own listeners) from scratch.
+  function syncRowCheckboxes() {
+    document.querySelectorAll('#table-body input[type=checkbox]').forEach(function (cb) {
+      cb.checked = !!bulkState.selected[cb.dataset.leadId];
+    });
   }
 
   function renderHeader() {
@@ -1735,14 +1815,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     checkbox.type = 'checkbox';
     checkbox.disabled = bulkState.inFlight;
     checkbox.checked = !!bulkState.selected[lead.id];
-    checkbox.addEventListener('click', function (e) { e.stopPropagation(); });
+    checkbox.dataset.leadId = lead.id; // read back by syncRowCheckboxes on a "select all" toggle
     checkbox.addEventListener('change', function () {
       if (checkbox.checked) bulkState.selected[lead.id] = true;
       else delete bulkState.selected[lead.id];
       bulkState.status = '';
-      render();
+      onRowSelectionChanged();
     });
     td.appendChild(checkbox);
+    td.addEventListener('click', function (e) { toggleCheckboxCell(e, checkbox); });
     return td;
   }
 
