@@ -259,6 +259,133 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     font-size: 12px;
     margin-left: auto;
   }
+  /* Published/Scraped date-range filters — Jira-style: collapsed "MM/DD/YYYY → MM/DD/YYYY"
+     field with prev/next shift arrows, expanding into a popover (presets + two-month
+     calendar) on click. See createDateRangeFilter() for the JS. */
+  .daterange-wrap { display: flex; flex-direction: column; }
+  .daterange-wrap label { color: var(--text-secondary); font-size: 12px; margin-bottom: 2px; }
+  .daterange-field {
+    display: inline-flex;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .daterange-field:focus-within { outline: 1px solid var(--accent); }
+  .daterange-arrow {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px 8px;
+    font-size: 14px;
+    line-height: 1;
+    font-family: inherit;
+  }
+  .daterange-arrow:hover:not(:disabled) { color: var(--pink); }
+  .daterange-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
+  .daterange-input {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 6px 4px;
+    width: 190px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .daterange-input::placeholder { color: var(--text-secondary); }
+  .daterange-input:focus { outline: none; }
+  .daterange-popover {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    padding: 12px;
+    gap: 16px;
+  }
+  .daterange-popover[hidden] { display: none; }
+  .daterange-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 168px;
+    border-right: 1px solid var(--border);
+    padding-right: 12px;
+  }
+  .daterange-preset-btn {
+    background: none;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .daterange-preset-btn:hover { background: var(--accent-tint-weak); color: var(--pink); }
+  .daterange-preset-btn.clear {
+    color: var(--text-secondary);
+    margin-top: 6px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .daterange-calendars { display: flex; gap: 16px; }
+  .daterange-month { width: 220px; }
+  .daterange-month-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .daterange-month-nav {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    font-family: inherit;
+  }
+  .daterange-month-nav:hover { color: var(--pink); }
+  .daterange-month-nav.spacer { visibility: hidden; pointer-events: none; }
+  .daterange-weekdays, .daterange-days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .daterange-weekdays span {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-align: center;
+    text-transform: uppercase;
+  }
+  .daterange-day {
+    background: none;
+    border: none;
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .daterange-day:hover:not(:disabled) { background: var(--accent-tint-weak); }
+  .daterange-day.outside { visibility: hidden; }
+  .daterange-day.today { box-shadow: inset 0 0 0 1px var(--accent); }
+  .daterange-day.in-range { background: var(--accent-tint); border-radius: 0; }
+  .daterange-day.range-start { background: var(--pink); color: var(--on-accent); border-radius: 6px 0 0 6px; }
+  .daterange-day.range-end { background: var(--pink); color: var(--on-accent); border-radius: 0 6px 6px 0; }
+  .daterange-day.range-start.range-end { border-radius: 6px; }
   /* Export modal — same presentation pattern as the detail sidebar's own backdrop (dimmed
      overlay, fade transition, escape/backdrop-click to close) but centered rather than
      right-anchored, and on its own backdrop element rather than sharing #backdrop: the sidebar
@@ -861,6 +988,22 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="not_checked">Not detailed</option>
       </select>
     </span>
+    <span class="daterange-wrap">
+      <label for="filter-published-range-input">Published Date</label>
+      <span class="daterange-field" id="filter-published-range-field">
+        <button type="button" class="daterange-arrow" id="filter-published-range-prev" aria-label="Shift range back" title="Shift range back" disabled>‹</button>
+        <input type="text" id="filter-published-range-input" class="daterange-input" readonly placeholder="All dates" autocomplete="off">
+        <button type="button" class="daterange-arrow" id="filter-published-range-next" aria-label="Shift range forward" title="Shift range forward" disabled>›</button>
+      </span>
+    </span>
+    <span class="daterange-wrap">
+      <label for="filter-scraped-range-input">Scraped Date</label>
+      <span class="daterange-field" id="filter-scraped-range-field">
+        <button type="button" class="daterange-arrow" id="filter-scraped-range-prev" aria-label="Shift range back" title="Shift range back" disabled>‹</button>
+        <input type="text" id="filter-scraped-range-input" class="daterange-input" readonly placeholder="All dates" autocomplete="off">
+        <button type="button" class="daterange-arrow" id="filter-scraped-range-next" aria-label="Shift range forward" title="Shift range forward" disabled>›</button>
+      </span>
+    </span>
     <button class="refresh" id="refresh-btn" type="button">Refresh</button>
     <button class="refresh" id="export-btn" type="button" aria-haspopup="dialog" aria-expanded="false" title="Export the leads currently visible under the active filters/search">Export</button>
     <span class="export-status" id="export-status"></span>
@@ -1029,6 +1172,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterDetail: 'all',
     filterContact: 'all',
     filterCompanyLinkedin: 'all',
+    // null = "All dates"; otherwise { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' } (Kyiv calendar
+    // days, inclusive both ends) — see createDateRangeFilter().
+    filterPublishedRange: null,
+    filterScrapedRange: null,
     search: '',
   };
 
@@ -1181,6 +1328,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterDetail !== 'all') lines.push('Detail: ' + (DETAIL_FILTER_SUMMARY_LABELS[state.filterDetail] || state.filterDetail));
     if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
     if (state.filterCompanyLinkedin !== 'all') lines.push('Company LinkedIn: ' + (COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS[state.filterCompanyLinkedin] || state.filterCompanyLinkedin));
+    if (state.filterPublishedRange) lines.push('Published date: ' + formatUsDate(state.filterPublishedRange.start) + ' \\u2013 ' + formatUsDate(state.filterPublishedRange.end));
+    if (state.filterScrapedRange) lines.push('Scraped date: ' + formatUsDate(state.filterScrapedRange.start) + ' \\u2013 ' + formatUsDate(state.filterScrapedRange.end));
     if (state.search) lines.push('Search: "' + state.search + '"');
     return lines;
   }
@@ -1240,6 +1389,349 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     };
     if (dateOnly) return get('year') + '-' + get('month') + '-' + get('day');
     return get('year') + '-' + get('month') + '-' + get('day') + ' ' + get('hour') + ':' + get('minute');
+  }
+
+  // ---- Published/Scraped date-range filters (Jira-style range picker) ----
+  // Two independent instances (published_at, scraped_at) share this one builder/factory.
+  // Collapsed: prev/next arrows either side of a "MM/DD/YYYY → MM/DD/YYYY" input; clicking the
+  // input opens a popover with a preset list (left) and two browsable month calendars (right)
+  // for a manual custom pick. No existing date-range-picker dependency in this project to reuse
+  // (backend/package.json has none, and this page has no build step to import one through even
+  // if it did — everything here is hand-rolled vanilla JS, same as the rest of this file), so
+  // this is built from scratch, styled with the same CSS custom properties as everything else.
+  //
+  // Kyiv-day convention (getKyivTodayYmd below) — all preset boundaries (Today/Current week/
+  // etc.) and the getFiltered() comparison itself are computed against the Kyiv calendar day,
+  // same as every other date already shown on this page (formatKyiv), not the server's or
+  // browser's local timezone.
+  function getKyivTodayYmd() {
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+    var get = function (type) { for (var i = 0; i < parts.length; i++) if (parts[i].type === type) return parts[i].value; return ''; };
+    return { y: Number(get('year')), m: Number(get('month')), d: Number(get('day')) };
+  }
+
+  // Plain calendar-date arithmetic from here down — once "today" is known as a Kyiv Y-M-D triple
+  // (above, the only place this ever touches the real clock/timezone), everything else is
+  // timezone-naive integer math on a UTC-midnight Date used purely as a date-math substrate —
+  // same convention multipage.ts's parseDateOnlyToUtcMidnight already uses for the same reason.
+  function ymdToDate(y, m, d) { return new Date(Date.UTC(y, m - 1, d)); }
+  function ymdStrToDate(s) {
+    var p = s.split('-').map(Number);
+    return ymdToDate(p[0], p[1], p[2]);
+  }
+  function dateToYmdStr(date) {
+    return date.getUTCFullYear() + '-' + String(date.getUTCMonth() + 1).padStart(2, '0') + '-' + String(date.getUTCDate()).padStart(2, '0');
+  }
+  function formatUsDate(ymdStr) {
+    var p = ymdStr.split('-');
+    return p[1] + '/' + p[2] + '/' + p[0];
+  }
+  function addDays(date, n) { return new Date(date.getTime() + n * 86400000); }
+  function startOfWeek(date) { // Monday-start week, matching this project's other Ukraine-facing UI
+    var dow = date.getUTCDay(); // 0=Sun..6=Sat
+    return addDays(date, dow === 0 ? -6 : 1 - dow);
+  }
+  function startOfMonth(date) { return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)); }
+  function endOfMonth(date) { return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)); }
+  function startOfQuarter(date) { var q = Math.floor(date.getUTCMonth() / 3); return new Date(Date.UTC(date.getUTCFullYear(), q * 3, 1)); }
+  function endOfQuarter(date) { var q = Math.floor(date.getUTCMonth() / 3); return new Date(Date.UTC(date.getUTCFullYear(), q * 3 + 3, 0)); }
+  function addMonths(date, n) { return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + n, 1)); }
+
+  // "Previous 3 months"/"Previous quarter" are the 3 calendar months / quarter immediately
+  // preceding the current one (e.g. today in August → Previous 3 months = May 1–Jul 31), not a
+  // rolling "last 90 days" — matches how "Previous month"/"Previous week" are calendar-aligned
+  // too, and Jira's own preset semantics for the same labels.
+  function buildDateRangePresets(today) {
+    var weekStart = startOfWeek(today);
+    var monthStart = startOfMonth(today);
+    var quarterStart = startOfQuarter(today);
+    var yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+    var prevWeekStart = addDays(weekStart, -7);
+    var prevMonthStart = addMonths(monthStart, -1);
+    var prev3MonthsStart = addMonths(monthStart, -3);
+    var prevQuarterStart = addMonths(quarterStart, -3);
+    return [
+      { label: 'Today', start: today, end: today },
+      { label: 'Current week', start: weekStart, end: addDays(weekStart, 6) },
+      { label: 'Current month', start: monthStart, end: endOfMonth(today) },
+      { label: 'Current quarter', start: quarterStart, end: endOfQuarter(today) },
+      { label: 'Current year', start: yearStart, end: new Date(Date.UTC(today.getUTCFullYear(), 11, 31)) },
+      { label: 'Previous week', start: prevWeekStart, end: addDays(prevWeekStart, 6) },
+      { label: 'Previous month', start: prevMonthStart, end: endOfMonth(prevMonthStart) },
+      { label: 'Previous 3 months', start: prev3MonthsStart, end: endOfMonth(prevMonthStart) },
+      { label: 'Previous quarter', start: prevQuarterStart, end: endOfMonth(addMonths(quarterStart, -1)) },
+    ];
+  }
+
+  var DATERANGE_WEEKDAY_LABELS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+
+  // Shared by the initial calendar build and the hover-preview re-highlight below — one place
+  // deciding a day cell's classes from a (rangeStart, rangeEnd) pair, so the two can never
+  // render a day differently for the same inputs.
+  function computeDayClasses(cellDate, todayYmd, rangeStart, rangeEnd) {
+    var classes = ['daterange-day'];
+    if (cellDate.getUTCFullYear() === todayYmd.y && cellDate.getUTCMonth() + 1 === todayYmd.m && cellDate.getUTCDate() === todayYmd.d) classes.push('today');
+    var isStart = !!rangeStart && cellDate.getTime() === rangeStart.getTime();
+    // A lone pending pick (start clicked, end not yet — no hover in progress either) counts as
+    // both start AND end for styling purposes — it's a single highlighted day, not a zero-width
+    // range with an undefined far edge.
+    var isEnd = (!!rangeEnd && cellDate.getTime() === rangeEnd.getTime()) || (!rangeEnd && isStart);
+    if (rangeStart && rangeEnd && cellDate.getTime() > rangeStart.getTime() && cellDate.getTime() < rangeEnd.getTime()) classes.push('in-range');
+    if (isStart) classes.push('range-start');
+    if (isEnd) classes.push('range-end');
+    return classes;
+  }
+
+  // opts: { stateKey, fieldId, inputId, prevBtnId, nextBtnId }
+  function createDateRangeFilter(opts) {
+    var popoverEl = null;
+    var pendingStart = null; // Date | null — set while mid-manual-pick (first day clicked, waiting for the second)
+    var hoverDate = null; // Date | null — cursor's current day while mid-pick, drives the live range preview below
+    var viewMonth = null; // Date (day=1) — the LEFT calendar's currently-browsed month; right calendar is always viewMonth+1
+    // Every rendered (non-blank) day button across both grids, refreshed on each renderCalendars()
+    // full rebuild — lets the hover-preview re-highlight existing buttons in place (just a
+    // className write) instead of re-running renderCalendars() on every mouse movement, which
+    // would rebuild ~84 DOM elements per hovered cell — cheap in absolute terms at this scale, but
+    // pointless churn (flicker, lost hover state) for something a plain class swap already covers.
+    var renderedDayButtons = [];
+
+    function currentRange() {
+      var r = state[opts.stateKey];
+      return r ? { start: ymdStrToDate(r.start), end: ymdStrToDate(r.end) } : null;
+    }
+
+    function updateFieldUI() {
+      var input = document.getElementById(opts.inputId);
+      var r = state[opts.stateKey];
+      input.value = r ? formatUsDate(r.start) + '  \\u2192  ' + formatUsDate(r.end) : '';
+      document.getElementById(opts.prevBtnId).disabled = !r;
+      document.getElementById(opts.nextBtnId).disabled = !r;
+    }
+
+    function applyRange(start, end) {
+      if (end.getTime() < start.getTime()) { var t = start; start = end; end = t; }
+      state[opts.stateKey] = { start: dateToYmdStr(start), end: dateToYmdStr(end) };
+      pendingStart = null;
+      hoverDate = null;
+      closePopover();
+      updateFieldUI();
+      render();
+    }
+
+    function clearRange() {
+      state[opts.stateKey] = null;
+      pendingStart = null;
+      hoverDate = null;
+      closePopover();
+      updateFieldUI();
+      render();
+    }
+
+    // Shifts the whole applied range backward/forward by its own inclusive day-span (e.g. a
+    // 31-day range shifts by 31 days) — a plain day-count shift works uniformly for both preset-
+    // generated ranges and an arbitrary custom pick, which a calendar-aware "next month" style
+    // shift wouldn't (there's no single well-defined "next" for an arbitrary custom range).
+    // Disabled via the field's own prevBtn/nextBtn 'disabled' attribute when nothing is applied
+    // yet (see updateFieldUI) — nothing to shift from in that state, so this never needs a
+    // fallback for the "no range selected" case.
+    function shiftRange(dir) {
+      var r = currentRange();
+      if (!r) return;
+      var spanDays = Math.round((r.end.getTime() - r.start.getTime()) / 86400000) + 1;
+      var deltaMs = dir * spanDays * 86400000;
+      applyRange(new Date(r.start.getTime() + deltaMs), new Date(r.end.getTime() + deltaMs));
+    }
+
+    function onDayClick(date) {
+      if (!pendingStart) {
+        pendingStart = date;
+        hoverDate = null;
+        renderCalendars();
+        return;
+      }
+      applyRange(pendingStart, date);
+    }
+
+    // Live range preview while mid-pick (Jira's own worklog date-range picker does the same):
+    // fills in the background across every day between the clicked start and wherever the
+    // cursor currently is, updating continuously as it moves — never committed, purely visual,
+    // the actual range is still only set on the second click (onDayClick -> applyRange above).
+    // A no-op once a range is already fully committed (pendingStart is null then) or before any
+    // start has been picked yet — there's nothing to preview against in either case.
+    function onDayHover(date) {
+      if (!pendingStart) return;
+      hoverDate = date;
+      applyHoverHighlight();
+    }
+
+    // Cheap re-highlight of the already-rendered day buttons (a className write per button, no
+    // DOM rebuild) — see renderedDayButtons' own comment for why this doesn't just call
+    // renderCalendars() on every hover.
+    function applyHoverHighlight() {
+      if (!pendingStart) return;
+      var lo = pendingStart;
+      var hi = hoverDate || pendingStart; // no hover yet (or cursor left the grid) -> single day, same as a fresh pending pick
+      if (hi.getTime() < lo.getTime()) { var t = lo; lo = hi; hi = t; }
+      var todayYmd = getKyivTodayYmd();
+      renderedDayButtons.forEach(function (entry) {
+        entry.el.className = computeDayClasses(entry.date, todayYmd, lo, hi).join(' ');
+      });
+    }
+
+    function buildMonthGrid(monthDate, showPrevNav, showNextNav, rangeStart, rangeEnd) {
+      var wrap = document.createElement('div');
+      wrap.className = 'daterange-month';
+
+      var header = document.createElement('div');
+      header.className = 'daterange-month-header';
+      var prevNav = el('button', { type: 'button', className: 'daterange-month-nav' + (showPrevNav ? '' : ' spacer'), text: '\\u2039' });
+      prevNav.addEventListener('click', function () { viewMonth = addMonths(viewMonth, -1); hoverDate = null; renderCalendars(); });
+      var title = el('span', { text: monthDate.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }) + ' ' + monthDate.getUTCFullYear() });
+      var nextNav = el('button', { type: 'button', className: 'daterange-month-nav' + (showNextNav ? '' : ' spacer'), text: '\\u203a' });
+      nextNav.addEventListener('click', function () { viewMonth = addMonths(viewMonth, 1); hoverDate = null; renderCalendars(); });
+      header.appendChild(prevNav);
+      header.appendChild(title);
+      header.appendChild(nextNav);
+      wrap.appendChild(header);
+
+      var weekdays = document.createElement('div');
+      weekdays.className = 'daterange-weekdays';
+      DATERANGE_WEEKDAY_LABELS.forEach(function (w) { weekdays.appendChild(el('span', { text: w })); });
+      wrap.appendChild(weekdays);
+
+      var days = document.createElement('div');
+      days.className = 'daterange-days';
+      var firstOfMonth = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), 1));
+      var leadingBlank = (firstOfMonth.getUTCDay() + 6) % 7; // Monday-start offset
+      var daysInMonth = endOfMonth(monthDate).getUTCDate();
+      var todayYmd = getKyivTodayYmd();
+
+      for (var i = 0; i < leadingBlank; i++) {
+        days.appendChild(el('button', { className: 'daterange-day outside', disabled: 'disabled' }));
+      }
+      var _loop = function (d) {
+        var cellDate = new Date(Date.UTC(monthDate.getUTCFullYear(), monthDate.getUTCMonth(), d));
+        var btn = el('button', { type: 'button', className: computeDayClasses(cellDate, todayYmd, rangeStart, rangeEnd).join(' '), text: String(d) });
+        btn.addEventListener('click', function () { onDayClick(cellDate); });
+        // Live range preview (see applyHoverHighlight) — a no-op via onDayHover's own guard
+        // whenever there's no pending pick to preview against (idle browsing, or a range
+        // already committed), so this listener doesn't need its own conditional.
+        btn.addEventListener('mouseenter', function () { onDayHover(cellDate); });
+        renderedDayButtons.push({ date: cellDate, el: btn });
+        days.appendChild(btn);
+      };
+      for (var d = 1; d <= daysInMonth; d++) _loop(d);
+      wrap.appendChild(days);
+      return wrap;
+    }
+
+    function renderCalendars() {
+      var container = document.getElementById(opts.fieldId + '-calendars');
+      if (!container) return;
+      container.innerHTML = '';
+      renderedDayButtons = [];
+      var r = currentRange();
+      var rangeStart = pendingStart || (r ? r.start : null);
+      var rangeEnd = pendingStart ? null : (r ? r.end : null);
+      container.appendChild(buildMonthGrid(viewMonth, true, false, rangeStart, rangeEnd));
+      container.appendChild(buildMonthGrid(addMonths(viewMonth, 1), false, true, rangeStart, rangeEnd));
+      // Cursor leaving the whole calendars area (not just one day cell to another) drops the
+      // live preview back to just the pending start day alone — matches Jira's own behavior of
+      // not leaving a preview highlighted somewhere the cursor no longer is.
+      container.onmouseleave = function () {
+        if (!pendingStart) return;
+        hoverDate = null;
+        applyHoverHighlight();
+      };
+    }
+
+    // Deliberately NOT popoverEl.contains(e.target) — a day-cell click's own handler
+    // (onDayClick) synchronously rebuilds the calendar grid via renderCalendars(), which
+    // detaches the just-clicked button from the DOM while THIS SAME click event is still
+    // bubbling. .contains() reflects the live tree at the moment it's called, so by the time
+    // this listener runs it would see the (now-detached) target as no longer contained in
+    // popoverEl and incorrectly close the popover after every single day click. composedPath()
+    // is the event's propagation path captured at dispatch time, before any mutation — it still
+    // correctly includes popoverEl regardless of what onDayClick did to the DOM afterward.
+    function onOutsideClick(e) {
+      var path = e.composedPath();
+      if (popoverEl && path.indexOf(popoverEl) === -1 && e.target.id !== opts.inputId) closePopover();
+    }
+    function onKeydown(e) {
+      if (e.key === 'Escape') closePopover();
+    }
+
+    function buildPopover() {
+      var pop = document.createElement('div');
+      pop.className = 'daterange-popover';
+      pop.hidden = true;
+
+      var presets = document.createElement('div');
+      presets.className = 'daterange-presets';
+      var todayYmd = getKyivTodayYmd();
+      buildDateRangePresets(ymdToDate(todayYmd.y, todayYmd.m, todayYmd.d)).forEach(function (p) {
+        var btn = el('button', { type: 'button', className: 'daterange-preset-btn', text: p.label });
+        btn.addEventListener('click', function () { applyRange(p.start, p.end); });
+        presets.appendChild(btn);
+      });
+      var clearBtn = el('button', { type: 'button', className: 'daterange-preset-btn clear', text: 'All dates' });
+      clearBtn.addEventListener('click', clearRange);
+      presets.appendChild(clearBtn);
+      pop.appendChild(presets);
+
+      var calendars = document.createElement('div');
+      calendars.className = 'daterange-calendars';
+      calendars.id = opts.fieldId + '-calendars';
+      pop.appendChild(calendars);
+
+      document.body.appendChild(pop);
+      return pop;
+    }
+
+    function openPopover() {
+      if (!popoverEl) popoverEl = buildPopover();
+      var r = currentRange();
+      var todayYmd = getKyivTodayYmd();
+      var anchor = r ? r.start : ymdToDate(todayYmd.y, todayYmd.m, todayYmd.d);
+      viewMonth = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+      pendingStart = null;
+      hoverDate = null;
+      renderCalendars();
+
+      var field = document.getElementById(opts.fieldId);
+      var rect = field.getBoundingClientRect();
+      popoverEl.style.visibility = 'hidden';
+      popoverEl.style.top = (rect.bottom + 6) + 'px';
+      popoverEl.style.left = rect.left + 'px';
+      popoverEl.hidden = false;
+      // Clamp to the viewport — this field can land near the right edge of a busy toolbar, and
+      // the popover (presets + two full month calendars) is wide enough to overflow off-screen.
+      var popRect = popoverEl.getBoundingClientRect();
+      if (popRect.right > window.innerWidth - 8) {
+        popoverEl.style.left = Math.max(8, window.innerWidth - popRect.width - 8) + 'px';
+      }
+      popoverEl.style.visibility = '';
+
+      setTimeout(function () {
+        document.addEventListener('click', onOutsideClick);
+        document.addEventListener('keydown', onKeydown);
+      }, 0);
+    }
+
+    function closePopover() {
+      if (popoverEl) popoverEl.hidden = true;
+      document.removeEventListener('click', onOutsideClick);
+      document.removeEventListener('keydown', onKeydown);
+    }
+
+    document.getElementById(opts.inputId).addEventListener('click', function () {
+      if (popoverEl && !popoverEl.hidden) { closePopover(); return; }
+      openPopover();
+    });
+    document.getElementById(opts.prevBtnId).addEventListener('click', function () { shiftRange(-1); });
+    document.getElementById(opts.nextBtnId).addEventListener('click', function () { shiftRange(1); });
+
+    updateFieldUI();
   }
 
   function isSafeUrl(url) {
@@ -1628,6 +2120,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       // already exactly the DB enum value, same relationship the IT filter has to lead.is_it.
       if (state.filterContact !== 'all' && lead.hiring_contact_status !== state.filterContact) return false;
       if (state.filterCompanyLinkedin !== 'all' && lead.company_linkedin_status !== state.filterCompanyLinkedin) return false;
+      // Kyiv calendar-day comparison (formatKyiv's own Intl.DateTimeFormat approach), same
+      // convention as every other date already shown on this page — plain string comparison of
+      // YYYY-MM-DD is chronologically correct since it's already zero-padded/lexicographic.
+      // A lead with no date at all never matches an active range (there's nothing to compare).
+      if (state.filterPublishedRange) {
+        var publishedDay = formatKyiv(lead.published_at, true);
+        if (!publishedDay || publishedDay < state.filterPublishedRange.start || publishedDay > state.filterPublishedRange.end) return false;
+      }
+      if (state.filterScrapedRange) {
+        var scrapedDay = formatKyiv(lead.scraped_at || lead.created_at, true);
+        if (!scrapedDay || scrapedDay < state.filterScrapedRange.start || scrapedDay > state.filterScrapedRange.end) return false;
+      }
       if (state.search) {
         var q = state.search.toLowerCase();
         var titleMatch = (lead.job_title || '').toLowerCase().indexOf(q) !== -1;
@@ -2723,6 +3227,20 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('filter-company-linkedin').addEventListener('change', function (e) {
     state.filterCompanyLinkedin = e.target.value;
     render();
+  });
+  createDateRangeFilter({
+    stateKey: 'filterPublishedRange',
+    fieldId: 'filter-published-range-field',
+    inputId: 'filter-published-range-input',
+    prevBtnId: 'filter-published-range-prev',
+    nextBtnId: 'filter-published-range-next',
+  });
+  createDateRangeFilter({
+    stateKey: 'filterScrapedRange',
+    fieldId: 'filter-scraped-range-field',
+    inputId: 'filter-scraped-range-input',
+    prevBtnId: 'filter-scraped-range-prev',
+    nextBtnId: 'filter-scraped-range-next',
   });
   var searchDebounceId = null;
   document.getElementById('search-input').addEventListener('input', function (e) {
