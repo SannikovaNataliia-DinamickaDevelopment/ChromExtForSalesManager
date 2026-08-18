@@ -39,6 +39,17 @@ function plainTextCell(value: string | null | undefined): string {
     .trim();
 }
 
+// Same not_checked/found/not_specified convention as the dashboard sidebar's own
+// hiringContactDetailValue/buildCompanyLinkedinRow (dashboard-page.ts) — 'не вказано' for a
+// definitively-checked-and-empty result, blank for not yet checked, joined URL list when found.
+function companyLinkedinCell(r: JobLeadRecord): string {
+  if (r.company_linkedin_status === 'found' && r.company_linkedin_urls && r.company_linkedin_urls.length > 0) {
+    return r.company_linkedin_urls.join(', ');
+  }
+  if (r.company_linkedin_status === 'not_specified') return 'не вказано';
+  return '';
+}
+
 export type ExportColumn = {
   key: string;
   label: string;
@@ -55,6 +66,7 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'is_it', label: 'IT?', value: (r) => IS_IT_LABELS[r.is_it] },
   { key: 'company', label: 'Company', value: (r) => cell(r.company) },
   { key: 'company_website', label: 'Website', value: (r) => cell(r.company_website) },
+  { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
   { key: 'location', label: 'Location', value: (r) => cell(r.location) },
   { key: 'salary', label: 'Salary', value: (r) => cell(r.salary) },
   { key: 'tech_stack', label: 'Tech stack', value: (r) => cell(r.tech_stack) },

@@ -970,48 +970,54 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     status: '',
   };
 
-  var COLUMNS = [
-    { key: 'published_at', label: 'Published' },
-    { key: 'source_site', label: 'Source' },
-    { key: 'job_title', label: 'Title' },
-    { key: 'source_url', label: 'Job link' },
-    { key: 'is_it', label: 'IT?' },
-    { key: 'company', label: 'Company' },
-    { key: 'company_website', label: 'Website' },
-    { key: 'company_linkedin', label: 'Company LinkedIn' },
-    { key: 'location', label: 'Location' },
-    { key: 'status', label: 'Status' },
-    { key: 'owner', label: 'Owner' },
-    { key: 'scraped_at', label: 'Scraped' },
+  // Single source of truth for every column this page knows about (2026-08-18: replaced two
+  // separately-maintained lists — COLUMNS and EXPORT_COLUMNS used to be independent arrays, kept
+  // in sync by hand, and predictably drifted: company_linkedin was added to the table's COLUMNS
+  // but never copied into EXPORT_COLUMNS, so it silently never showed up in the export column
+  // picker). COLUMNS (main table) and EXPORT_COLUMNS (export panel's checkbox list) are now both
+  // *derived* from this one array below — adding a column here with inTable:true makes it appear
+  // in both places automatically; there is no second list left to forget.
+  //
+  // Order here IS the export column order (and, for entries with inTable:true, the table's own
+  // column order too — COLUMNS is a filtered subsequence of this array, never reordered). export
+  // includes several fields the table never shows at all (description, salary, tech_stack,
+  // apply_url, ats, external_job_id, created_at) — export's whole point is "every field", not
+  // just what's in the table view, so inTable:false for those is intentional, not an oversight.
+  //
+  // label is used in both the table header and the export checkbox unless exportLabel overrides
+  // it — scraped_at is the one case that needs to (a compact "Scraped" table header vs. a more
+  // descriptive "Scraped (Kyiv)" export checkbox label; the table header has much less room).
+  //
+  // Still mirrors backend's EXPORT_COLUMNS (leads/export-columns.ts) key list — the server
+  // remains the single source of truth for what each key actually maps to and how it's
+  // formatted (POST /leads/export re-validates every key against its own copy via IsIn); this
+  // array only drives what renders in the table/checkbox UI here.
+  var ALL_COLUMNS = [
+    { key: 'published_at', label: 'Published', inTable: true },
+    { key: 'source_site', label: 'Source', inTable: true },
+    { key: 'job_title', label: 'Title', inTable: true },
+    { key: 'source_url', label: 'Job link', inTable: true },
+    { key: 'is_it', label: 'IT?', inTable: true },
+    { key: 'company', label: 'Company', inTable: true },
+    { key: 'company_website', label: 'Website', inTable: true },
+    { key: 'company_linkedin', label: 'Company LinkedIn', inTable: true },
+    { key: 'location', label: 'Location', inTable: true },
+    { key: 'salary', label: 'Salary', inTable: false },
+    { key: 'tech_stack', label: 'Tech stack', inTable: false },
+    { key: 'description', label: 'Description', inTable: false },
+    { key: 'apply_url', label: 'Apply link', inTable: false },
+    { key: 'ats', label: 'ATS', inTable: false },
+    { key: 'external_job_id', label: 'External job ID', inTable: false },
+    { key: 'status', label: 'Status', inTable: true },
+    { key: 'owner', label: 'Owner', inTable: true },
+    { key: 'scraped_at', label: 'Scraped', exportLabel: 'Scraped (Kyiv)', inTable: true },
+    { key: 'created_at', label: 'Created (Kyiv)', inTable: false },
   ];
 
-  // Mirrors backend's EXPORT_COLUMNS (leads/export-columns.ts) key/label list and order exactly
-  // — the server is still the single source of truth for what each key actually maps to
-  // (POST /leads/export re-validates every key against its own copy of this list via IsIn), this
-  // is only for rendering the "Columns" panel's checkboxes. Deliberately a superset of the
-  // table's own COLUMNS above (it also includes fields the table never shows, e.g. description,
-  // salary, tech_stack, apply_url, ats — export's whole point is "all fields", not just what's
-  // in the table view).
-  var EXPORT_COLUMNS = [
-    { key: 'published_at', label: 'Published' },
-    { key: 'source_site', label: 'Source' },
-    { key: 'job_title', label: 'Title' },
-    { key: 'source_url', label: 'Job link' },
-    { key: 'is_it', label: 'IT?' },
-    { key: 'company', label: 'Company' },
-    { key: 'company_website', label: 'Website' },
-    { key: 'location', label: 'Location' },
-    { key: 'salary', label: 'Salary' },
-    { key: 'tech_stack', label: 'Tech stack' },
-    { key: 'description', label: 'Description' },
-    { key: 'apply_url', label: 'Apply link' },
-    { key: 'ats', label: 'ATS' },
-    { key: 'external_job_id', label: 'External job ID' },
-    { key: 'status', label: 'Status' },
-    { key: 'owner', label: 'Owner' },
-    { key: 'scraped_at', label: 'Scraped (Kyiv)' },
-    { key: 'created_at', label: 'Created (Kyiv)' },
-  ];
+  var COLUMNS = ALL_COLUMNS.filter(function (c) { return c.inTable; });
+  var EXPORT_COLUMNS = ALL_COLUMNS.map(function (c) {
+    return { key: c.key, label: c.exportLabel || c.label };
+  });
 
   var state = {
     leads: [],
