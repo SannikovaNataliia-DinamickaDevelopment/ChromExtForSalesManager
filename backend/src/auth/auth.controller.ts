@@ -1,9 +1,13 @@
-import { Controller, Get, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpStatus, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import type { Request, Response } from 'express';
+import { AppError } from '../common/app-error';
 import { renderCallbackPage } from './callback-page';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
+import { DashboardColumnsDto } from './dto/dashboard-columns.dto';
 import type { SessionPayload } from './types';
 
 // Dashboard feature (backend/src/dashboard/): cookie name for its browser-tab session, kept as
@@ -78,6 +82,32 @@ export class AuthController {
   @UseGuards(AuthGuard)
   logout(@CurrentUser() user: SessionPayload) {
     this.authService.revoke(user.jti);
+    return { ok: true };
+  }
+
+  // Dashboard column customization (Task DI-2966 draggable/hideable columns): per-user, DB-backed
+  // (not chrome.storage/localStorage) so order/visibility follow the manager across devices.
+  // null (never customized) is a valid response — the dashboard applies its own default
+  // order/full-visibility client-side in that case, same as a fresh Reset.
+  @Get('me/dashboard-columns')
+  @UseGuards(AuthGuard)
+  async getDashboardColumns(@CurrentUser() user: SessionPayload) {
+    return this.authService.getDashboardColumns(user.sub);
+  }
+
+  @Put('me/dashboard-columns')
+  @UseGuards(AuthGuard)
+  async setDashboardColumns(@CurrentUser() user: SessionPayload, @Body() body: unknown) {
+    const dto = plainToInstance(DashboardColumnsDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        errors.map((e) => Object.values(e.constraints ?? {}).join(', ')).join('; '),
+      );
+    }
+    await this.authService.setDashboardColumns(user.sub, { order: dto.order, hidden: dto.hidden });
     return { ok: true };
   }
 }

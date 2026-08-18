@@ -163,4 +163,17 @@ export class AuthService {
   revoke(jti: string) {
     this.revokedJtis.add(jti);
   }
+
+  // Dashboard column customization (Task DI-2966 draggable/hideable columns): stored per-user
+  // in the DB, not chrome.storage/localStorage, so it follows the manager across devices per
+  // the feature's own requirement. null = never customized — the dashboard applies its own
+  // default order/full visibility client-side in that case.
+  async getDashboardColumns(userId: string): Promise<{ order: string[]; hidden: string[] } | null> {
+    const [row] = await this.db.select({ dashboard_columns: users.dashboard_columns }).from(users).where(eq(users.id, userId)).limit(1);
+    return (row?.dashboard_columns as { order: string[]; hidden: string[] } | null) ?? null;
+  }
+
+  async setDashboardColumns(userId: string, prefs: { order: string[]; hidden: string[] }): Promise<void> {
+    await this.db.update(users).set({ dashboard_columns: prefs }).where(eq(users.id, userId));
+  }
 }

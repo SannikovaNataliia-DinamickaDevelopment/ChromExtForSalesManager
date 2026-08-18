@@ -23,6 +23,12 @@ export const users = pgTable('users', {
   email: text('email').notNull(),
   display_name: text('display_name'),
   created_at: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  // Dashboard column customization (Task DI-2966 "draggable/hideable columns", 14.08 call):
+  // { order: string[], hidden: string[] } — per-user, DB-backed so it follows the manager
+  // across devices/browsers rather than living in this browser's localStorage. Null = never
+  // customized (or never saved) — the dashboard falls back to its own default order/full
+  // visibility client-side; this column is never written to except via PUT /me/dashboard-columns.
+  dashboard_columns: jsonb('dashboard_columns'),
 });
 
 export const external_identities = pgTable('external_identities', {

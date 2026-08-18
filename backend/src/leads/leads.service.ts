@@ -12,7 +12,7 @@ import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
 import { SetHiringContactDto } from './dto/set-hiring-contact.dto';
-import { EXPORT_COLUMNS } from './export-columns';
+import { EXPORT_COLUMNS, type ExportColumn } from './export-columns';
 import { GeminiClassifierService } from './gemini-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
 import { LEAD_RETENTION_DAYS } from './lead-retention';
@@ -128,10 +128,11 @@ export class LeadsService {
   // findAll() — an id that's been deleted since the dashboard last loaded simply drops out of
   // the export rather than erroring, same as it would just vanish from the table on refresh.
   //
-  // columns (if provided) is filtered against EXPORT_COLUMNS' own order, not the order the
-  // client happened to send ids/keys in — same "one source of truth for column order" rule
-  // sheets.destination.ts already follows, so re-checking/unchecking boxes can't silently
-  // reorder a manager's spreadsheet from one export to the next.
+  // columns (if provided) is used in the ORDER the client sent it, not EXPORT_COLUMNS' own
+  // default order (Task DI-2966 draggable columns): the dashboard sends this list already
+  // arranged in the manager's own customized column order (state.columnOrder), so the exported
+  // file's column order matches what they see on screen. dto.columns' keys are still validated
+  // against EXPORT_COLUMN_KEYS by the DTO, so an unknown key can't reach this lookup.
   async exportXlsx(dto: ExportLeadsDto): Promise<ExcelJS.Buffer> {
     const rows = await this.db
       .select({
@@ -143,8 +144,9 @@ export class LeadsService {
       .leftJoin(users, eq(job_leads.owner_user_id, users.id))
       .where(and(isNull(job_leads.deleted_at), inArray(job_leads.id, dto.leadIds)));
 
+    const columnsByKey = new Map(EXPORT_COLUMNS.map((c) => [c.key, c]));
     const columns = dto.columns && dto.columns.length > 0
-      ? EXPORT_COLUMNS.filter((c) => dto.columns!.includes(c.key))
+      ? dto.columns.map((key) => columnsByKey.get(key)).filter((c): c is ExportColumn => !!c)
       : EXPORT_COLUMNS;
 
     const workbook = new ExcelJS.Workbook();

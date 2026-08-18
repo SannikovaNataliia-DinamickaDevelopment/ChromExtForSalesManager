@@ -661,6 +661,90 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
   thead th:hover { color: var(--pink); }
   thead th .arrow { color: var(--pink); margin-left: 4px; font-size: 10px; }
+  /* Draggable/hideable dashboard columns (Task DI-2966, 14.08 call). */
+  th.col-header { position: relative; }
+  .col-header-label { pointer-events: none; }
+  /* Drag in progress: the source header dims in place (no ghost element — mouse-event drag,
+     not native HTML5 DnD, same style as the rest of this page's custom pointer-tracking) and
+     the cursor communicates "grabbing" globally so it doesn't flicker back to a pointer/text
+     cursor while passing over non-header page content mid-drag. */
+  th.col-header-dragging { opacity: 0.4; }
+  body.column-dragging, body.column-dragging * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
+  /* Drop-position indicator — a colored edge on whichever header the cursor is currently over,
+     left edge for "insert before this column" / right edge for "insert after". */
+  th.col-header-insert-before { box-shadow: inset 3px 0 0 var(--pink); }
+  th.col-header-insert-after { box-shadow: inset -3px 0 0 var(--pink); }
+  th.column-menu-th { width: 36px; text-align: center; padding: 10px 6px; cursor: default; }
+  th.column-menu-th:hover { color: var(--accent); }
+  .column-menu-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  .column-menu-btn:hover { background: var(--accent-tint-weak); color: var(--pink); }
+  .column-menu-popover {
+    position: fixed;
+    z-index: 60;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    padding: 8px;
+    min-width: 220px;
+    /* max-height is set inline by positionColumnMenuPopover() — it depends on the button's
+       actual position vs. the viewport, not a fixed vh figure (a fixed 70vh doesn't know
+       where on the page the button sits, so on a normal/short window it could still push
+       the box's bottom edge past the viewport and clip the last few rows unreachably). */
+    overflow-y: auto;
+  }
+  .column-menu-popover[hidden] { display: none; }
+  .column-menu-list { display: flex; flex-direction: column; gap: 1px; }
+  .column-menu-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .column-menu-row:hover { background: var(--accent-tint-weak); }
+  .column-menu-label { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .column-menu-eye {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .column-menu-eye:hover { background: var(--accent-tint); }
+  .column-menu-eye.is-hidden { color: var(--text-secondary); }
+  .column-menu-reset {
+    width: 100%;
+    margin-top: 6px;
+    padding-top: 8px;
+    border: none;
+    border-top: 1px solid var(--border);
+    background: none;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .column-menu-reset:hover { color: var(--pink); }
+  td.description-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   tbody td {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
@@ -1062,7 +1146,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var COOKIE_NAME = 'sm_dashboard_session';
   var STATUS_LABELS = { new: 'новий', in_progress: 'опрацьовується', done: 'опрацьований' };
   var IS_IT_LABELS = { it: 'IT', not_it: 'not-IT', unprocessed: '' };
-  var COLUMN_COUNT = 13; // 12 data columns + the leading checkbox column
+  // Dynamic now (Task DI-2966 hideable columns) — was a fixed constant when every column in
+  // ALL_COLUMNS with inTable:true always showed; now it must reflect however many columns the
+  // manager currently has visible, so the "no leads match"/error empty-state row's colspan
+  // still spans the full table width instead of only part of it.
+  function columnCount() { return getVisibleColumns().length + 1; }
   // Warning-icon tooltip (table row, hover) and the lead-in line of the sidebar's error banner
   // (row click) — same wording either way, the sidebar just adds the specific stored reason
   // underneath. See lead.enrichment_error's schema comment for how a lead gets into this state.
@@ -1113,51 +1201,47 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     status: '',
   };
 
-  // Single source of truth for every column this page knows about (2026-08-18: replaced two
-  // separately-maintained lists — COLUMNS and EXPORT_COLUMNS used to be independent arrays, kept
-  // in sync by hand, and predictably drifted: company_linkedin was added to the table's COLUMNS
-  // but never copied into EXPORT_COLUMNS, so it silently never showed up in the export column
-  // picker). COLUMNS (main table) and EXPORT_COLUMNS (export panel's checkbox list) are now both
-  // *derived* from this one array below — adding a column here with inTable:true makes it appear
-  // in both places automatically; there is no second list left to forget.
+  // Single source of truth for every column this dashboard knows about — both the main table
+  // and the Export panel are DERIVED from this one list (see COLUMNS/EXPORT_COLUMNS below), so
+  // adding a column here automatically makes it available in both places with no second list to
+  // remember to update (see this project's own history: Company LinkedIn once went missing from
+  // Export precisely because the two lists were separately maintained).
   //
-  // Order here IS the export column order (and, for entries with inTable:true, the table's own
-  // column order too — COLUMNS is a filtered subsequence of this array, never reordered). export
-  // includes several fields the table never shows at all (description, salary, tech_stack,
-  // apply_url, ats, external_job_id, created_at) — export's whole point is "every field", not
-  // just what's in the table view, so inTable:false for those is intentional, not an oversight.
-  //
-  // label is used in both the table header and the export checkbox unless exportLabel overrides
-  // it — scraped_at is the one case that needs to (a compact "Scraped" table header vs. a more
-  // descriptive "Scraped (Kyiv)" export checkbox label; the table header has much less room).
-  //
-  // Still mirrors backend's EXPORT_COLUMNS (leads/export-columns.ts) key list — the server
-  // remains the single source of truth for what each key actually maps to and how it's
-  // formatted (POST /leads/export re-validates every key against its own copy via IsIn); this
-  // array only drives what renders in the table/checkbox UI here.
+  // Order here doubles as DEFAULT_COLUMN_ORDER (Task DI-2966, draggable/hideable columns,
+  // 14.08 call) — Oleksandr's own sequence from that call (Published, Source, Title, Company,
+  // Website, Location, Company LinkedIn, Hiring Contact), then the rest of the pre-existing
+  // columns in their previous relative order. This is also what "Reset" restores.
   var ALL_COLUMNS = [
-    { key: 'published_at', label: 'Published', inTable: true },
-    { key: 'source_site', label: 'Source', inTable: true },
-    { key: 'job_title', label: 'Title', inTable: true },
-    { key: 'source_url', label: 'Job link', inTable: true },
-    { key: 'is_it', label: 'IT?', inTable: true },
-    { key: 'company', label: 'Company', inTable: true },
-    { key: 'company_website', label: 'Website', inTable: true },
-    { key: 'company_linkedin', label: 'Company LinkedIn', inTable: true },
-    { key: 'location', label: 'Location', inTable: true },
-    { key: 'salary', label: 'Salary', inTable: false },
-    { key: 'tech_stack', label: 'Tech stack', inTable: false },
-    { key: 'description', label: 'Description', inTable: false },
-    { key: 'apply_url', label: 'Apply link', inTable: false },
-    { key: 'ats', label: 'ATS', inTable: false },
-    { key: 'external_job_id', label: 'External job ID', inTable: false },
-    { key: 'status', label: 'Status', inTable: true },
-    { key: 'owner', label: 'Owner', inTable: true },
-    { key: 'scraped_at', label: 'Scraped', exportLabel: 'Scraped (Kyiv)', inTable: true },
-    { key: 'created_at', label: 'Created (Kyiv)', inTable: false },
+    { key: 'published_at', label: 'Published' },
+    { key: 'source_site', label: 'Source' },
+    { key: 'job_title', label: 'Title' },
+    { key: 'company', label: 'Company' },
+    { key: 'company_website', label: 'Website' },
+    { key: 'location', label: 'Location' },
+    { key: 'company_linkedin', label: 'Company LinkedIn' },
+    { key: 'hiring_contact', label: 'Hiring Contact' },
+    { key: 'source_url', label: 'Job link' },
+    { key: 'is_it', label: 'IT?' },
+    { key: 'salary', label: 'Salary' },
+    { key: 'tech_stack', label: 'Tech stack' },
+    { key: 'description', label: 'Description' },
+    { key: 'apply_url', label: 'Apply link' },
+    { key: 'ats', label: 'ATS' },
+    { key: 'external_job_id', label: 'External job ID' },
+    { key: 'status', label: 'Status' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'scraped_at', label: 'Scraped', exportLabel: 'Scraped (Kyiv)' },
+    { key: 'created_at', label: 'Created (Kyiv)' },
   ];
 
-  var COLUMNS = ALL_COLUMNS.filter(function (c) { return c.inTable; });
+  var DEFAULT_COLUMN_ORDER = ALL_COLUMNS.map(function (c) { return c.key; });
+  var ALL_COLUMNS_BY_KEY = {};
+  ALL_COLUMNS.forEach(function (c) { ALL_COLUMNS_BY_KEY[c.key] = c; });
+
+  // Every column is now both a table column and an export column (no more inTable split) — the
+  // manager's own drag-reorder/eye-toggle customization (state.columnOrder/hiddenColumns below)
+  // decides what actually shows in the table; this array stays the full/default-order list,
+  // used as the Export panel's own fallback when a column-order preference hasn't loaded yet.
   var EXPORT_COLUMNS = ALL_COLUMNS.map(function (c) {
     return { key: c.key, label: c.exportLabel || c.label };
   });
@@ -1177,7 +1261,86 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterPublishedRange: null,
     filterScrapedRange: null,
     search: '',
+    // Dashboard column customization (Task DI-2966). Both start null ("not loaded/decided yet")
+    // and are filled by loadColumnPrefs() at startup — null is treated as "use the default" by
+    // getOrderedColumns()/getVisibleColumns() below, so the table can render correctly even
+    // before the GET /me/dashboard-columns call resolves.
+    columnOrder: null,
+    hiddenColumns: null,
   };
+
+  // ---- Dashboard column customization (Task DI-2966: draggable/hideable columns) ----
+  // state.columnOrder/state.hiddenColumns drive both the table (renderHeader/buildRow) and the
+  // Export panel's column order (buildExportPanelColumns/runExport) — see EXPORT_COLUMNS'
+  // comment above for why the two aren't independent lists.
+
+  // Full column list, in the manager's current order: state.columnOrder when loaded, else
+  // DEFAULT_COLUMN_ORDER. Any key in state.columnOrder that isn't a known column (e.g. a stale
+  // key from a version of this page with a column that's since been removed) is silently
+  // dropped rather than crashing the render.
+  function getOrderedColumns() {
+    var order = state.columnOrder || DEFAULT_COLUMN_ORDER;
+    return order.map(function (key) { return ALL_COLUMNS_BY_KEY[key]; }).filter(Boolean);
+  }
+
+  // Table-only subset: getOrderedColumns() minus whatever's currently hidden. Export is never
+  // filtered by this — hidden-from-table columns can still be exported (see the Export panel's
+  // own independent per-column checkboxes, default-checked regardless of table visibility).
+  function getVisibleColumns() {
+    var hidden = state.hiddenColumns || [];
+    return getOrderedColumns().filter(function (c) { return hidden.indexOf(c.key) === -1; });
+  }
+
+  // Merges a saved { order, hidden } preference (from GET /me/dashboard-columns, possibly null
+  // on first-ever load) with the current known-columns set: unknown/stale keys are dropped, and
+  // any known column missing from a saved order (e.g. Hiring Contact, added after the manager
+  // last saved their layout) is appended in DEFAULT_COLUMN_ORDER's relative position — so a new
+  // column always shows up somewhere sensible instead of silently vanishing for existing users.
+  function mergeColumnPrefs(saved) {
+    var savedOrder = (saved && Array.isArray(saved.order)) ? saved.order : [];
+    var order = savedOrder.filter(function (key) { return !!ALL_COLUMNS_BY_KEY[key]; });
+    DEFAULT_COLUMN_ORDER.forEach(function (key) {
+      if (order.indexOf(key) === -1) order.push(key);
+    });
+    var savedHidden = (saved && Array.isArray(saved.hidden)) ? saved.hidden : [];
+    var hidden = savedHidden.filter(function (key) { return !!ALL_COLUMNS_BY_KEY[key]; });
+    return { order: order, hidden: hidden };
+  }
+
+  // Fetched once at startup (see loadLeads() call site below) — a failure here (offline, 401
+  // already handled by apiFetch's redirect-to-login) just leaves state.columnOrder/hiddenColumns
+  // null, which getOrderedColumns()/getVisibleColumns() already treat as "use the default", so
+  // the table still renders correctly even if this call never completes.
+  function loadColumnPrefs() {
+    return apiFetch('/me/dashboard-columns')
+      .then(function (saved) {
+        var merged = mergeColumnPrefs(saved);
+        state.columnOrder = merged.order;
+        state.hiddenColumns = merged.hidden;
+      })
+      .catch(function () {});
+  }
+
+  // Fire-and-forget persistence for any order/visibility change (drag reorder, eye toggle,
+  // Reset) — the local state + re-render already happened by the time this is called (optimistic
+  // update), so a save failure is logged, not surfaced as a blocking error: the manager's next
+  // action isn't held up by it, they just might need to redo the customization if it never saved.
+  function saveColumnPrefs() {
+    apiFetch('/me/dashboard-columns', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: state.columnOrder || DEFAULT_COLUMN_ORDER, hidden: state.hiddenColumns || [] }),
+    }).catch(function (err) {
+      console.error('Failed to save column preferences:', err.message);
+    });
+  }
+
+  function resetColumnPrefs() {
+    state.columnOrder = DEFAULT_COLUMN_ORDER.slice();
+    state.hiddenColumns = [];
+    saveColumnPrefs();
+    render();
+  }
 
   function getCookie(name) {
     var parts = document.cookie.split(';');
@@ -1295,17 +1458,25 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  // Rendered in the manager's own customized column order (getOrderedColumns(), Task DI-2966),
+  // not the static EXPORT_COLUMNS default order — the submit handler collects checked values via
+  // querySelectorAll, which returns them in this same DOM order, so the exported file's column
+  // order ends up matching what's on screen without runExport() needing to know about ordering
+  // at all. Selection (which boxes start checked) stays independent of table hide/show state —
+  // every column defaults to checked here regardless of whether it's currently hidden in the
+  // table, since exporting a column a manager doesn't want cluttering the table view is still a
+  // reasonable thing to want.
   function buildExportPanelColumns() {
     var container = document.getElementById('export-panel-columns');
     container.innerHTML = '';
-    EXPORT_COLUMNS.forEach(function (col) {
+    getOrderedColumns().forEach(function (col) {
       var label = document.createElement('label');
       var checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = true;
       checkbox.value = col.key;
       label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(col.label));
+      label.appendChild(document.createTextNode(col.exportLabel || col.label));
       container.appendChild(label);
     });
   }
@@ -1357,7 +1528,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     document.getElementById('export-modal-backdrop').classList.toggle('open', open);
     document.getElementById('export-modal').setAttribute('aria-hidden', open ? 'false' : 'true');
     document.getElementById('export-btn').setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) renderExportFilterSummary();
+    // Rebuilt on every open (not just at page load) — the manager's column order/visibility
+    // can change between opens (drag reorder, eye toggle, Reset), and this panel's own order
+    // is what determines the exported file's column order (Task DI-2966), so it must reflect
+    // whatever the customization is at click time, not whatever it was at page load.
+    if (open) {
+      buildExportPanelColumns();
+      renderExportFilterSummary();
+    }
   }
 
   function updateLeadStatus(id, status) {
@@ -2070,22 +2248,299 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     onRowSelectionChanged();
   }
 
+  var EYE_OPEN_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+  var EYE_CLOSED_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+
+  // Table header: leading select-all cell, then one <th> per currently-visible column (Task
+  // DI-2966: order/visibility now come from getVisibleColumns(), not a static COLUMNS array),
+  // then the "..." column-customization menu cell. Rebuilt from scratch on every render() call
+  // (cheap — at most ~20 <th> elements), same pattern the table body already uses.
   function renderHeader() {
     var row = document.getElementById('header-row');
     row.innerHTML = '';
     row.appendChild(buildSelectAllTh());
-    COLUMNS.forEach(function (col) {
+    getVisibleColumns().forEach(function (col) {
       var th = document.createElement('th');
-      th.textContent = col.label;
-      th.addEventListener('click', function () { setSort(col.key); });
+      th.className = 'col-header';
+      th.dataset.columnKey = col.key;
+      th.title = 'Drag to reorder \\u00b7 click to sort';
+
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 'col-header-label';
+      labelSpan.textContent = col.label;
+      th.appendChild(labelSpan);
+
       if (state.sortKey === col.key) {
         var arrow = document.createElement('span');
         arrow.className = 'arrow';
         arrow.textContent = state.sortDir === 'asc' ? '\\u25B2' : '\\u25BC';
         th.appendChild(arrow);
       }
+
+      th.addEventListener('mousedown', function (e) { onColumnHeaderMouseDown(e, col); });
       row.appendChild(th);
     });
+    row.appendChild(buildColumnMenuTh());
+  }
+
+  // ---- Column header drag-to-reorder (Task DI-2966) ----
+  // Mouse-event-based, not HTML5 drag-and-drop — same custom-pointer-tracking style already
+  // used elsewhere on this page (the bulk-select drag and the date-range hover-preview), rather
+  // than mixing in native DnD's own event model/ghost-image just for this one feature.
+  // columnDragState is null outside a drag; "dragging" only flips true past a small movement
+  // threshold, so an ordinary click-to-sort (mousedown+mouseup with no real movement) is never
+  // misread as a reorder attempt.
+  var columnDragState = null;
+  var COLUMN_DRAG_THRESHOLD_PX = 6;
+
+  function onColumnHeaderMouseDown(e, col) {
+    if (e.button !== 0) return;
+    columnDragState = { key: col.key, startX: e.clientX, dragging: false, overKey: null, insertBefore: true };
+    document.addEventListener('mousemove', onColumnHeaderMouseMove);
+    document.addEventListener('mouseup', onColumnHeaderMouseUp);
+  }
+
+  function clearColumnDragMarkers() {
+    var marked = document.querySelectorAll('.col-header-insert-before, .col-header-insert-after');
+    for (var i = 0; i < marked.length; i++) {
+      marked[i].classList.remove('col-header-insert-before', 'col-header-insert-after');
+    }
+  }
+
+  function onColumnHeaderMouseMove(e) {
+    if (!columnDragState) return;
+    if (!columnDragState.dragging) {
+      if (Math.abs(e.clientX - columnDragState.startX) < COLUMN_DRAG_THRESHOLD_PX) return;
+      columnDragState.dragging = true;
+      document.body.classList.add('column-dragging');
+      var draggedTh = document.querySelector('th[data-column-key="' + columnDragState.key + '"]');
+      if (draggedTh) draggedTh.classList.add('col-header-dragging');
+    }
+
+    var target = document.elementFromPoint(e.clientX, e.clientY);
+    var overTh = target && target.closest ? target.closest('th[data-column-key]') : null;
+    clearColumnDragMarkers();
+    if (overTh && overTh.dataset.columnKey !== columnDragState.key) {
+      var rect = overTh.getBoundingClientRect();
+      var before = e.clientX < rect.left + rect.width / 2;
+      overTh.classList.add(before ? 'col-header-insert-before' : 'col-header-insert-after');
+      columnDragState.overKey = overTh.dataset.columnKey;
+      columnDragState.insertBefore = before;
+    } else {
+      columnDragState.overKey = null;
+    }
+  }
+
+  function onColumnHeaderMouseUp() {
+    document.removeEventListener('mousemove', onColumnHeaderMouseMove);
+    document.removeEventListener('mouseup', onColumnHeaderMouseUp);
+    if (!columnDragState) return;
+
+    var wasDragging = columnDragState.dragging;
+    var draggedKey = columnDragState.key;
+    var overKey = columnDragState.overKey;
+    var insertBefore = columnDragState.insertBefore;
+
+    document.body.classList.remove('column-dragging');
+    clearColumnDragMarkers();
+    var draggedTh = document.querySelector('th[data-column-key="' + draggedKey + '"]');
+    if (draggedTh) draggedTh.classList.remove('col-header-dragging');
+    columnDragState = null;
+
+    if (wasDragging && overKey && overKey !== draggedKey) {
+      reorderColumn(draggedKey, overKey, insertBefore);
+    } else if (!wasDragging) {
+      setSort(draggedKey);
+    }
+  }
+
+  function reorderColumn(draggedKey, overKey, insertBefore) {
+    var order = (state.columnOrder || DEFAULT_COLUMN_ORDER).slice();
+    var fromIndex = order.indexOf(draggedKey);
+    if (fromIndex === -1) return;
+    order.splice(fromIndex, 1);
+    var toIndex = order.indexOf(overKey);
+    if (toIndex === -1) return;
+    if (!insertBefore) toIndex += 1;
+    order.splice(toIndex, 0, draggedKey);
+    state.columnOrder = order;
+    saveColumnPrefs();
+    render();
+  }
+
+  // ---- "..." column-customization menu (Task DI-2966) ----
+  // Attached to the table header itself (a trailing <th>), independent of the drag-reorder
+  // above — lists every known column (in the manager's current order) with an eye-icon
+  // hide/show toggle per row, plus a Reset button restoring default order + full visibility.
+  // Popover is a standalone element appended to <body> (not nested inside the <th>) and
+  // position:fixed, anchored to the button's own getBoundingClientRect() — same reason the
+  // date-range popover above does this instead of a plain CSS-relative dropdown: the table's
+  // .table-wrap scrolls (overflow: auto) and its <thead> is position: sticky, so a popover
+  // nested inside a <th> would get clipped by the scroll container instead of floating over it.
+  var columnMenuOpen = false;
+  var columnMenuPopoverEl = null;
+
+  function buildColumnMenuTh() {
+    var th = document.createElement('th');
+    th.className = 'column-menu-th';
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'column-menu-btn';
+    btn.className = 'column-menu-btn';
+    btn.title = 'Columns';
+    btn.setAttribute('aria-label', 'Column visibility and order menu');
+    btn.textContent = '\\u22EF';
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleColumnMenu();
+    });
+    th.appendChild(btn);
+    return th;
+  }
+
+  function renderColumnMenuList() {
+    var popover = columnMenuPopoverEl;
+    if (!popover) return;
+    popover.innerHTML = '';
+    var list = document.createElement('div');
+    list.className = 'column-menu-list';
+    var hidden = state.hiddenColumns || [];
+    getOrderedColumns().forEach(function (col) {
+      var isHidden = hidden.indexOf(col.key) !== -1;
+      var row = document.createElement('div');
+      row.className = 'column-menu-row';
+
+      var label = document.createElement('span');
+      label.className = 'column-menu-label';
+      label.textContent = col.label;
+      row.appendChild(label);
+
+      var eyeBtn = document.createElement('button');
+      eyeBtn.type = 'button';
+      eyeBtn.className = 'column-menu-eye' + (isHidden ? ' is-hidden' : '');
+      eyeBtn.title = isHidden ? 'Show' : 'Hide';
+      eyeBtn.setAttribute('aria-label', (isHidden ? 'Show' : 'Hide') + ' ' + col.label + ' column');
+      eyeBtn.innerHTML = isHidden ? EYE_CLOSED_SVG : EYE_OPEN_SVG;
+      eyeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        toggleColumnHidden(col.key);
+      });
+      row.appendChild(eyeBtn);
+
+      list.appendChild(row);
+    });
+    popover.appendChild(list);
+
+    var resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'column-menu-reset';
+    resetBtn.textContent = 'Reset';
+    resetBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      closeColumnMenu();
+      resetColumnPrefs();
+    });
+    popover.appendChild(resetBtn);
+  }
+
+  // Positions the (already-built) popover against the "..." button's CURRENT position — looked
+  // up fresh by id each call rather than cached, since renderHeader() rebuilds the <th>/button
+  // from scratch on every render() and a stale element reference would silently stop matching
+  // anything on the page. Right-aligned to the button (not left-aligned like the date-range
+  // popover) since this button sits at the table's far-right edge — a left-aligned popover
+  // would overflow off the right side of the viewport.
+  //
+  // Bug fix: a flat "max-height: 70vh" doesn't know where on the page the button actually is —
+  // on a normal (not maximized/ultra-tall) window, rect.bottom can already be well past 30vh
+  // from the bottom, so "top: rect.bottom+6" plus a 70vh cap pushed the box's bottom edge past
+  // window.innerHeight. That's not a page-scroll overflow (the popover is position: fixed) — it
+  // just renders off the bottom edge of the browser viewport, with no way to scroll to it, which
+  // is exactly the "some entries are unreachable" bug report. Fixed by computing max-height from
+  // the ACTUAL space between the button and the relevant viewport edge, and flipping the popover
+  // to open upward (anchored above the button) when there's genuinely more room above than below
+  // and the content doesn't fit below.
+  function positionColumnMenuPopover() {
+    var btn = document.getElementById('column-menu-btn');
+    var popover = columnMenuPopoverEl;
+    if (!btn || !popover) return;
+    var GAP = 6;
+    var VIEWPORT_MARGIN = 8;
+    var MIN_USABLE_HEIGHT = 120;
+    var rect = btn.getBoundingClientRect();
+
+    // Clear any placement left over from a previous open (e.g. a shorter list before Reset
+    // added rows back) before measuring natural content height — a stale max-height here would
+    // make popover.scrollHeight report the clamped height, not the true content height, and
+    // the below/above comparison needs the true height to decide correctly.
+    popover.style.maxHeight = 'none';
+    popover.style.top = 'auto';
+    popover.style.bottom = 'auto';
+    popover.style.right = Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right) + 'px';
+    popover.style.left = 'auto';
+
+    var contentHeight = popover.scrollHeight;
+    var spaceBelow = window.innerHeight - rect.bottom - GAP - VIEWPORT_MARGIN;
+    var spaceAbove = rect.top - GAP - VIEWPORT_MARGIN;
+    var openUpward = contentHeight > spaceBelow && spaceAbove > spaceBelow;
+
+    if (openUpward) {
+      popover.style.bottom = (window.innerHeight - rect.top + GAP) + 'px';
+      popover.style.maxHeight = Math.max(MIN_USABLE_HEIGHT, spaceAbove) + 'px';
+    } else {
+      popover.style.top = (rect.bottom + GAP) + 'px';
+      popover.style.maxHeight = Math.max(MIN_USABLE_HEIGHT, spaceBelow) + 'px';
+    }
+  }
+
+  function toggleColumnMenu() {
+    if (!columnMenuPopoverEl) {
+      columnMenuPopoverEl = document.createElement('div');
+      columnMenuPopoverEl.className = 'column-menu-popover';
+      columnMenuPopoverEl.id = 'column-menu-popover';
+      columnMenuPopoverEl.hidden = true;
+      document.body.appendChild(columnMenuPopoverEl);
+    }
+    columnMenuOpen = !columnMenuOpen;
+    columnMenuPopoverEl.hidden = !columnMenuOpen;
+    if (columnMenuOpen) {
+      renderColumnMenuList();
+      positionColumnMenuPopover();
+    }
+  }
+
+  function closeColumnMenu() {
+    if (!columnMenuOpen) return;
+    columnMenuOpen = false;
+    if (columnMenuPopoverEl) columnMenuPopoverEl.hidden = true;
+  }
+
+  // Outside-click dismissal — composedPath()-based (not .contains()), same fix this page's own
+  // date-range popover needed: a click inside the popover (e.g. an eye toggle) triggers render()
+  // synchronously, which can replace elements mid-dispatch, so checking the live tree after the
+  // fact could wrongly read "click landed outside" every time.
+  document.addEventListener('mousedown', function (e) {
+    if (!columnMenuOpen) return;
+    var path = e.composedPath ? e.composedPath() : [];
+    var insidePopover = path.indexOf(columnMenuPopoverEl) !== -1;
+    var onButton = path.some(function (n) { return n && n.id === 'column-menu-btn'; });
+    if (!insidePopover && !onButton) closeColumnMenu();
+  });
+
+  function toggleColumnHidden(key) {
+    var hidden = (state.hiddenColumns || []).slice();
+    var idx = hidden.indexOf(key);
+    if (idx === -1) hidden.push(key); else hidden.splice(idx, 1);
+    state.hiddenColumns = hidden;
+    saveColumnPrefs();
+    render();
+    // render() rebuilds the header/button; the popover itself is a persistent body-level
+    // element (unaffected by that rebuild), so it stays open across a toggle — just needs its
+    // contents refreshed to reflect the new hidden state and repositioned against the rebuilt
+    // button.
+    if (columnMenuOpen) {
+      renderColumnMenuList();
+      positionColumnMenuPopover();
+    }
   }
 
   function setSort(key) {
@@ -2609,49 +3064,81 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
+  // Plain-text row preview for the Description column (table density — the full HTML rendering
+  // only happens in the sidebar via sanitizeDescriptionHtml). Strips tags down to text the same
+  // way a Wellfound description's real HTML would otherwise show up as literal '<p>' etc., then
+  // truncates for the cell — CSS (.description-cell) handles the actual visual clipping/ellipsis,
+  // this is just a defensive cap so an extreme-length description doesn't bloat row DOM size.
+  function plainTextPreview(html, maxLen) {
+    if (!html) return '';
+    var text = new DOMParser().parseFromString(html, 'text/html').body.textContent || '';
+    text = text.replace(/\\s+/g, ' ').trim();
+    return text.length > maxLen ? text.slice(0, maxLen) + '\\u2026' : text;
+  }
+
+  // Column-key-driven cell builders (Task DI-2966: draggable/hideable columns) — buildRow()
+  // below just looks up the current column's key here instead of a hardcoded positional
+  // sequence, so it can render any subset/order of columns the manager has customized. Every
+  // key in ALL_COLUMNS must have an entry here, in any order (this map's own order is
+  // irrelevant to the rendered order — getVisibleColumns() decides that).
+  var CELL_BUILDERS = {
+    published_at: function (lead) { return el('td', { text: formatKyiv(lead.published_at, true) || '\\u2014' }); },
+    source_site: function (lead) {
+      var td = document.createElement('td');
+      if (lead.source_site) td.appendChild(el('span', { className: 'badge source', text: lead.source_site }));
+      else td.textContent = '\\u2014';
+      return td;
+    },
+    job_title: function (lead) {
+      var td = document.createElement('td');
+      td.className = 'title-cell';
+      td.appendChild(document.createTextNode(lead.job_title || '(untitled)'));
+      if (lead.enrichment_error) {
+        // Hover half of the warning icon's hover/click contract — click is covered by the
+        // row's own click-to-open-sidebar handler, where the fuller error banner lives.
+        td.appendChild(el('span', { className: 'error-icon', title: ERROR_TOOLTIP_TEXT, text: '!' }));
+      }
+      return td;
+    },
+    company: function (lead) { return el('td', { text: lead.company || '\\u2014' }); },
+    company_website: function (lead) { return buildLinkTd(lead.company_website, lead.company_website); },
+    location: function (lead) { return el('td', { text: lead.location || '\\u2014' }); },
+    company_linkedin: function (lead) { return buildCompanyLinkedinTd(lead); },
+    hiring_contact: function (lead) { return el('td', { text: hiringContactDetailValue(lead) || '\\u2014' }); },
+    source_url: function (lead) { return buildLinkTd(lead.source_url, 'Open \\u2197'); },
+    is_it: function (lead) {
+      var td = document.createElement('td');
+      var label = IS_IT_LABELS[lead.is_it];
+      if (label) td.appendChild(el('span', { className: 'badge ' + lead.is_it, text: label }));
+      else td.textContent = '\\u2014';
+      return td;
+    },
+    salary: function (lead) { return el('td', { text: lead.salary || '\\u2014' }); },
+    tech_stack: function (lead) { return el('td', { text: lead.tech_stack || '\\u2014' }); },
+    description: function (lead) {
+      var td = document.createElement('td');
+      td.className = 'description-cell';
+      td.textContent = plainTextPreview(lead.description, 140) || '\\u2014';
+      return td;
+    },
+    apply_url: function (lead) { return buildLinkTd(lead.apply_url, 'Open \\u2197'); },
+    ats: function (lead) { return el('td', { text: lead.ats || '\\u2014' }); },
+    external_job_id: function (lead) { return el('td', { text: lead.external_job_id || '\\u2014' }); },
+    status: function (lead) { return buildStatusTd(lead); },
+    owner: function (lead) { return el('td', { text: lead.owner_display_name || lead.owner_email || '\\u2014' }); },
+    scraped_at: function (lead) { return el('td', { text: formatKyiv(lead.scraped_at || lead.created_at, false) || '\\u2014' }); },
+    created_at: function (lead) { return el('td', { text: formatKyiv(lead.created_at, false) || '\\u2014' }); },
+  };
+
   function buildRow(lead) {
     var tr = document.createElement('tr');
     tr.addEventListener('click', function () { openSidebar(lead); });
 
     tr.appendChild(buildCheckboxTd(lead));
-    tr.appendChild(el('td', { text: formatKyiv(lead.published_at, true) || '\\u2014' }));
-
-    var sourceTd = document.createElement('td');
-    if (lead.source_site) {
-      sourceTd.appendChild(el('span', { className: 'badge source', text: lead.source_site }));
-    } else {
-      sourceTd.textContent = '\\u2014';
-    }
-    tr.appendChild(sourceTd);
-
-    var titleTd = document.createElement('td');
-    titleTd.className = 'title-cell';
-    titleTd.appendChild(document.createTextNode(lead.job_title || '(untitled)'));
-    if (lead.enrichment_error) {
-      // Hover half of the warning icon's hover/click contract — click is covered by the row's
-      // own click-to-open-sidebar handler above, where the fuller error banner lives.
-      titleTd.appendChild(el('span', { className: 'error-icon', title: ERROR_TOOLTIP_TEXT, text: '!' }));
-    }
-    tr.appendChild(titleTd);
-    tr.appendChild(buildLinkTd(lead.source_url, 'Open \\u2197'));
-
-    var isItTd = document.createElement('td');
-    var isItLabel = IS_IT_LABELS[lead.is_it];
-    if (isItLabel) {
-      isItTd.appendChild(el('span', { className: 'badge ' + lead.is_it, text: isItLabel }));
-    } else {
-      isItTd.textContent = '\\u2014';
-    }
-    tr.appendChild(isItTd);
-
-    tr.appendChild(el('td', { text: lead.company || '\\u2014' }));
-    tr.appendChild(buildLinkTd(lead.company_website, lead.company_website));
-    tr.appendChild(buildCompanyLinkedinTd(lead));
-
-    tr.appendChild(el('td', { text: lead.location || '\\u2014' }));
-    tr.appendChild(buildStatusTd(lead));
-    tr.appendChild(el('td', { text: lead.owner_display_name || lead.owner_email || '\\u2014' }));
-    tr.appendChild(el('td', { text: formatKyiv(lead.scraped_at || lead.created_at, false) || '\\u2014' }));
+    getVisibleColumns().forEach(function (col) {
+      var build = CELL_BUILDERS[col.key];
+      tr.appendChild(build ? build(lead) : el('td', { text: '\\u2014' }));
+    });
 
     return tr;
   }
@@ -2737,7 +3224,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var body = document.getElementById('table-body');
     body.innerHTML = '';
     if (filtered.length === 0) {
-      body.appendChild(el('tr', {}, [el('td', { colspan: String(COLUMN_COUNT), className: 'empty-state', text: 'No leads match the current filters.' })]));
+      body.appendChild(el('tr', {}, [el('td', { colspan: String(columnCount()), className: 'empty-state', text: 'No leads match the current filters.' })]));
     } else {
       filtered.forEach(function (lead) { body.appendChild(buildRow(lead)); });
     }
@@ -2768,7 +3255,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       .catch(function (err) {
         var body = document.getElementById('table-body');
         body.innerHTML = '';
-        body.appendChild(el('tr', {}, [el('td', { colspan: String(COLUMN_COUNT), className: 'empty-state', text: 'Failed to load leads: ' + err.message })]));
+        body.appendChild(el('tr', {}, [el('td', { colspan: String(columnCount()), className: 'empty-state', text: 'Failed to load leads: ' + err.message })]));
       })
       .then(loadStats);
   }
@@ -3316,7 +3803,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (document.getElementById('export-modal').classList.contains('open')) setExportModalOpen(false);
   });
 
+  // Both fired in parallel at startup — whichever resolves last just re-renders with the
+  // latest merged state, so there's no ordering dependency between "leads loaded" and "column
+  // prefs loaded" (renderHeader()/render() both already fall back to DEFAULT_COLUMN_ORDER/full
+  // visibility via getOrderedColumns()/getVisibleColumns() while columnOrder/hiddenColumns are
+  // still null, so the table is never left unrendered waiting on either call).
   renderHeader();
+  loadColumnPrefs().then(render);
   loadLeads();
 })();
 </script>

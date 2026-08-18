@@ -50,24 +50,44 @@ function companyLinkedinCell(r: JobLeadRecord): string {
   return '';
 }
 
+// Same not_checked/found/not_specified convention as the dashboard sidebar's own
+// hiringContactDetailValue (dashboard-page.ts) — "Name — Role (Location)" when found, each of
+// role/location omitted individually when absent, 'не вказано' for a definitively-checked-and-
+// empty result, blank for not yet checked (Wellfound only; other sources never populate this).
+function hiringContactCell(r: JobLeadRecord): string {
+  if (r.hiring_contact_status === 'found') {
+    let text = r.hiring_contact_name || '';
+    if (r.hiring_contact_role) text += ' — ' + r.hiring_contact_role;
+    if (r.hiring_contact_location) text += ' (' + r.hiring_contact_location + ')';
+    return text;
+  }
+  if (r.hiring_contact_status === 'not_specified') return 'не вказано';
+  return '';
+}
+
 export type ExportColumn = {
   key: string;
   label: string;
   value: (r: JobLeadRecord) => string;
 };
 
-// CLAUDE.md's Sheet column order (published_at first) kept here too, for consistency with the
-// one column order the manager already knows — even though this list is otherwise independent.
+// Default/fallback order only (see leads.service.ts's exportXlsx): when the caller (dashboard
+// "Export" button) sends an explicit `columns` list, THAT order wins — the dashboard's own
+// ALL_COLUMNS-driven, per-user-customizable order (Task DI-2966 draggable columns) is the real
+// source of truth for what a manager sees in the file. This array's order is only what's used
+// when no explicit order is given (e.g. a direct API call) — kept matching the dashboard's
+// default column order (Oleksandr's 14.08 sequence) for consistency, not because it's load-bearing.
 export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'published_at', label: 'Published', value: (r) => formatKyivDate(r.published_at) },
   { key: 'source_site', label: 'Source', value: (r) => cell(r.source_site) },
   { key: 'job_title', label: 'Title', value: (r) => cell(r.job_title) },
-  { key: 'source_url', label: 'Job link', value: (r) => cell(r.source_url) },
-  { key: 'is_it', label: 'IT?', value: (r) => IS_IT_LABELS[r.is_it] },
   { key: 'company', label: 'Company', value: (r) => cell(r.company) },
   { key: 'company_website', label: 'Website', value: (r) => cell(r.company_website) },
-  { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
   { key: 'location', label: 'Location', value: (r) => cell(r.location) },
+  { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
+  { key: 'hiring_contact', label: 'Hiring Contact', value: (r) => hiringContactCell(r) },
+  { key: 'source_url', label: 'Job link', value: (r) => cell(r.source_url) },
+  { key: 'is_it', label: 'IT?', value: (r) => IS_IT_LABELS[r.is_it] },
   { key: 'salary', label: 'Salary', value: (r) => cell(r.salary) },
   { key: 'tech_stack', label: 'Tech stack', value: (r) => cell(r.tech_stack) },
   { key: 'description', label: 'Description', value: (r) => plainTextCell(r.description) },
