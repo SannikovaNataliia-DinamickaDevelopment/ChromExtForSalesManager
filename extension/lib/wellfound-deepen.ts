@@ -51,9 +51,18 @@ export class TabDeepening implements DeepeningStrategy {
   // WELLFOUND_NOT_FOUND_TITLE) rather than a timeout/possible-block. Reset at the start of
   // every call, so it only ever reflects the outcome of the most recent one.
   private lastNotFoundReason: string | null = null;
+  // Bug fix: any non-ok result used to only forward its message when notFound was true —
+  // pollForWellfoundDetail()'s own descriptive timeout/possible-block string ("Timed out
+  // waiting for job posting data (15s)...") was silently discarded otherwise, leaving the
+  // circuit breaker (and everything downstream) with zero information about WHY a lead failed.
+  // This captures the message for ANY failed result — lastNotFound above stays the 404-specific
+  // subset (still the only thing that exempts a failure from the circuit breaker's count), this
+  // is the superset used purely for visibility (console log + markLeadEnrichmentError).
+  private lastFailureReason: string | null = null;
 
   async deepenOne(target: DeepeningTarget): Promise<DeepenedFields | null> {
     this.lastNotFoundReason = null;
+    this.lastFailureReason = null;
     await this.win.navigate(target.source_url);
     await sleep(CONTENT_SCRIPT_SETTLE_MS);
 
@@ -64,8 +73,11 @@ export class TabDeepening implements DeepeningStrategy {
       }),
     ]);
 
-    if (!res?.ok && res?.notFound) {
-      this.lastNotFoundReason = res.error ?? 'This posting no longer exists on Wellfound (404).';
+    if (!res?.ok) {
+      this.lastFailureReason = res?.error ?? 'Extraction failed for an unknown reason.';
+      if (res?.notFound) {
+        this.lastNotFoundReason = this.lastFailureReason;
+      }
     }
 
     return res?.ok && res.detail ? res.detail : null;
@@ -80,6 +92,14 @@ export class TabDeepening implements DeepeningStrategy {
   // to keep that kind of failure out of the circuit breaker's consecutive-failure count.
   get lastNotFound(): string | null {
     return this.lastNotFoundReason;
+  }
+
+  // Non-null after any deepenOne() call that returned a non-ok result, for ANY reason
+  // (definitive 404, timeout, or possible bot-detection block) — a strict superset of
+  // lastNotFound above. Used only for surfacing the reason (console.error + markLeadEnrichmentError);
+  // never consulted for circuit-breaker/retry decisions, which stay exactly as they were.
+  get lastFailure(): string | null {
+    return this.lastFailureReason;
   }
 
   // Exposes the shared window's interruptible human-pace delay without leaking the window
@@ -160,6 +180,12 @@ export async function deepenWellfoundLeads(
       let detail: DeepenedFields | null = null;
       let saveFailed = false;
       let closed = false;
+      // Bug fix: previously nothing captured *why* a lead failed here — deepenOne() itself
+      // throwing (e.g. the 20s extraction backstop) had its message discarded the same way
+      // TabDeepening's own resolved-but-not-ok case did. Only set on the "deepenOne() itself
+      // threw" path; the "resolved but not ok" path's reason lives on strategy.lastFailure
+      // instead (read below, after this try/catch) since that one doesn't throw.
+      let thrownErrorMessage: string | null = null;
 
       try {
         detail = await strategy.deepenOne(target);
@@ -194,11 +220,19 @@ export async function deepenWellfoundLeads(
           closed = true;
         } else if (detail) {
           // deepenOne() succeeded and the backend PATCH failed — swallow, counted as a
-          // failure below (one bad lead must not abort the run).
+          // failure below (one bad lead must not abort the run). Logged (not persisted to
+          // enrichment_error): a save failure is a transient/our-own-backend problem, not a
+          // "definitive, non-retriable" Wellfound-side failure, so it shouldn't stop this lead
+          // from being auto-retried like enrichment_error would.
           saveFailed = true;
+          console.error(`[Wellfound deepen] Save failed for lead ${target.id} (${target.source_url}):`, err instanceof Error ? err.message : String(err));
+        } else {
+          // deepenOne() itself threw (e.g. the 20s extraction backstop, or navigate() failing) —
+          // previously this message was discarded entirely; captured here so the generic-failure
+          // handling below (after this try/catch) can log it and record it via
+          // markLeadEnrichmentError, same as TabDeepening's own resolved-but-not-ok case.
+          thrownErrorMessage = err instanceof Error ? err.message : String(err);
         }
-        // Otherwise deepenOne() itself failed and `detail` is still its initial null —
-        // swallowed the same way, also counted as a failure below.
       }
 
       if (closed) {
@@ -241,6 +275,27 @@ export async function deepenWellfoundLeads(
         consecutiveFailures = 0;
       } else {
         consecutiveFailures++;
+        // Bug fix: extraction failed (not a save failure — that's logged separately above,
+        // and deliberately doesn't reach here as enrichment_error, see that branch's comment)
+        // and it wasn't a definitive 404 (that's the earlier notFoundReason/continue branch,
+        // untouched). Previously this reason — content.ts's own descriptive timeout/possible-
+        // block message, or a thrown deepenOne() error — was silently discarded here with no
+        // log and nothing recorded on the lead. Now: logged, and recorded via the same
+        // markLeadEnrichmentError path the 404 case already uses, so it's visible on the
+        // lead's dashboard row/sidebar (Detail: Error, tooltip) instead of blending
+        // invisibly into "not detailed" forever. Does NOT touch consecutiveFailures/the
+        // circuit breaker above, and does NOT change whether this counts as failed —
+        // purely making the existing reason visible.
+        if (!detail && !saveFailed) {
+          const reason = thrownErrorMessage ?? strategy.lastFailure ?? 'Wellfound deepening failed for an unknown reason.';
+          console.error(`[Wellfound deepen] Failed for lead ${target.id} (${target.source_url}):`, reason);
+          try {
+            await markLeadEnrichmentError(target.id, reason);
+          } catch {
+            // Swallow — see the 404 branch's identical comment above: failing to record the
+            // flag must not abort the run.
+          }
+        }
       }
 
       if (consecutiveFailures >= WELLFOUND_CIRCUIT_BREAKER_THRESHOLD) {

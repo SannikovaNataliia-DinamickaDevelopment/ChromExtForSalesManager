@@ -16,12 +16,45 @@ const BULK_ENRICH_PORT_NAME = 'enrich-bulk';
 // first run's Wellfound circuit breaker/window.
 let wellfoundBulkInFlight = false;
 
+// Side panel liveness tracking (dashboard-triggered Wellfound enrichment guard). Wellfound
+// deepening/backfill (TabDeepening/deepenWellfoundLeads) is human-paced with setTimeout-based
+// delays that can add up to several minutes for a full run — MV3 service workers are NOT
+// guaranteed to stay alive that long on their own (Chrome can suspend an idle-looking worker
+// between messages, and a pending setTimeout does not reliably survive that the way
+// chrome.alarms would). An open side panel is what actually keeps this service worker alive for
+// the run's duration in practice (Chrome treats an open extension view as "still needed"); with
+// it closed, a dashboard-triggered Wellfound run can get killed silently partway through, which
+// is exactly the confusing "X failed" the dashboard shows today with no real explanation. Kept
+// as a literal (not a shared import) rather than importing sidepanel/App.tsx here — same
+// precedent as DASHBOARD_SESSION_COOKIE in backend/src/auth/auth.controller.ts/
+// dashboard.controller.ts. Must match sidepanel/App.tsx's copy.
+const SIDEPANEL_PORT_NAME = 'sidepanel-alive';
+// A count, not a boolean — the side panel is per-window, so a manager can legitimately have it
+// open in two Chrome windows at once; closing one must not flip this to "closed" while the
+// other is still connected.
+let openSidePanelCount = 0;
+const sidePanelOpen = () => openSidePanelCount > 0;
+
+const WELLFOUND_SIDEPANEL_REQUIRED_ERROR =
+  "Open the extension's side panel first, then try again — Wellfound enrichment needs it open to keep running.";
+
 // Coordinator (CLAUDE.md phase 1): resolves the active tab, asks its content
 // script to parse the current list page, then forwards the batch to the
 // local backend. Never touches other tabs, never auto-scrolls/pages (FR-5).
 export default defineBackground(() => {
   chrome.runtime.onInstalled.addListener(() => {
     chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: true }).catch(() => {});
+  });
+
+  // See SIDEPANEL_PORT_NAME's comment above — sidepanel/App.tsx connects on mount and this
+  // just tracks that connection's lifetime. onConnect (not onConnectExternal): the side panel
+  // is part of this same extension, not an external origin like the dashboard.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== SIDEPANEL_PORT_NAME) return;
+    openSidePanelCount++;
+    port.onDisconnect.addListener(() => {
+      openSidePanelCount--;
+    });
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -221,6 +254,9 @@ async function enrichLead(message: EnrichLeadMessage) {
   // (and mostly no-ops) for a single lead, but reusing the real function means this path
   // can never silently drift from the batch flow's behavior.
   if (sourceSite === 'wellfound') {
+    if (!sidePanelOpen()) {
+      return { ok: false as const, error: WELLFOUND_SIDEPANEL_REQUIRED_ERROR };
+    }
     const result = await deepenWellfoundLeads([{ id: leadId, source_url: sourceUrl }], () => {});
     if (result.succeeded === 1) return { ok: true as const };
     // Distinguishes a definitive 404 (posting removed/expired, already flagged with
@@ -306,6 +342,15 @@ async function enrichLeadsBulk(
   const wellfoundCapped = wellfoundLeads.slice(0, WELLFOUND_RUN_CAP);
   const skippedCapLeadIds = wellfoundLeads.slice(WELLFOUND_RUN_CAP).map((l) => l.leadId);
 
+  // Checked upfront, before any work (Techjobs/ITjobs included) starts — see
+  // SIDEPANEL_PORT_NAME's comment above for why. A mixed selection with the panel closed
+  // rejects the whole request rather than silently doing the non-Wellfound portion and
+  // failing only the Wellfound part; same "reject the whole request outright" shape as the
+  // wellfoundBulkInFlight guard just above this function's call site.
+  if (wellfoundCapped.length > 0 && !sidePanelOpen()) {
+    throw new Error(WELLFOUND_SIDEPANEL_REQUIRED_ERROR);
+  }
+
   const total = otherLeads.length + wellfoundCapped.length;
   let completed = 0;
   let succeeded = 0;
@@ -390,6 +435,13 @@ async function backfillContactBulk(
 
   if (capped.length === 0) {
     return { ok: true, found: 0, notSpecified: 0, unresolved: 0, skippedCapLeadIds, skippedCircuitBreakerLeadIds: [] };
+  }
+
+  // See SIDEPANEL_PORT_NAME's comment above — same upfront guard as enrichLeadsBulk, checked
+  // only once there's actually eligible Wellfound work to do (an empty/fully-capped-out
+  // selection returns above without needing the panel at all).
+  if (!sidePanelOpen()) {
+    throw new Error(WELLFOUND_SIDEPANEL_REQUIRED_ERROR);
   }
 
   const result = await backfillWellfoundContact(

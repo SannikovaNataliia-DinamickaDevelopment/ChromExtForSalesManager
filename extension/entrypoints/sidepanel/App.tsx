@@ -34,6 +34,13 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 // the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
 const WELLFOUND_HOSTNAME = 'wellfound.com';
 
+// Side panel liveness port (background.ts's dashboard-triggered Wellfound enrichment guard):
+// connecting here just tells background.ts "the side panel is currently open" for as long as
+// this port stays connected — background.ts tracks the connection, this side never reads or
+// sends anything over it. Kept as a literal, not a shared import — see background.ts's own
+// SIDEPANEL_PORT_NAME comment for why. Must match that copy exactly.
+const SIDEPANEL_PORT_NAME = 'sidepanel-alive';
+
 // Quick-launch row (right under the heading) — lets the manager jump straight to a supported
 // site without already having the right page open. Three of the four go to a specific search
 // rather than a bare homepage (more useful as a one-click starting point); DevITjobs stays the
@@ -144,6 +151,18 @@ export default function App() {
     getStoredTheme().then((stored) => {
       if (stored) setTheme(stored);
     });
+  }, []);
+
+  // See SIDEPANEL_PORT_NAME's comment above — this connection's only purpose is its own
+  // lifetime: background.ts tracks connect/disconnect to know whether the side panel is open,
+  // for the dashboard-triggered Wellfound enrichment guard. Reconnects on every mount
+  // (opening the panel); the explicit disconnect on unmount isn't strictly required (Chrome
+  // fires the background side's onDisconnect on its own once the panel's document is gone
+  // either way) but makes the "closed" transition immediate rather than waiting on Chrome's
+  // own teardown timing.
+  useEffect(() => {
+    const port = chrome.runtime.connect({ name: SIDEPANEL_PORT_NAME });
+    return () => port.disconnect();
   }, []);
 
   useEffect(() => {
