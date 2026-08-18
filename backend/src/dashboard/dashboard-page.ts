@@ -2622,10 +2622,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     });
   }
 
-  function clearSelection() {
-    bulkState.selected = {};
-  }
-
   function selectedCount() {
     return Object.keys(bulkState.selected).length;
   }
@@ -3144,13 +3140,32 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
 
   // Drops selections for leads that no longer exist (deleted elsewhere, purged, gone after a
-  // reload) — keeps them across filter/sort changes and across becoming detailed otherwise,
-  // since selection is no longer tied to detail status; only presence in state.leads matters.
+  // reload) — keeps them across ordinary filter/sort changes and across becoming detailed on
+  // their own (e.g. another user enriching a shared lead), since selection isn't tied to detail
+  // status in general; only presence in state.leads matters here. The one place selection DOES
+  // react to a detail-status change is deselectSucceededTargets below — a narrower, explicitly
+  // bulk-action-triggered rule, not a general "detailed leads can't be selected" policy.
   function pruneSelection() {
     var stillPresent = {};
     state.leads.forEach(function (lead) { stillPresent[lead.id] = true; });
     Object.keys(bulkState.selected).forEach(function (id) {
       if (!stillPresent[id]) delete bulkState.selected[id];
+    });
+  }
+
+  // Called after a bulk action (Enrich/Backfill contact/Backfill LinkedIn) finishes and
+  // loadLeads() has refreshed state.leads with the outcome — deselects only the leads from
+  // this run's own target set that isSucceeded now reports true for, leaving failed/skipped
+  // ones (including a whole-run guard rejection, where NO lead's state changed at all) still
+  // selected so the manager can fix the issue and immediately retry without re-selecting
+  // everything. A target id no longer in state.leads at all (not this function's concern —
+  // that's bulk-delete, already handled by pruneSelection above) is simply skipped here.
+  function deselectSucceededTargets(targetIds, isSucceeded) {
+    var byId = {};
+    state.leads.forEach(function (lead) { byId[lead.id] = lead; });
+    targetIds.forEach(function (id) {
+      var lead = byId[id];
+      if (lead && isSucceeded(lead)) delete bulkState.selected[id];
     });
   }
 
@@ -3368,9 +3383,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       bulkState.inFlight = false;
       bulkState.mode = null;
       bulkState.status = buildBulkSummary(result);
-      clearSelection();
       render();
-      loadLeads();
+      // Refinement: previously either cleared the whole selection unconditionally, or (the
+      // first fix) kept all of it unconditionally — neither matches what's actually useful.
+      // A succeeded lead moves out of "not detailed" and usually out of the current filter
+      // entirely, so there'd be no way to manually uncheck it; a failed/skipped one (including
+      // a whole-run guard rejection, e.g. the side panel not being open — no lead's detailState
+      // changes at all in that case) is exactly what the manager wants to fix and retry, so it
+      // stays checked. detailState(lead) === 'detailed' is true precisely when deepenLead()
+      // actually wrote real content — the same condition both enrichLeadsBulk (Techjobs/ITjobs)
+      // and deepenWellfoundLeads (Wellfound) count toward result.succeeded, so the number of
+      // leads this deselects lines up with that count.
+      loadLeads().then(function () {
+        deselectSucceededTargets(
+          targets.map(function (t) { return t.leadId; }),
+          function (lead) { return detailState(lead) === 'detailed'; },
+        );
+        render();
+      });
     }
 
     var port;
@@ -3466,9 +3496,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       bulkState.inFlight = false;
       bulkState.mode = null;
       bulkState.status = buildContactBulkSummary(result);
-      clearSelection();
       render();
-      loadLeads();
+      // Refinement: see startBulkEnrich's identical comment — deselect only the leads that
+      // actually resolved (hiring_contact_status moved off 'not_checked', i.e. 'found' or
+      // 'not_specified' — result.found + result.notSpecified), keeping unresolved/skipped ones
+      // (including a whole-run guard rejection) selected for an easy retry.
+      loadLeads().then(function () {
+        deselectSucceededTargets(
+          targets.map(function (t) { return t.leadId; }),
+          function (lead) { return lead.hiring_contact_status !== 'not_checked'; },
+        );
+        render();
+      });
     }
 
     var port;
@@ -3539,7 +3578,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       .then(function () {
         bulkState.inFlight = false;
         bulkState.mode = null;
-        clearSelection();
+        // Bug fix: see startBulkEnrich's identical comment — selection now persists across
+        // success and failure alike. On success, state.leads doesn't drop the deleted rows
+        // until loadLeads() below refetches — pruneSelection() (inside render()) then evicts
+        // their now-stale selected entries on ITS OWN following render, not this one. Nothing
+        // left to explicitly clear either way.
         render();
         loadLeads();
       });
@@ -3557,6 +3600,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // the other three buttons' plain "Xing N/M…" bulk-bar treatment.
   var COMPANY_LINKEDIN_POLL_MS = 1000;
   var companyLinkedinPollId = null;
+  // This tab's own selected-and-eligible target ids at the moment it started (or attached to)
+  // the run — set in startBulkCompanyLinkedin(), read by pollCompanyLinkedinBulkStatus()'s own
+  // completion branch to selectively deselect only the ones that actually resolved. The run
+  // itself is server-side and could in principle have been started by another tab with a
+  // different selection (see startBulkCompanyLinkedin's "alreadyRunning" branch) — this is
+  // always THIS tab's own selection, which is the only one relevant to what THIS tab shows
+  // as checked.
+  var companyLinkedinTargetIds = [];
 
   // Selected leads still eligible for a check: not yet checked AND actually has a
   // company_website to fetch — same "eligible subset of the selection" pattern as
@@ -3598,9 +3649,17 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         bulkState.inFlight = false;
         bulkState.mode = null;
         bulkState.status = buildCompanyLinkedinBulkSummary(status);
-        clearSelection();
         render();
-        loadLeads();
+        // Refinement: see startBulkEnrich's identical comment — deselect only the leads that
+        // actually resolved (company_linkedin_status moved off 'not_checked' — result.found +
+        // result.notSpecified), keeping unresolved/skipped ones selected for an easy retry.
+        loadLeads().then(function () {
+          deselectSucceededTargets(
+            companyLinkedinTargetIds,
+            function (lead) { return lead.company_linkedin_status !== 'not_checked'; },
+          );
+          render();
+        });
       })
       .catch(function () {
         // Best-effort — a failed status poll shouldn't spam errors or abort the run; the next
@@ -3618,6 +3677,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
     var targets = getSelectedNeedsCompanyLinkedinCheck().map(function (l) { return l.id; });
     if (targets.length === 0) return;
+    companyLinkedinTargetIds = targets;
 
     bulkState.inFlight = true;
     bulkState.mode = 'linkedin';
