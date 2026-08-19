@@ -205,6 +205,15 @@ export class LeadsController {
     return this.leadsService.classify(id);
   }
 
+  // TEMPORARY, Task 4 (AI-powered LPR search) manual quality-test scope — see
+  // LeadsService.lprSearch's own comment for why this exists and what to delete once a
+  // real decision is made. POST (not PATCH/GET) since it triggers a real Gemini (or, with
+  // ?provider=claude, Claude) call with no idempotency guarantee, but writes nothing itself.
+  @Post(':id/lpr-search')
+  async lprSearch(@Param('id') id: string, @Query('provider') provider?: string) {
+    return this.leadsService.lprSearch(id, provider);
+  }
+
   // Soft delete (dashboard "Delete" action in the detail panel). Any authenticated user, no
   // owner check — same shared-lead-base rule as status.
   @Patch(':id/delete')

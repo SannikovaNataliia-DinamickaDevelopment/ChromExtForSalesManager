@@ -887,6 +887,60 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text-secondary);
     line-height: 1.5;
   }
+  /* TEMPORARY — Task 4 (AI-powered LPR search) manual quality-test scope. Dashed border
+     (rather than .enrich-block's solid one) is a deliberate visual "this is experimental,
+     not a permanent feature" signal — delete this whole block alongside the JS functions
+     that use it once a real decision is made. */
+  .lpr-search-block {
+    margin-bottom: 20px;
+    padding: 12px;
+    background: var(--accent-2-tint);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+  }
+  .lpr-search-btn {
+    background: var(--accent);
+    color: var(--on-accent);
+    border: none;
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .lpr-search-btn:hover { opacity: 0.9; }
+  .lpr-search-btn:disabled { cursor: not-allowed; opacity: 0.6; }
+  .lpr-search-provider {
+    margin-left: 8px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 13px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--text);
+  }
+  .lpr-search-provider:disabled { cursor: not-allowed; opacity: 0.6; }
+  .lpr-search-provider-label { margin-top: 8px; font-size: 11px; color: var(--text-secondary); }
+  .lpr-search-result { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .lpr-search-error { color: var(--error); }
+  .lpr-search-people { margin: 0; padding-left: 18px; }
+  .lpr-search-people li { margin-bottom: 4px; color: var(--text); }
+  .lpr-search-raw { margin-top: 10px; }
+  .lpr-search-raw summary { cursor: pointer; color: var(--text-secondary); }
+  .lpr-search-raw pre {
+    margin-top: 6px;
+    padding: 8px;
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow-y: auto;
+    font-size: 11px;
+  }
   /* Plain layout wrapper only — no tinted/bordered card. Deliberately unlike .enrich-block:
      that box (padding + tint + border) reads as a highlighted, boxed "card" for a routine
      brand-colored action, and doubling that treatment with --error's more attention-grabbing
@@ -1181,6 +1235,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // reopened for the same lead while a request is still in flight.
   var enrichingLeadIds = {};
   var currentSidebarLeadId = null;
+  // TEMPORARY — Task 4 (AI-powered LPR search) manual quality-test scope. Same
+  // in-flight-tracking pattern as enrichingLeadIds above. Delete alongside
+  // buildLprSearchBlock/startLprSearch/renderLprSearchResult once a real decision is made.
+  var lprSearchInFlight = {};
 
   // Bulk "Enrich selected" (extension messaging over a long-lived Port — see background.ts's
   // ENRICH_LEADS handler, chrome.runtime.onConnectExternal). A Port, not one-shot sendMessage
@@ -2762,6 +2820,112 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return wrap;
   }
 
+  // TEMPORARY — Task 4 (AI-powered LPR search), manual quality-test scope only: one lead at a
+  // time, on demand, nothing persisted. Delete this block/its three functions/its sidebar call
+  // site/the backend route+service method once a real decision (persistence, batch, cost) is
+  // made either way. Gated on lead.company being present — company name is the one hard
+  // requirement per the task spec, and the button would just error immediately without it.
+  function buildLprSearchBlock(lead) {
+    var wrap = document.createElement('div');
+    wrap.className = 'lpr-search-block';
+
+    var inFlight = !!lprSearchInFlight[lead.id];
+    var button = el('button', {
+      className: 'lpr-search-btn',
+      type: 'button',
+      text: inFlight ? 'Searching\\u2026' : 'LPR Search (test)',
+    });
+    button.disabled = inFlight;
+    button.title = 'Manual test only \\u2014 searches for this company\\u2019s leadership (CEO/CTO/Founder/etc.). Nothing is saved.';
+
+    // Provider select — Gemini stays the default (unchanged path); Claude is a separate,
+    // opt-in alternative for comparing search quality, not a replacement. See
+    // claude-classifier.service.ts / leads.service.ts's lprSearch for the backend side.
+    var providerSelect = el('select', { className: 'lpr-search-provider' }, [
+      el('option', { value: 'gemini', text: 'Gemini + Google Search' }),
+      el('option', { value: 'claude', text: 'Claude + web search (test)' }),
+    ]);
+    providerSelect.disabled = inFlight;
+
+    var resultEl = document.createElement('div');
+    resultEl.className = 'lpr-search-result';
+
+    button.addEventListener('click', function () {
+      startLprSearch(lead, button, providerSelect, resultEl);
+    });
+
+    wrap.appendChild(button);
+    wrap.appendChild(providerSelect);
+    wrap.appendChild(resultEl);
+    return wrap;
+  }
+
+  function startLprSearch(lead, button, providerSelect, resultEl) {
+    if (lprSearchInFlight[lead.id]) return;
+    lprSearchInFlight[lead.id] = true;
+    button.disabled = true;
+    button.textContent = 'Searching\\u2026';
+    providerSelect.disabled = true;
+    resultEl.innerHTML = '';
+    resultEl.textContent = 'Searching \\u2014 grounded search can take a while\\u2026';
+
+    var provider = providerSelect.value;
+    apiFetch('/leads/' + lead.id + '/lpr-search?provider=' + encodeURIComponent(provider), { method: 'POST' })
+      .then(function (result) {
+        renderLprSearchResult(resultEl, result);
+      })
+      .catch(function (err) {
+        resultEl.textContent = 'Failed: ' + err.message;
+      })
+      .finally(function () {
+        delete lprSearchInFlight[lead.id];
+        button.disabled = false;
+        button.textContent = 'LPR Search (test)';
+        providerSelect.disabled = false;
+      });
+  }
+
+  // Deliberately shows the raw model text alongside any parsed people — judging search
+  // quality (and hallucination risk) from the model's own words is the entire point of this
+  // manual test, not just whatever the lenient parse in gemini-classifier.service.ts managed
+  // to extract.
+  function renderLprSearchResult(resultEl, result) {
+    resultEl.innerHTML = '';
+    var providerLabel = result && result.provider === 'claude' ? 'Claude' : 'Gemini';
+    if (!result || !result.ok) {
+      var errText = providerLabel + ' call failed: ' + ((result && result.error) || 'unknown error');
+      if (result && result.quotaExhausted) errText += ' (quota exhausted)';
+      resultEl.appendChild(el('div', { className: 'lpr-search-error', text: errText }));
+      return;
+    }
+
+    resultEl.appendChild(el('div', { className: 'lpr-search-provider-label', text: 'Provider: ' + providerLabel }));
+
+    if (result.people && result.people.length > 0) {
+      var list = document.createElement('ul');
+      list.className = 'lpr-search-people';
+      result.people.forEach(function (p) {
+        var li = document.createElement('li');
+        li.appendChild(document.createTextNode((p.role || '?') + ': ' + (p.name || '?') + ' \\u2014 '));
+        if (isSafeUrl(p.linkedin_url)) {
+          li.appendChild(el('a', { className: 'website-link', href: p.linkedin_url, target: '_blank', rel: 'noreferrer', text: p.linkedin_url }));
+        } else {
+          li.appendChild(document.createTextNode(p.linkedin_url || '(no url)'));
+        }
+        list.appendChild(li);
+      });
+      resultEl.appendChild(list);
+    } else {
+      resultEl.appendChild(el('div', { className: 'lpr-search-empty', text: 'No leadership profiles found.' }));
+    }
+
+    var rawDetails = document.createElement('details');
+    rawDetails.className = 'lpr-search-raw';
+    rawDetails.appendChild(el('summary', { text: 'Raw model response' }));
+    rawDetails.appendChild(el('pre', { text: result.raw || '(empty)' }));
+    resultEl.appendChild(rawDetails);
+  }
+
   // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
   // (any lead can be deleted, not just undetailed ones). Confirmed once, mentioning it's
   // recoverable — distinct from /dashboard/deleted's "Delete permanently" confirm, which is
@@ -2890,6 +3054,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // excludes 'error' on purpose — see needsEnrich's own comment.
     if (detailState(lead) !== 'detailed') {
       content.appendChild(buildEnrichBlock(lead));
+    }
+
+    // TEMPORARY — Task 4 manual test button, see buildLprSearchBlock's own comment. Gated on
+    // company being present, the one hard requirement for this call.
+    if (lead.company) {
+      content.appendChild(buildLprSearchBlock(lead));
     }
 
     content.appendChild(buildDetailRow('Company', lead.company));

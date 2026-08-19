@@ -1,12 +1,14 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as ExcelJS from 'exceljs';
 import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { AppError } from '../common/app-error';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
 import { DESTINATION, Destination } from '../destinations/destination.interface';
+import { ClaudeClassifierService } from './claude-classifier.service';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
@@ -33,6 +35,7 @@ export class LeadsService {
     @Inject(DB) private readonly db: Db,
     @Inject(DESTINATION) private readonly destination: Destination,
     private readonly geminiClassifier: GeminiClassifierService,
+    private readonly claudeClassifier: ClaudeClassifierService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -387,6 +390,38 @@ export class LeadsService {
     }
 
     return updated;
+  }
+
+  // Task 4 (AI-powered LPR search) — TEMPORARY, manual quality-test scope only: one lead at a
+  // time, triggered on demand (dashboard test button/direct API call), and deliberately no DB
+  // write and no destination push. This is purely to judge search-result quality against real
+  // leads before any batch run or persistence design is decided — delete this method (and the
+  // controller route, and the dashboard's test button) once that decision is made either way.
+  // Company name is the only requirement (per the task spec — "nothing works without it");
+  // company_website is passed through when present to help disambiguate a generic company name,
+  // but is optional.
+  // `provider` picks which model runs the search — Gemini stays the default (unchanged path);
+  // 'claude' is a separate, opt-in alternative (Claude + web_search, see
+  // claude-classifier.service.ts) for comparing search quality, not a replacement.
+  async lprSearch(id: string, provider?: string) {
+    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    if (!existing.company) {
+      throw new AppError(HttpStatus.BAD_REQUEST, 'MISSING_COMPANY', 'This lead has no company name — nothing to search for.');
+    }
+
+    const useClaude = provider === 'claude';
+    const result = useClaude
+      ? await this.claudeClassifier.searchLeadership(existing.company, existing.company_website)
+      : await this.geminiClassifier.searchLeadership(existing.company, existing.company_website);
+    return {
+      company: existing.company,
+      company_website: existing.company_website,
+      provider: useClaude ? 'claude' : 'gemini',
+      ...result,
+    };
   }
 
   // Status is shared per lead (decision log), so any authenticated user may update any lead.
