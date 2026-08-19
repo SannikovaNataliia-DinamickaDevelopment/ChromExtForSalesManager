@@ -191,9 +191,39 @@ export default function App() {
   // fires the background side's onDisconnect on its own once the panel's document is gone
   // either way) but makes the "closed" transition immediate rather than waiting on Chrome's
   // own teardown timing.
+  //
+  // Self-healing (bug fix): the background service worker can die and restart independently of
+  // this panel — an MV3 idle-timeout, a crash, a browser update — without this panel's own
+  // React tree ever unmounting. The old service-worker instance's copy of this port dies with
+  // it, but a plain one-shot connect() here would never notice: background.ts's
+  // openSidePanelCount would silently reset to 0 in the fresh worker instance while the panel
+  // stays visibly open, producing a false "open the side panel first" error on the next
+  // dashboard-triggered Wellfound action even though it never actually closed. Reconnecting on
+  // every onDisconnect (not just once on mount) keeps that bookkeeping accurate regardless of
+  // why the previous connection died.
   useEffect(() => {
-    const port = chrome.runtime.connect({ name: SIDEPANEL_PORT_NAME });
-    return () => port.disconnect();
+    let disposed = false;
+    let port: chrome.runtime.Port | null = null;
+
+    const connect = () => {
+      if (disposed) return;
+      try {
+        port = chrome.runtime.connect({ name: SIDEPANEL_PORT_NAME });
+      } catch {
+        // Extension context invalidated (e.g. the extension itself was just reloaded) — Chrome
+        // tears down this whole document in that case anyway, nothing further to do here.
+        return;
+      }
+      port.onDisconnect.addListener(() => {
+        if (!disposed) connect();
+      });
+    };
+    connect();
+
+    return () => {
+      disposed = true;
+      port?.disconnect();
+    };
   }, []);
 
   useEffect(() => {

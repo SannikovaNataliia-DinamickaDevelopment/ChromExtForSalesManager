@@ -2,7 +2,7 @@ import { deepenLead } from '../lib/api';
 import { getToken } from '../lib/auth';
 import { BACKEND_URL, isSupportedUrl } from '../lib/backend';
 import { FetchDeepening } from '../lib/deepen';
-import { deepenWellfoundLeads, WELLFOUND_RUN_CAP } from '../lib/wellfound-deepen';
+import { deepenWellfoundLeads, runWellfoundAutoDeepenWaves, WELLFOUND_RUN_CAP } from '../lib/wellfound-deepen';
 import { backfillWellfoundContact } from '../lib/wellfound-contact-backfill';
 
 const BULK_ENRICH_PORT_NAME = 'enrich-bulk';
@@ -313,18 +313,27 @@ interface BulkEnrichResult {
   ok: true;
   succeeded: number;
   failed: number;
-  // Never attempted this run, for two distinct reasons the dashboard reports separately:
-  // over WELLFOUND_RUN_CAP vs. the circuit breaker tripping partway through the capped batch.
-  skippedCapLeadIds: string[];
+  // Never attempted this run because the whole Wellfound wave sequence stopped early (circuit
+  // breaker inside a wave, or the background window closed) — the untried tail, not a failure.
+  // No run-cap concept applies here any more (see this function's own doc comment below), so
+  // there's no separate "skipped for being over the cap" bucket the way there used to be.
   skippedCircuitBreakerLeadIds: string[];
 }
 
 // Dashboard bulk "Enrich selected" (ENRICH_LEADS, plural — distinct from the single-lead
 // ENRICH_LEAD handler above). Groups by sourceSite and reuses the exact same per-source
 // deepening the single-lead path and the batch "auto by all" flow use: FetchDeepening for
-// Techjobs/ITjobs (fast, no pacing needed for this button), and deepenWellfoundLeads() for
-// Wellfound — its own human-pace delay, run cap, and circuit breaker are all reused unchanged,
-// never a second Wellfound implementation.
+// Techjobs/ITjobs (fast, no pacing needed for this button — unchanged, was never capped), and
+// (19.08 follow-up) runWellfoundAutoDeepenWaves for Wellfound — the SAME wave+cooldown-pause
+// orchestrator the automated multi-page pagination flow's auto-deepen step uses
+// (wellfound-pagination.ts calls it from the side panel; this is the same plain async function
+// called directly from here instead — it has no side-panel/DOM dependencies of its own, only
+// what deepenWellfoundLeads already needed, which this file already imports and calls
+// elsewhere, so no adapter was needed). Replaces the old single deepenWellfoundLeads() call that
+// silently capped a selection at WELLFOUND_RUN_CAP and dropped the rest — the FULL Wellfound
+// selection is now processed automatically in WELLFOUND_RUN_CAP-sized waves with a cooldown
+// pause between them, no re-trigger needed. Company LinkedIn and LPR search are untouched —
+// separate features, never routed through this bulk-enrich path.
 async function enrichLeadsBulk(
   rawLeads: unknown,
   onProgress: (progress: BulkEnrichProgress) => void,
@@ -339,19 +348,18 @@ async function enrichLeadsBulk(
   const wellfoundLeads = leads.filter((l) => l.sourceSite === 'wellfound');
   const otherLeads = leads.filter((l) => l.sourceSite !== 'wellfound');
 
-  const wellfoundCapped = wellfoundLeads.slice(0, WELLFOUND_RUN_CAP);
-  const skippedCapLeadIds = wellfoundLeads.slice(WELLFOUND_RUN_CAP).map((l) => l.leadId);
-
   // Checked upfront, before any work (Techjobs/ITjobs included) starts — see
   // SIDEPANEL_PORT_NAME's comment above for why. A mixed selection with the panel closed
   // rejects the whole request rather than silently doing the non-Wellfound portion and
   // failing only the Wellfound part; same "reject the whole request outright" shape as the
-  // wellfoundBulkInFlight guard just above this function's call site.
-  if (wellfoundCapped.length > 0 && !sidePanelOpen()) {
+  // wellfoundBulkInFlight guard just above this function's call site. The panel now needs to
+  // stay open for potentially longer (an uncapped selection can span several waves), same
+  // requirement as before, just for more of it.
+  if (wellfoundLeads.length > 0 && !sidePanelOpen()) {
     throw new Error(WELLFOUND_SIDEPANEL_REQUIRED_ERROR);
   }
 
-  const total = otherLeads.length + wellfoundCapped.length;
+  const total = otherLeads.length + wellfoundLeads.length;
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -383,22 +391,23 @@ async function enrichLeadsBulk(
   }
 
   let skippedCircuitBreakerLeadIds: string[] = [];
-  if (wellfoundCapped.length > 0) {
-    const result = await deepenWellfoundLeads(
-      wellfoundCapped.map((l) => ({ id: l.leadId, source_url: l.sourceUrl })),
-      (progress) => onProgress({ completed: completed + progress.current, total }),
+  if (wellfoundLeads.length > 0) {
+    const result = await runWellfoundAutoDeepenWaves(
+      wellfoundLeads.map((l) => ({ id: l.leadId, source_url: l.sourceUrl })),
+      (progress) => onProgress({ completed: completed + progress.overallProcessed, total }),
     );
     completed += result.processed;
     succeeded += result.succeeded;
     failed += result.processed - result.succeeded;
     if (result.stoppedEarly) {
-      // The circuit breaker stopped before reaching the end of the capped batch — the
-      // untried tail was never attempted, so it's a skip, not a failure.
-      skippedCircuitBreakerLeadIds = wellfoundCapped.slice(result.processed).map((l) => l.leadId);
+      // The wave sequence stopped before reaching the end of the full selection (a circuit
+      // breaker inside one wave, or the background window closed) — the untried tail was
+      // never attempted, so it's a skip, not a failure.
+      skippedCircuitBreakerLeadIds = wellfoundLeads.slice(result.processed).map((l) => l.leadId);
     }
   }
 
-  return { ok: true, succeeded, failed, skippedCapLeadIds, skippedCircuitBreakerLeadIds };
+  return { ok: true, succeeded, failed, skippedCircuitBreakerLeadIds };
 }
 
 interface BulkContactResult {

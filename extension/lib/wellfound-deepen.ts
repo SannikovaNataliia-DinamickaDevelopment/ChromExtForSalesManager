@@ -18,6 +18,42 @@ export const WELLFOUND_AUTO_BATCH_POSTINGS = 30;
 export const WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS = 30_000;
 export const WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS = 60_000;
 
+// How often waitKeepingServiceWorkerAlive (below) makes a real chrome.* call during a long
+// wait. Chrome tears down an MV3 background service worker after ~30s with no tracked
+// extension-API activity — a plain setTimeout is invisible to that tracker, and an open
+// chrome.windows popup or an idle chrome.runtime.Port do NOT reset it either (only actual API
+// calls/events do). 15s keeps a comfortable margin under the ~30s threshold.
+const SERVICE_WORKER_KEEPALIVE_TICK_MS = 15_000;
+
+// Bug fix (found via the dashboard's bulk "Enrich selected" — background.ts's enrichLeadsBulk
+// calls runWellfoundAutoDeepenWaves from INSIDE the service worker, unlike App.tsx's own call
+// to the same function, which runs in the side panel — an ordinary extension page never
+// subject to the service-worker idle-kill): a bare 30-60s setTimeout between waves, with no
+// window open and no chrome API activity for the whole span, let the service worker get torn
+// down mid-pause — silently killing the in-flight run and resetting all its module state
+// (openSidePanelCount included, which is what produced the "open the side panel first" error
+// on retry even though the panel never actually closed). Chunks the wait into
+// SERVICE_WORKER_KEEPALIVE_TICK_MS pieces and makes one cheap, real chrome.runtime call
+// between each — the call's result is irrelevant, only the act of making it resets the idle
+// timer. Harmless overhead when this runs in the side panel instead (never at risk in the
+// first place), so applied unconditionally rather than only for the background-worker caller.
+async function waitKeepingServiceWorkerAlive(ms: number): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const tick = Math.min(SERVICE_WORKER_KEEPALIVE_TICK_MS, remaining);
+    await new Promise<void>((resolve) => setTimeout(resolve, tick));
+    remaining -= tick;
+    if (remaining > 0) {
+      try {
+        await chrome.runtime.getPlatformInfo();
+      } catch {
+        // Extension context gone (reload/uninstall) — nothing to keep alive for any more.
+        return;
+      }
+    }
+  }
+}
+
 // Wellfound is known to be anti-bot-aggressive — meaningfully slower/more cautious pacing
 // than the 1.5-3s used for the plain-fetch strategy (deepen.ts). Exported so
 // wellfound-pagination.ts can reuse the exact same pace for its list-page walk instead of
@@ -425,9 +461,9 @@ export async function runWellfoundAutoDeepenWaves(
 
     const isLastWave = w === waveCount - 1;
     if (!isLastWave) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS + Math.random() * (WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS - WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS));
-      });
+      await waitKeepingServiceWorkerAlive(
+        WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS + Math.random() * (WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS - WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS),
+      );
     }
   }
 
