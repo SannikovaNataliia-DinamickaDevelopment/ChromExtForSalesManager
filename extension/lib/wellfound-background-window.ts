@@ -141,6 +141,16 @@ export class WellfoundBackgroundWindow {
     // real work. The overlay is a visual warning, not a safety mechanism.
   }
 
+  // Re-sends the current overlay text to the tab's CURRENTLY loaded page, without navigating —
+  // lets a caller update the "don't close this window" message mid-wait (e.g. an automated
+  // pagination run's inter-batch cooldown, see wellfound-pagination.ts's
+  // runWellfoundAutoPagination), not just on the next navigate() call. Best-effort, same as
+  // showOverlayWithRetry itself: a no-op if the window's already gone.
+  async refreshOverlay(): Promise<void> {
+    if (this.closed || this.tabId === null) return;
+    await this.showOverlayWithRetry(this.tabId);
+  }
+
   async sendMessage<T extends BackgroundMessageResponse>(message: unknown): Promise<T> {
     if (this.closed || this.tabId === null) {
       throw new WellfoundBackgroundWindowClosedError();

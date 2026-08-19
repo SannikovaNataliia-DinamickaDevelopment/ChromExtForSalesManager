@@ -6,6 +6,18 @@ import { pacedDelay, WellfoundBackgroundWindow, WellfoundBackgroundWindowClosedE
 export const WELLFOUND_RUN_CAP = 30;
 export const WELLFOUND_CIRCUIT_BREAKER_THRESHOLD = 3;
 
+// 19.08 call (automated multi-page pagination + wave-based deepening below): current
+// empirically-guessed batch size, per the meeting — postings SCANNED per batch, not saved
+// (pacing is about how much traffic a run generates against Wellfound, independent of how many
+// results happened to match the manager's date range). Named + easy to retune, same convention
+// as WELLFOUND_RUN_CAP. Exported here (rather than living in wellfound-pagination.ts, which is
+// the only place that scans postings) because runWellfoundAutoDeepenWaves below reuses the same
+// pause window between deepening waves — one shared pair of tunables for "give Wellfound's
+// anti-bot system a break" wherever that need shows up, not two independently-drifting copies.
+export const WELLFOUND_AUTO_BATCH_POSTINGS = 30;
+export const WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS = 30_000;
+export const WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS = 60_000;
+
 // Wellfound is known to be anti-bot-aggressive — meaningfully slower/more cautious pacing
 // than the 1.5-3s used for the plain-fetch strategy (deepen.ts). Exported so
 // wellfound-pagination.ts can reuse the exact same pace for its list-page walk instead of
@@ -320,4 +332,104 @@ export async function deepenWellfoundLeads(
   }
 
   return { processed, succeeded, stoppedEarly, interrupted, errorFlagged };
+}
+
+export interface WellfoundAutoDeepenWaveProgress {
+  waveIndex: number; // 1-based
+  waveCount: number;
+  current: number; // within the current wave
+  total: number; // current wave's size (<= WELLFOUND_RUN_CAP)
+  overallProcessed: number;
+  overallTotal: number;
+  succeeded: number;
+}
+
+export interface WellfoundAutoDeepenResult {
+  processed: number;
+  succeeded: number;
+  errorFlagged: number;
+  waves: number;
+  stoppedEarly: boolean;
+  interrupted: boolean;
+}
+
+/**
+ * 19.08 call, point 6: automated multi-page pagination (wellfound-pagination.ts's
+ * runWellfoundAutoPagination) can surface far more new leads in one run than a single
+ * deepenWellfoundLeads() call handles — that function's own WELLFOUND_RUN_CAP silently drops
+ * everything past position 30 in its targets list, and nothing else ever picks a dropped lead
+ * back up automatically; it just sits missing a description until a human notices it on the
+ * dashboard and clicks Enrich. This wraps deepenWellfoundLeads rather than changing it: chunk
+ * targets into waves of WELLFOUND_RUN_CAP, run each wave through the existing, unchanged
+ * function (so per-wave behavior — circuit breaker, window-closed detection, 404 flagging —
+ * stays exactly as already validated), and drive the waves sequentially with the same kind of
+ * macro cooldown pause pagination uses between its own batches (WELLFOUND_AUTO_BATCH_PAUSE_MIN/
+ * MAX_MS) — a multi-wave deepening run generates meaningfully more Wellfound traffic than any
+ * single run did before this feature, so it gets the same anti-bot consideration.
+ *
+ * Each wave opens and closes its own dedicated background window (deepenWellfoundLeads' own
+ * lifecycle, untouched) rather than sharing one across waves — simpler, and the inter-wave
+ * pause naturally has no window open during it (there's nothing for the manager to close to
+ * signal "stop" in that gap; worst case is an extra wait past when they wanted to stop, same
+ * tradeoff a closed background window between manual "Continue" clicks already had).
+ *
+ * Stops the whole sequence (does not start a further wave) the moment one wave itself stops
+ * early — either the circuit breaker tripped (likely a block; starting another wave right after
+ * would be the wrong move) or the manager closed that wave's background window (deliberate,
+ * respected immediately). Whatever succeeded across already-completed waves stays saved either
+ * way.
+ */
+export async function runWellfoundAutoDeepenWaves(
+  targets: DeepeningTarget[],
+  onProgress: (progress: WellfoundAutoDeepenWaveProgress) => void,
+): Promise<WellfoundAutoDeepenResult> {
+  const waveCount = Math.ceil(targets.length / WELLFOUND_RUN_CAP);
+  let processed = 0;
+  let succeeded = 0;
+  let errorFlagged = 0;
+  let stoppedEarly = false;
+  let interrupted = false;
+  let wavesRun = 0;
+
+  for (let w = 0; w < waveCount; w++) {
+    const waveTargets = targets.slice(w * WELLFOUND_RUN_CAP, (w + 1) * WELLFOUND_RUN_CAP);
+    wavesRun++;
+    const processedBeforeWave = processed;
+    const succeededBeforeWave = succeeded;
+
+    const result = await deepenWellfoundLeads(waveTargets, (progress) => {
+      onProgress({
+        waveIndex: w + 1,
+        waveCount,
+        current: progress.current,
+        total: progress.total,
+        overallProcessed: processedBeforeWave + progress.current,
+        overallTotal: targets.length,
+        succeeded: succeededBeforeWave + progress.succeeded,
+      });
+    });
+
+    processed += result.processed;
+    succeeded += result.succeeded;
+    errorFlagged += result.errorFlagged;
+
+    if (result.interrupted) {
+      interrupted = true;
+      stoppedEarly = true;
+      break;
+    }
+    if (result.stoppedEarly) {
+      stoppedEarly = true;
+      break;
+    }
+
+    const isLastWave = w === waveCount - 1;
+    if (!isLastWave) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS + Math.random() * (WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS - WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS));
+      });
+    }
+  }
+
+  return { processed, succeeded, errorFlagged, waves: wavesRun, stoppedEarly, interrupted };
 }

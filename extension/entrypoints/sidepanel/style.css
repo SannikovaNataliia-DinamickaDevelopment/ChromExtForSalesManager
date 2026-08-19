@@ -278,3 +278,154 @@ h1 {
   flex: 1;
 }
 
+/* Jira-style date-range picker (DateRangePicker.tsx) — React port of the dashboard's
+   Published/Scraped date-range filters (backend/src/dashboard/dashboard-page.ts), single-month
+   instead of that page's side-by-side two-month grid since the side panel is a narrow,
+   user-resizable column, not a full page. Same corporate palette tokens as the rest of this
+   file, same collapsed-field + popover + presets + calendar interaction pattern. */
+.date-range-field-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.date-range-nav {
+  flex: 0 0 auto;
+  width: 26px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.date-range-nav:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.date-range-field {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.date-range-field:disabled {
+  cursor: not-allowed;
+  color: var(--text-secondary);
+}
+
+.date-range-popover {
+  margin-top: 6px;
+  padding: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.date-range-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.date-range-preset-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.date-range-preset-btn:hover {
+  border-color: var(--pink);
+  color: var(--pink);
+}
+
+.date-range-month-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.date-range-month-nav {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.date-range-month-nav:hover {
+  color: var(--pink);
+}
+
+.date-range-weekdays,
+.date-range-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.date-range-weekdays span {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-secondary);
+  padding-bottom: 2px;
+}
+
+.date-range-day {
+  border: none;
+  background: none;
+  color: var(--text);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.date-range-day.outside {
+  cursor: default;
+}
+
+.date-range-day:hover:not(.outside) {
+  background: var(--chip-bg-neutral);
+}
+
+.date-range-day.today {
+  color: var(--pink);
+  font-weight: 600;
+}
+
+.date-range-day.in-range {
+  background: var(--chip-bg-accent);
+  border-radius: 0;
+}
+
+.date-range-day.range-start,
+.date-range-day.range-end {
+  background: var(--pink);
+  color: var(--on-accent);
+}
+

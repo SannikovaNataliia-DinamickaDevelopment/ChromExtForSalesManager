@@ -7,8 +7,13 @@ import { MAX_PAGES, runMultiPageParse, type MultiPageProgress } from '../../lib/
 import { getStoredTheme, setStoredTheme, type Theme } from '../../lib/theme';
 import {
   deepenWellfoundLeads,
+  runWellfoundAutoDeepenWaves,
+  WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS,
+  WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS,
+  WELLFOUND_AUTO_BATCH_POSTINGS,
   WELLFOUND_CIRCUIT_BREAKER_THRESHOLD,
   WELLFOUND_RUN_CAP,
+  type WellfoundAutoDeepenWaveProgress,
   type WellfoundDeepenProgress,
 } from '../../lib/wellfound-deepen';
 import {
@@ -19,11 +24,15 @@ import {
   type WellfoundPaginationBookmark,
 } from '../../lib/wellfound-pagination-bookmark';
 import {
+  runWellfoundAutoPagination,
   runWellfoundPagination,
+  WELLFOUND_AUTO_PAGINATION_MAX_PAGES,
   WELLFOUND_PAGINATION_BATCH_SIZE,
+  type WellfoundAutoPaginationProgress,
   type WellfoundPaginationProgress,
   type WellfoundPaginationResult,
 } from '../../lib/wellfound-pagination';
+import DateRangePicker, { type DateRange } from './DateRangePicker';
 import type { JobLeadRecord } from '../../lib/types';
 
 // Multi-page (scope D) only works on sites built on this template — confirmed identical
@@ -33,6 +42,13 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 // Separate, dedicated Wellfound-only list-pagination flow (see wellfound-pagination.ts) — not
 // the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
 const WELLFOUND_HOSTNAME = 'wellfound.com';
+
+// 19.08 call: the fixed-5-page-batch "Parse from here"/"Continue" flow below is replaced for
+// normal use by the automated all-pages flow (handleWellfoundAutoParse) — a significant enough
+// behavior change that the old UI stays in the code as a fallback rather than being deleted.
+// Flip this back to true (and nothing else) to restore it if the automated flow needs to be
+// rolled back.
+const SHOW_LEGACY_WELLFOUND_PAGINATION = false;
 
 // Side panel liveness port (background.ts's dashboard-triggered Wellfound enrichment guard):
 // connecting here just tells background.ts "the side panel is currently open" for as long as
@@ -143,6 +159,21 @@ export default function App() {
   const wellfoundPageRunningRef = useRef(false);
   const [wellfoundPageProgress, setWellfoundPageProgress] = useState<WellfoundPaginationProgress | null>(null);
   const [wellfoundPageSummary, setWellfoundPageSummary] = useState<string | null>(null);
+  // 19.08 call: automated all-pages Wellfound flow, replacing the block above for normal use
+  // (see SHOW_LEGACY_WELLFOUND_PAGINATION). Same synchronous-ref double-click guard as
+  // wellfoundPageRunningRef above — only one button here, but the guard is still needed against
+  // a fast double-click before React re-renders and disables it.
+  const [wellfoundAutoRange, setWellfoundAutoRange] = useState<DateRange | null>(null);
+  const wellfoundAutoRunningRef = useRef(false);
+  const [wellfoundAutoRunning, setWellfoundAutoRunning] = useState(false);
+  const [wellfoundAutoProgress, setWellfoundAutoProgress] = useState<WellfoundAutoPaginationProgress | null>(null);
+  const [wellfoundAutoSummary, setWellfoundAutoSummary] = useState<string | null>(null);
+  // Distinct from wellfoundDeepening/wellfoundDeepenSummary (shared by handleParse and the
+  // legacy pagination flow) — this automated flow can surface far more leads in one run, so its
+  // deepening runs in waves (runWellfoundAutoDeepenWaves) with its own progress shape; keeping
+  // it in separate state avoids one flow's summary overwriting the other's mid-run.
+  const [wellfoundAutoDeepenProgress, setWellfoundAutoDeepenProgress] = useState<WellfoundAutoDeepenWaveProgress | null>(null);
+  const [wellfoundAutoDeepenSummary, setWellfoundAutoDeepenSummary] = useState<string | null>(null);
   // Default is dark, matching the dashboard's current (only) look, until/unless the user's
   // stored choice loads from chrome.storage.local (see lib/theme.ts).
   const [theme, setTheme] = useState<Theme>('dark');
@@ -544,6 +575,145 @@ export default function App() {
     runWellfoundPageBatch(wellfoundBookmark.lastPage + 1, 'continue');
   };
 
+  // 19.08 call, point 6: the automated pagination flow below can surface far more new leads in
+  // one run than a single deepenWellfoundLeads() call handles (its own WELLFOUND_RUN_CAP would
+  // otherwise silently drop the rest — see runWellfoundAutoDeepenWaves' own doc comment). Wave-
+  // based counterpart to runWellfoundDeepen above; kept separate rather than making that
+  // function wave-aware too, since handleParse's single-page flow realistically never approaches
+  // WELLFOUND_RUN_CAP in one run and shouldn't need to reason about multi-wave state.
+  const runWellfoundAutoDeepen = (results: unknown): Promise<void> => {
+    const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
+    const targets = items
+      .filter((r) => r?.lead && !r.lead.description && !r.lead.enrichment_error)
+      .map((r) => ({ id: r.lead.id, source_url: r.lead.source_url }));
+    if (targets.length === 0) return Promise.resolve();
+
+    setWellfoundAutoDeepenSummary(null);
+    setWellfoundAutoDeepenProgress({
+      waveIndex: 1,
+      waveCount: Math.ceil(targets.length / WELLFOUND_RUN_CAP),
+      current: 0,
+      total: Math.min(targets.length, WELLFOUND_RUN_CAP),
+      overallProcessed: 0,
+      overallTotal: targets.length,
+      succeeded: 0,
+    });
+    return runWellfoundAutoDeepenWaves(targets, (progress) => {
+      setWellfoundAutoDeepenProgress(progress);
+    })
+      .then((result) => {
+        // Every lead here was a brand-new save from this run (targets is built from
+        // description-less saves), so published_at is null for all of them until a
+        // successful deepen backfills it from the detail page's real datePosted — a lead
+        // that doesn't succeed (still-pending retry, or a definitive 404 like a removed
+        // posting) simply never gets one. Surfaced explicitly here — rather than letting the
+        // manager discover it only by cross-checking the dashboard's Published Date filter
+        // against a raw "N saved" count, which is what actually happened the first time this
+        // ran (a 404'd posting had no date and silently didn't show under that filter).
+        const missingDate = targets.length - result.succeeded;
+        const dateCaveat =
+          missingDate > 0
+            ? ` ${targets.length} saved posting(s) needed deepening to get a real published date — ${missingDate} may still be ` +
+              'missing one (pending a retry, or the posting turned out to be gone/blocked) and won\'t show under the dashboard\'s ' +
+              'Published Date filter until then.'
+            : '';
+        if (result.interrupted) {
+          setWellfoundAutoDeepenSummary(
+            `Wellfound deepening was interrupted — the background window was closed. ` +
+              `${result.succeeded} of ${result.processed} attempted lead(s) completed before that across ${result.waves} wave(s); ` +
+              'already-saved leads were kept. Re-run "Parse", or use the dashboard\'s Enrich button, to retry the rest.' +
+              dateCaveat,
+          );
+        } else if (result.stoppedEarly) {
+          setWellfoundAutoDeepenSummary(
+            `Wellfound deepening stopped after ${WELLFOUND_CIRCUIT_BREAKER_THRESHOLD} consecutive failures (wave ${result.waves}) — ` +
+              `possible bot-detection block. ${result.succeeded} of ${result.processed} attempted lead(s) succeeded.` +
+              dateCaveat,
+          );
+        } else {
+          setWellfoundAutoDeepenSummary(
+            `Wellfound deepening done — ${result.succeeded} of ${result.processed} lead(s) succeeded across ${result.waves} wave(s).` +
+              dateCaveat,
+          );
+        }
+      })
+      .finally(() => setWellfoundAutoDeepenProgress(null));
+  };
+
+  // 19.08 call: fully automated Wellfound multi-page parse — one click, a date-range pick
+  // upfront, then hands-off (see runWellfoundAutoPagination's own doc comment for the full
+  // rationale, especially why it can't reuse Techjobs' chronological early-stop). Re-derives the
+  // active tab fresh at click time (same as runWellfoundPageBatch above) rather than trusting
+  // wellfoundListTabUrl directly, in case the manager switched tabs after picking a range.
+  const handleWellfoundAutoParse = async () => {
+    if (wellfoundAutoRunningRef.current) return;
+    if (!wellfoundAutoRange) {
+      setError('Pick a date range first.');
+      return;
+    }
+    wellfoundAutoRunningRef.current = true;
+    setWellfoundAutoRunning(true);
+    setError(null);
+    setWellfoundAutoSummary(null);
+    setWellfoundAutoProgress(null);
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      let hostname = '';
+      try {
+        hostname = tab?.url ? new URL(tab.url).hostname : '';
+      } catch {
+        // leave hostname empty; falls through to the "not a Wellfound tab" error below
+      }
+      if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
+        setError('Open a Wellfound list page in this tab first.');
+        return;
+      }
+
+      const baseUrl = stripPageParam(tab.url);
+      const result = await runWellfoundAutoPagination(baseUrl, wellfoundAutoRange, (progress) => {
+        setWellfoundAutoProgress(progress);
+      });
+
+      if (result.stopReason === 'auth_error') {
+        setUser(null);
+        setError('Please sign in again.');
+      } else if (result.stopReason === 'circuit_breaker') {
+        setWellfoundAutoSummary(
+          `Stopped after ${WELLFOUND_CIRCUIT_BREAKER_THRESHOLD} consecutive page failures — possible bot-detection block. ` +
+            `Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) before that: ${result.postingsSaved} saved, ` +
+            `${result.postingsSkippedOutOfRange} out of range. Already-saved leads were kept — re-run "Parse" later to continue.`,
+        );
+      } else if (result.stopReason === 'window_closed') {
+        setWellfoundAutoSummary(
+          `Interrupted — the background window was closed. Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) ` +
+            `before that: ${result.postingsSaved} saved, ${result.postingsSkippedOutOfRange} out of range. Already-saved leads were kept.`,
+        );
+      } else if (result.stopReason === 'max_pages') {
+        setWellfoundAutoSummary(
+          `Hit the ${WELLFOUND_AUTO_PAGINATION_MAX_PAGES}-page safety cap (not the normal stop condition — this search unusually has that ` +
+            `many pages, or something's wrong). ${result.postingsScanned} posting(s) scanned, ${result.postingsSaved} saved, ` +
+            `${result.postingsSkippedOutOfRange} out of range.`,
+        );
+      } else {
+        setWellfoundAutoSummary(
+          `Done — scanned ${result.pagesProcessed} page(s), ${result.postingsScanned} posting(s): ${result.postingsSaved} saved, ` +
+            `${result.postingsSkippedOutOfRange} out of range and skipped.`,
+        );
+      }
+
+      // Not awaited — same fire-and-forget pattern as runWellfoundPageBatch above: the pagination
+      // UI state clears normally while wave-based deepening continues independently.
+      runWellfoundAutoDeepen(result.savedLeads);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      wellfoundAutoRunningRef.current = false;
+      setWellfoundAutoRunning(false);
+      setWellfoundAutoProgress(null);
+    }
+  };
+
   if (!authChecked) {
     return (
       <div>
@@ -654,6 +824,46 @@ export default function App() {
 
       {wellfoundListTabUrl && (
         <div className="multipage-block">
+          <label>Parse Wellfound pages (auto, all pages)</label>
+          <DateRangePicker value={wellfoundAutoRange} onChange={setWellfoundAutoRange} disabled={wellfoundAutoRunning} />
+          <button
+            className="parse-button"
+            style={{ marginTop: 8 }}
+            onClick={handleWellfoundAutoParse}
+            disabled={!wellfoundAutoRange || wellfoundAutoRunning || parsing}
+          >
+            {wellfoundAutoRunning ? 'Parsing…' : 'Parse'}
+          </button>
+          <div className="hint">
+            Wellfound only. Walks every page of the current search (no page cap) via ?page=N in a background tab, saving only
+            postings whose (approximate) published date falls in the picked range — everything else is skipped immediately,
+            never saved. Pauses ~{WELLFOUND_AUTO_BATCH_PAUSE_MIN_MS / 1000}-{WELLFOUND_AUTO_BATCH_PAUSE_MAX_MS / 1000}s every ~
+            {WELLFOUND_AUTO_BATCH_POSTINGS} postings scanned to avoid anti-bot detection, then automatically deepens whatever it
+            saved (in waves of {WELLFOUND_RUN_CAP} if there's a lot). No Gemini here.
+          </div>
+          {wellfoundAutoProgress && (
+            <div className="hint">
+              {wellfoundAutoProgress.phase === 'batch_pause'
+                ? `Batch pause (anti-bot cooldown) — resuming automatically. ${wellfoundAutoProgress.postingsScanned} scanned, ` +
+                  `${wellfoundAutoProgress.postingsSaved} saved, ${wellfoundAutoProgress.postingsSkippedOutOfRange} out of range so far.`
+                : `Page ${wellfoundAutoProgress.page} · ${wellfoundAutoProgress.postingsScanned} scanned, ${wellfoundAutoProgress.postingsSaved} saved, ` +
+                  `${wellfoundAutoProgress.postingsSkippedOutOfRange} out of range`}
+            </div>
+          )}
+          {wellfoundAutoSummary && <div className="hint">{wellfoundAutoSummary}</div>}
+          {wellfoundAutoDeepenProgress && (
+            <div className="hint">
+              Deepening wave {wellfoundAutoDeepenProgress.waveIndex}/{wellfoundAutoDeepenProgress.waveCount} —{' '}
+              {wellfoundAutoDeepenProgress.overallProcessed}/{wellfoundAutoDeepenProgress.overallTotal} lead(s) overall,{' '}
+              {wellfoundAutoDeepenProgress.succeeded} succeeded
+            </div>
+          )}
+          {wellfoundAutoDeepenSummary && <div className="hint">{wellfoundAutoDeepenSummary}</div>}
+        </div>
+      )}
+
+      {SHOW_LEGACY_WELLFOUND_PAGINATION && wellfoundListTabUrl && (
+        <div className="multipage-block">
           <label>Parse Wellfound pages (fixed batch)</label>
           <div className="multipage-row">
             <button
@@ -663,7 +873,7 @@ export default function App() {
             >
               {wellfoundPageRunningSource === 'parse_from_here'
                 ? 'Parsing pages…'
-                : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl)})`}
+                : `Parse from here (page ${currentPageFromTabUrl(wellfoundListTabUrl ?? '')})`}
             </button>
             {wellfoundBookmark && isBookmarkFresh(wellfoundBookmark) && (
               <button
