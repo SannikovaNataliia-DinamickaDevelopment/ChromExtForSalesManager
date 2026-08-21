@@ -40,6 +40,17 @@ export interface LprPerson {
   role: string;
   name: string;
   linkedin_url: string;
+  // 20.08 follow-up bug fix: OpenAI's model was writing a "clean" firstnamelastname URL slug
+  // instead of the person's real (usually hyphenated/numeric-suffixed) LinkedIn URL — the name
+  // and role were correct, only the URL was fabricated. Only OpenaiClassifierService populates
+  // this (cross-checked against the Responses API's own actual web_search_call.action.sources —
+  // real returned URLs, not anything the model wrote); Gemini/Claude leave it undefined since
+  // neither implements that cross-check. undefined = not checked (Gemini/Claude, or data saved
+  // before this fix); true = linkedin_url matched a real search result verbatim; false = it
+  // didn't, and linkedin_url has been blanked to '' rather than shown as a possibly-fake link —
+  // see openai-classifier.service.ts's own doc comment for why blank-not-fabricated beats
+  // dropping the person entirely.
+  linkedin_url_verified?: boolean;
 }
 
 export interface LprSearchResult {
@@ -49,6 +60,14 @@ export interface LprSearchResult {
   // quality/hallucination risk from the model's own words, not just the (possibly empty or
   // malformed) parsed array.
   raw: string;
+  // 20.08 follow-up: the model's own narrative/search-query text, captured SEPARATELY from the
+  // structured `people` result — persisted as job_leads.lpr_reasoning (see leads.service.ts's
+  // lprSearch). Only OpenaiClassifierService populates this (its Structured Outputs final
+  // message is pure JSON, so the narrative has to come from elsewhere — see that file's own
+  // doc comment); Gemini/Claude leave it undefined since their unchanged ephemeral-test prompts
+  // still mix everything into `raw` — lprSearch() falls back to `raw` for those two rather than
+  // leaving the persisted reasoning column empty.
+  reasoning?: string;
   error?: string;
   quotaExhausted: boolean;
 }

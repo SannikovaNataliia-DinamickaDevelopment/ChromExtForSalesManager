@@ -65,6 +65,25 @@ function hiringContactCell(r: JobLeadRecord): string {
   return '';
 }
 
+// AI-powered LPR search (20.08 follow-up) — one line per person, "\n"-separated so a spreadsheet
+// cell with wrap-text shows each entry on its own line, same "role + clickable link, one per
+// line" spirit as the dashboard table/sidebar (a spreadsheet cell has no link-rendering context
+// though, so this is the plain-URL equivalent — see the dashboard's own buildCompanyLinkedinRow
+// comment on why that one similarly doesn't try to fake a hyperlink here). No not_checked/found/
+// not_specified three-state here (unlike Company LinkedIn/Hiring Contact above) — lpr_results is
+// simply null until the first search, empty array after a search that found nobody.
+function lprCell(r: JobLeadRecord): string {
+  const people = r.lpr_results;
+  if (!people || people.length === 0) return '';
+  // linkedin_url_verified === false (20.08 follow-up bug fix): linkedin_url is already blanked
+  // by openai-classifier.service.ts in this case — same "(unverified)" note as the dashboard's
+  // buildLprResultsRow/buildLprTd, so a manager reading the export doesn't mistake a blank URL
+  // for "nothing found" when a real name/role was.
+  return people
+    .map((p) => `${p.role}: ${p.name}${p.linkedin_url ? ' — ' + p.linkedin_url : ''}${p.linkedin_url_verified === false ? ' (unverified)' : ''}`)
+    .join('\n');
+}
+
 export type ExportColumn = {
   key: string;
   label: string;
@@ -86,6 +105,7 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'location', label: 'Location', value: (r) => cell(r.location) },
   { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
   { key: 'hiring_contact', label: 'Hiring Contact', value: (r) => hiringContactCell(r) },
+  { key: 'lpr', label: 'LPR', value: (r) => lprCell(r) },
   { key: 'source_url', label: 'Job link', value: (r) => cell(r.source_url) },
   { key: 'is_it', label: 'IT?', value: (r) => IS_IT_LABELS[r.is_it] },
   { key: 'salary', label: 'Salary', value: (r) => cell(r.salary) },

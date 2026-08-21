@@ -205,10 +205,10 @@ export class LeadsController {
     return this.leadsService.classify(id);
   }
 
-  // TEMPORARY, Task 4 (AI-powered LPR search) manual quality-test scope — see
-  // LeadsService.lprSearch's own comment for why this exists and what to delete once a
-  // real decision is made. POST (not PATCH/GET) since it triggers a real Gemini (or, with
-  // ?provider=claude, Claude) call with no idempotency guarantee, but writes nothing itself.
+  // AI-powered LPR (leadership) search (20.08 follow-up) — see LeadsService.lprSearch's own
+  // comment. POST (not PATCH/GET) since it triggers a real, non-idempotent OpenAI/Gemini/Claude
+  // call (?provider=openai default, or gemini/claude) — writes this lead's four lpr_* fields on
+  // success, nothing else; never pushed to the Google Sheet (no LPR columns there).
   @Post(':id/lpr-search')
   async lprSearch(@Param('id') id: string, @Query('provider') provider?: string) {
     return this.leadsService.lprSearch(id, provider);

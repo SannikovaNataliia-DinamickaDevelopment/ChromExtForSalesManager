@@ -20,6 +20,7 @@ import type { LeadIsIt } from './lead-is-it';
 import { LEAD_RETENTION_DAYS } from './lead-retention';
 import { LeadStatus } from './lead-status';
 import { isObviouslyNonIt } from './non-it-keywords';
+import { OpenaiClassifierService } from './openai-classifier.service';
 
 export type LeadSaveResult = {
   lead: typeof job_leads.$inferSelect;
@@ -36,6 +37,7 @@ export class LeadsService {
     @Inject(DESTINATION) private readonly destination: Destination,
     private readonly geminiClassifier: GeminiClassifierService,
     private readonly claudeClassifier: ClaudeClassifierService,
+    private readonly openaiClassifier: OpenaiClassifierService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -392,17 +394,27 @@ export class LeadsService {
     return updated;
   }
 
-  // Task 4 (AI-powered LPR search) — TEMPORARY, manual quality-test scope only: one lead at a
-  // time, triggered on demand (dashboard test button/direct API call), and deliberately no DB
-  // write and no destination push. This is purely to judge search-result quality against real
-  // leads before any batch run or persistence design is decided — delete this method (and the
-  // controller route, and the dashboard's test button) once that decision is made either way.
-  // Company name is the only requirement (per the task spec — "nothing works without it");
-  // company_website is passed through when present to help disambiguate a generic company name,
-  // but is optional.
-  // `provider` picks which model runs the search — Gemini stays the default (unchanged path);
-  // 'claude' is a separate, opt-in alternative (Claude + web_search, see
-  // claude-classifier.service.ts) for comparing search quality, not a replacement.
+  // AI-powered LPR (leadership) search (20.08 follow-up) — real and persisted now, no longer an
+  // ephemeral per-request test. One lead at a time, triggered on demand (dashboard button or a
+  // direct API call). Company name is the only requirement (per the original task spec —
+  // "nothing works without it"); company_website is passed through when present to help
+  // disambiguate a generic company name, but is optional.
+  //
+  // `provider` picks which model runs the search — OpenAI is the default/production path now
+  // (openai-classifier.service.ts: Structured Outputs, no lenient-parsing fragility). Gemini and
+  // Claude stay selectable as alternates for comparing search quality — their own service files
+  // are unchanged, still the original ephemeral-test implementations (lenient JSON parsing,
+  // Gemini's grounded search still blocked on the free tier) — but a search through either of
+  // them now ALSO gets saved here, same as OpenAI: this method persists on every call
+  // regardless of provider, not just for OpenAI.
+  //
+  // Overwrites (no history) on every re-run, matching the existing hiring_contact_*/
+  // company_linkedin_* convention. Only writes on a successful search (result.ok) — a failed
+  // call must never wipe out a previously-good saved result. Gemini/Claude don't populate
+  // `result.reasoning` (see LprSearchResult's own comment), so lpr_reasoning falls back to their
+  // `raw` text — for Claude in particular, `raw` is exactly where that narrative-before-JSON
+  // text already lives, so this still gives a meaningful reasoning value without touching
+  // either provider file.
   async lprSearch(id: string, provider?: string) {
     const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
     if (!existing) {
@@ -412,14 +424,34 @@ export class LeadsService {
       throw new AppError(HttpStatus.BAD_REQUEST, 'MISSING_COMPANY', 'This lead has no company name — nothing to search for.');
     }
 
-    const useClaude = provider === 'claude';
-    const result = useClaude
-      ? await this.claudeClassifier.searchLeadership(existing.company, existing.company_website)
-      : await this.geminiClassifier.searchLeadership(existing.company, existing.company_website);
+    const resolvedProvider: 'openai' | 'gemini' | 'claude' =
+      provider === 'gemini' || provider === 'claude' ? provider : 'openai';
+    const classifier =
+      resolvedProvider === 'gemini'
+        ? this.geminiClassifier
+        : resolvedProvider === 'claude'
+          ? this.claudeClassifier
+          : this.openaiClassifier;
+
+    const result = await classifier.searchLeadership(existing.company, existing.company_website);
+
+    if (result.ok) {
+      await this.db
+        .update(job_leads)
+        .set({
+          lpr_results: result.people,
+          lpr_reasoning: result.reasoning ?? result.raw ?? null,
+          lpr_provider: resolvedProvider,
+          lpr_searched_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where(eq(job_leads.id, id));
+    }
+
     return {
       company: existing.company,
       company_website: existing.company_website,
-      provider: useClaude ? 'claude' : 'gemini',
+      provider: resolvedProvider,
       ...result,
     };
   }

@@ -887,15 +887,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text-secondary);
     line-height: 1.5;
   }
-  /* TEMPORARY — Task 4 (AI-powered LPR search) manual quality-test scope. Dashed border
-     (rather than .enrich-block's solid one) is a deliberate visual "this is experimental,
-     not a permanent feature" signal — delete this whole block alongside the JS functions
-     that use it once a real decision is made. */
+  /* AI-powered LPR search action block (20.08 follow-up: real/persisted now — solid border,
+     same treatment as .enrich-block below, not the dashed "experimental" look this used to
+     have when it was an ephemeral test). */
   .lpr-search-block {
     margin-bottom: 20px;
     padding: 12px;
     background: var(--accent-2-tint);
-    border: 1px dashed var(--border);
+    border: 1px solid var(--border);
     border-radius: 8px;
   }
   .lpr-search-btn {
@@ -922,14 +921,17 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     color: var(--text);
   }
   .lpr-search-provider:disabled { cursor: not-allowed; opacity: 0.6; }
-  .lpr-search-provider-label { margin-top: 8px; font-size: 11px; color: var(--text-secondary); }
-  .lpr-search-result { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+  .lpr-search-status { margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
   .lpr-search-error { color: var(--error); }
-  .lpr-search-people { margin: 0; padding-left: 18px; }
-  .lpr-search-people li { margin-bottom: 4px; color: var(--text); }
-  .lpr-search-raw { margin-top: 10px; }
-  .lpr-search-raw summary { cursor: pointer; color: var(--text-secondary); }
-  .lpr-search-raw pre {
+  /* 20.08 follow-up bug fix — marks an LPR person whose linkedin_url couldn't be verified
+     against real web_search results (see openai-classifier.service.ts). Muted, not --error red:
+     this is a "we're not sure" note next to a real name/role, not a failure state. */
+  .lpr-unverified { color: var(--text-secondary); font-style: italic; }
+  /* Sidebar's "LPR search reasoning" section (point 7) — secondary/collapsed provenance info,
+     same visual weight as the old raw-response panel this replaces (see buildLprReasoningSection). */
+  .lpr-reasoning-section { margin-top: 10px; }
+  .lpr-reasoning-section summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; }
+  .lpr-reasoning-section pre {
     margin-top: 6px;
     padding: 8px;
     background: var(--panel-alt);
@@ -940,6 +942,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     max-height: 240px;
     overflow-y: auto;
     font-size: 11px;
+    color: var(--text-secondary);
   }
   /* Plain layout wrapper only — no tinted/bordered card. Deliberately unlike .enrich-block:
      that box (padding + tint + border) reads as a highlighted, boxed "card" for a routine
@@ -1235,9 +1238,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // reopened for the same lead while a request is still in flight.
   var enrichingLeadIds = {};
   var currentSidebarLeadId = null;
-  // TEMPORARY — Task 4 (AI-powered LPR search) manual quality-test scope. Same
-  // in-flight-tracking pattern as enrichingLeadIds above. Delete alongside
-  // buildLprSearchBlock/startLprSearch/renderLprSearchResult once a real decision is made.
+  // AI-powered LPR search (20.08 follow-up) in-flight guard — same pattern as
+  // enrichingLeadIds above (buildLprSearchBlock/startLprSearch).
   var lprSearchInFlight = {};
 
   // Bulk "Enrich selected" (extension messaging over a long-lived Port — see background.ts's
@@ -1278,6 +1280,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'location', label: 'Location' },
     { key: 'company_linkedin', label: 'Company LinkedIn' },
     { key: 'hiring_contact', label: 'Hiring Contact' },
+    { key: 'lpr', label: 'LPR' },
     { key: 'source_url', label: 'Job link' },
     { key: 'is_it', label: 'IT?' },
     { key: 'salary', label: 'Salary' },
@@ -2802,6 +2805,60 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return row;
   }
 
+  // Sidebar's "LPR" detail row — the PERSISTED leadership-search result (20.08 follow-up; see
+  // leads.service.ts's lprSearch), distinct from the "LPR Search" block below which TRIGGERS a
+  // fresh search. Same multi-line-links pattern as buildCompanyLinkedinRow just above, since
+  // this can also hold several entries.
+  function buildLprResultsRow(lead) {
+    var row = document.createElement('div');
+    row.className = 'detail-row';
+    row.appendChild(el('span', { className: 'detail-label', text: 'LPR' }));
+
+    var valueWrap = document.createElement('span');
+    valueWrap.className = 'detail-value';
+    var people = lead.lpr_results || [];
+    if (people.length > 0) {
+      people.forEach(function (p, i) {
+        if (i > 0) valueWrap.appendChild(document.createElement('br'));
+        valueWrap.appendChild(document.createTextNode((p.role || '?') + ': '));
+        if (isSafeUrl(p.linkedin_url)) {
+          valueWrap.appendChild(el('a', { className: 'website-link', href: p.linkedin_url, target: '_blank', rel: 'noreferrer', text: p.name || p.linkedin_url }));
+        } else {
+          valueWrap.appendChild(document.createTextNode(p.name || '(no name)'));
+        }
+        // 20.08 follow-up bug fix: linkedin_url_verified === false means OpenAI found this
+        // person via a real citation but couldn't be cross-checked against an actual search
+        // result URL (see openai-classifier.service.ts) — linkedin_url is already blanked in
+        // that case (isSafeUrl('') is false above, so no link renders), but this note makes the
+        // reason explicit rather than looking like "no URL was ever found" (undefined/other
+        // providers, where nothing extra is shown).
+        if (p.linkedin_url_verified === false) {
+          valueWrap.appendChild(el('span', { className: 'lpr-unverified', text: ' (unverified)' }));
+        }
+      });
+    } else {
+      valueWrap.textContent = '—';
+    }
+    row.appendChild(valueWrap);
+    return row;
+  }
+
+  // Provenance/debugging info (20.08 follow-up, point 7 of the plan) — the model's own
+  // narrative/search-query text captured alongside the structured lpr_results (see
+  // leads.service.ts's lprSearch and openai-classifier.service.ts's own doc comment on what
+  // "reasoning" captures for OpenAI vs. the Gemini/Claude fallback-to-raw-text case). Collapsed
+  // by default and visually secondary — this is "how did it get this answer", not primary lead
+  // data, so it stays out of the table/export entirely and only shows in the full sidebar card.
+  // Returns null (nothing to render) when there's no reasoning yet, e.g. before the first search.
+  function buildLprReasoningSection(lead) {
+    if (!lead.lpr_reasoning) return null;
+    var details = document.createElement('details');
+    details.className = 'lpr-reasoning-section';
+    details.appendChild(el('summary', { text: 'LPR search reasoning' }));
+    details.appendChild(el('pre', { text: lead.lpr_reasoning }));
+    return details;
+  }
+
   function buildEnrichBlock(lead) {
     var wrap = document.createElement('div');
     wrap.className = 'enrich-block';
@@ -2820,11 +2877,16 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return wrap;
   }
 
-  // TEMPORARY — Task 4 (AI-powered LPR search), manual quality-test scope only: one lead at a
-  // time, on demand, nothing persisted. Delete this block/its three functions/its sidebar call
-  // site/the backend route+service method once a real decision (persistence, batch, cost) is
-  // made either way. Gated on lead.company being present — company name is the one hard
-  // requirement per the task spec, and the button would just error immediately without it.
+  // "LPR Search" — triggers a fresh AI-powered leadership search for this lead (20.08 follow-up:
+  // real and persisted now, no longer an ephemeral test — see leads.service.ts's lprSearch).
+  // Deliberately doesn't render its own result list: a successful search is persisted, so it
+  // shows up through buildLprResultsRow/buildLprReasoningSection above once the sidebar
+  // refreshes, same "trigger + reload" pattern as buildEnrichBlock/startEnrich below rather than
+  // duplicating what those two now display. Gated on lead.company being present — company name
+  // is the one hard requirement per the original task spec, and the search would just error
+  // immediately without it.
+  var LPR_PROVIDER_LABELS = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude' };
+
   function buildLprSearchBlock(lead) {
     var wrap = document.createElement('div');
     wrap.className = 'lpr-search-block';
@@ -2833,97 +2895,71 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var button = el('button', {
       className: 'lpr-search-btn',
       type: 'button',
-      text: inFlight ? 'Searching\\u2026' : 'LPR Search (test)',
+      text: inFlight ? 'Searching\\u2026' : 'LPR Search',
     });
     button.disabled = inFlight;
-    button.title = 'Manual test only \\u2014 searches for this company\\u2019s leadership (CEO/CTO/Founder/etc.). Nothing is saved.';
+    button.title = 'Searches for this company\\u2019s leadership (CEO/CTO/Founder/etc.) via the selected provider and saves the result to this lead.';
 
-    // Provider select — Gemini stays the default (unchanged path); Claude is a separate,
-    // opt-in alternative for comparing search quality, not a replacement. See
-    // claude-classifier.service.ts / leads.service.ts's lprSearch for the backend side.
+    // OpenAI is the production default (Structured Outputs, no lenient-parsing fragility —
+    // see openai-classifier.service.ts); Gemini/Claude stay selectable for comparing search
+    // quality against real leads, unchanged from their original implementations.
     var providerSelect = el('select', { className: 'lpr-search-provider' }, [
+      el('option', { value: 'openai', text: 'OpenAI + web search' }),
       el('option', { value: 'gemini', text: 'Gemini + Google Search' }),
-      el('option', { value: 'claude', text: 'Claude + web search (test)' }),
+      el('option', { value: 'claude', text: 'Claude + web search' }),
     ]);
     providerSelect.disabled = inFlight;
 
-    var resultEl = document.createElement('div');
-    resultEl.className = 'lpr-search-result';
+    var statusEl = document.createElement('div');
+    statusEl.className = 'lpr-search-status';
 
     button.addEventListener('click', function () {
-      startLprSearch(lead, button, providerSelect, resultEl);
+      startLprSearch(lead, button, providerSelect, statusEl);
     });
 
     wrap.appendChild(button);
     wrap.appendChild(providerSelect);
-    wrap.appendChild(resultEl);
+    wrap.appendChild(statusEl);
     return wrap;
   }
 
-  function startLprSearch(lead, button, providerSelect, resultEl) {
+  function startLprSearch(lead, button, providerSelect, statusEl) {
     if (lprSearchInFlight[lead.id]) return;
     lprSearchInFlight[lead.id] = true;
     button.disabled = true;
     button.textContent = 'Searching\\u2026';
     providerSelect.disabled = true;
-    resultEl.innerHTML = '';
-    resultEl.textContent = 'Searching \\u2014 grounded search can take a while\\u2026';
+    statusEl.className = 'lpr-search-status';
+    statusEl.textContent = 'Searching \\u2014 grounded search can take a while\\u2026';
 
     var provider = providerSelect.value;
     apiFetch('/leads/' + lead.id + '/lpr-search?provider=' + encodeURIComponent(provider), { method: 'POST' })
       .then(function (result) {
-        renderLprSearchResult(resultEl, result);
+        if (!result || !result.ok) {
+          var providerLabel = LPR_PROVIDER_LABELS[result && result.provider] || 'Search';
+          var errText = providerLabel + ' call failed: ' + ((result && result.error) || 'unknown error');
+          if (result && result.quotaExhausted) errText += ' (quota exhausted)';
+          statusEl.className = 'lpr-search-status lpr-search-error';
+          statusEl.textContent = errText;
+          return;
+        }
+        statusEl.textContent = 'Saved \\u2014 refreshing\\u2026';
+        loadLeads().then(function () {
+          if (currentSidebarLeadId !== lead.id) return;
+          var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
+          if (updated) openSidebar(updated);
+        });
       })
       .catch(function (err) {
-        resultEl.textContent = 'Failed: ' + err.message;
+        statusEl.className = 'lpr-search-status lpr-search-error';
+        statusEl.textContent = 'Failed: ' + err.message;
       })
       .finally(function () {
         delete lprSearchInFlight[lead.id];
         button.disabled = false;
-        button.textContent = 'LPR Search (test)';
+        button.textContent = 'LPR Search';
         providerSelect.disabled = false;
       });
-  }
-
-  // Deliberately shows the raw model text alongside any parsed people — judging search
-  // quality (and hallucination risk) from the model's own words is the entire point of this
-  // manual test, not just whatever the lenient parse in gemini-classifier.service.ts managed
-  // to extract.
-  function renderLprSearchResult(resultEl, result) {
-    resultEl.innerHTML = '';
-    var providerLabel = result && result.provider === 'claude' ? 'Claude' : 'Gemini';
-    if (!result || !result.ok) {
-      var errText = providerLabel + ' call failed: ' + ((result && result.error) || 'unknown error');
-      if (result && result.quotaExhausted) errText += ' (quota exhausted)';
-      resultEl.appendChild(el('div', { className: 'lpr-search-error', text: errText }));
-      return;
-    }
-
-    resultEl.appendChild(el('div', { className: 'lpr-search-provider-label', text: 'Provider: ' + providerLabel }));
-
-    if (result.people && result.people.length > 0) {
-      var list = document.createElement('ul');
-      list.className = 'lpr-search-people';
-      result.people.forEach(function (p) {
-        var li = document.createElement('li');
-        li.appendChild(document.createTextNode((p.role || '?') + ': ' + (p.name || '?') + ' \\u2014 '));
-        if (isSafeUrl(p.linkedin_url)) {
-          li.appendChild(el('a', { className: 'website-link', href: p.linkedin_url, target: '_blank', rel: 'noreferrer', text: p.linkedin_url }));
-        } else {
-          li.appendChild(document.createTextNode(p.linkedin_url || '(no url)'));
-        }
-        list.appendChild(li);
-      });
-      resultEl.appendChild(list);
-    } else {
-      resultEl.appendChild(el('div', { className: 'lpr-search-empty', text: 'No leadership profiles found.' }));
-    }
-
-    var rawDetails = document.createElement('details');
-    rawDetails.className = 'lpr-search-raw';
-    rawDetails.appendChild(el('summary', { text: 'Raw model response' }));
-    rawDetails.appendChild(el('pre', { text: result.raw || '(empty)' }));
-    resultEl.appendChild(rawDetails);
   }
 
   // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
@@ -3056,8 +3092,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       content.appendChild(buildEnrichBlock(lead));
     }
 
-    // TEMPORARY — Task 4 manual test button, see buildLprSearchBlock's own comment. Gated on
-    // company being present, the one hard requirement for this call.
+    // LPR Search button, see buildLprSearchBlock's own comment. Gated on company being
+    // present, the one hard requirement for this call.
     if (lead.company) {
       content.appendChild(buildLprSearchBlock(lead));
     }
@@ -3068,6 +3104,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     content.appendChild(buildDetailRow('Location', lead.location));
     content.appendChild(buildDetailRow('Contact', hiringContactDetailValue(lead)));
     content.appendChild(buildCompanyLinkedinRow(lead));
+    content.appendChild(buildLprResultsRow(lead));
+    var lprReasoningSection = buildLprReasoningSection(lead);
+    if (lprReasoningSection) content.appendChild(lprReasoningSection);
     content.appendChild(buildDetailRow('Published', formatKyiv(lead.published_at, true)));
     content.appendChild(buildDetailRow('Source', lead.source_site));
     content.appendChild(buildDetailRow('Status', STATUS_LABELS[lead.status] || lead.status));
@@ -3230,6 +3269,32 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
+  // Table cell for the "LPR" column (20.08 follow-up — see leads.service.ts's lprSearch).
+  // Compact summary, NOT the full per-person multi-line list this used to render — a lead with
+  // many results (e.g. 19 people from a single search) was blowing up row height and pushing
+  // the rest of the table out of view, making it look stuck/broken. Same "first N + (+M more)"
+  // idiom as buildCompanyLinkedinTd above, adapted to show role labels (the useful-at-a-glance
+  // info here) instead of a link; the full list — names, links, unverified markers — is still
+  // available two ways: the native "title" hover tooltip on this cell, and unchanged in the
+  // sidebar's buildLprResultsRow (a single-lead view, where the full list was never the problem).
+  var LPR_TD_ROLES_SHOWN = 2;
+
+  function buildLprTd(lead) {
+    var td = document.createElement('td');
+    var people = lead.lpr_results || [];
+    if (people.length === 0) {
+      td.textContent = '\\u2014';
+      return td;
+    }
+    var shownRoles = people.slice(0, LPR_TD_ROLES_SHOWN).map(function (p) { return p.role || '?'; });
+    var remaining = people.length - shownRoles.length;
+    td.textContent = people.length + ' found (' + shownRoles.join(', ') + (remaining > 0 ? ', +' + remaining : '') + ')';
+    td.title = people.map(function (p) {
+      return (p.role || '?') + ': ' + (p.name || '(no name)') + (p.linkedin_url_verified === false ? ' (unverified)' : '');
+    }).join('\\n');
+    return td;
+  }
+
   // Plain-text row preview for the Description column (table density — the full HTML rendering
   // only happens in the sidebar via sanitizeDescriptionHtml). Strips tags down to text the same
   // way a Wellfound description's real HTML would otherwise show up as literal '<p>' etc., then
@@ -3271,6 +3336,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     location: function (lead) { return el('td', { text: lead.location || '\\u2014' }); },
     company_linkedin: function (lead) { return buildCompanyLinkedinTd(lead); },
     hiring_contact: function (lead) { return el('td', { text: hiringContactDetailValue(lead) || '\\u2014' }); },
+    lpr: function (lead) { return buildLprTd(lead); },
     source_url: function (lead) { return buildLinkTd(lead.source_url, 'Open \\u2197'); },
     is_it: function (lead) {
       var td = document.createElement('td');

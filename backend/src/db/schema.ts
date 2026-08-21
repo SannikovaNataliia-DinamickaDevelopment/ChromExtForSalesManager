@@ -17,6 +17,11 @@ export const hiringContactStatusEnum = pgEnum('hiring_contact_status', ['not_che
 // 'not_specified' (fetched fine, genuinely no LinkedIn link on the page — or the fetch itself
 // failed, treated the same per spec) so a backfill run never re-touches an already-resolved lead.
 export const companyLinkedinStatusEnum = pgEnum('company_linkedin_status', ['not_checked', 'found', 'not_specified']);
+// AI-powered LPR (leadership) search (20.08 follow-up) — records which of the three providers
+// produced the currently-saved lpr_results, not a status/lifecycle enum like the two above
+// (there's no "not_checked" state here: lpr_provider/lpr_results/lpr_reasoning/lpr_searched_at
+// are simply all null until the first search, see job_leads below).
+export const lprProviderEnum = pgEnum('lpr_provider', ['openai', 'gemini', 'claude']);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -82,6 +87,22 @@ export const job_leads = pgTable(
     // array alone.
     company_linkedin_status: companyLinkedinStatusEnum('company_linkedin_status').default('not_checked').notNull(),
     company_linkedin_urls: text('company_linkedin_urls').array(),
+    // AI-powered LPR search (20.08 follow-up — see leads.service.ts's lprSearch and
+    // openai-classifier.service.ts). Started as an ephemeral, unpersisted per-request test
+    // (gemini-classifier.service.ts / claude-classifier.service.ts); now real and persisted,
+    // OpenAI-first. Overwritten (not appended/versioned) on every re-run — same "last result
+    // wins, no history" convention already used by company_linkedin_urls/hiring_contact_*
+    // above. All four fields are null together until the first search; lprSearch() only ever
+    // writes them as a group, so a partially-populated state (e.g. results without a
+    // searched_at) should never occur.
+    // linkedin_url_verified (20.08 follow-up bug fix): only OpenAI populates this — see
+    // openai-classifier.service.ts and LprPerson (gemini-classifier.service.ts) for why.
+    lpr_results: jsonb('lpr_results').$type<
+      { role: string; name: string; linkedin_url: string; linkedin_url_verified?: boolean }[]
+    >(),
+    lpr_reasoning: text('lpr_reasoning'),
+    lpr_provider: lprProviderEnum('lpr_provider'),
+    lpr_searched_at: timestamp('lpr_searched_at', { withTimezone: true }),
     status: leadStatusEnum('status').default('new').notNull(),
     // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
     is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),
