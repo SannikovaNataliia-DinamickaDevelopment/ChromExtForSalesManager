@@ -1,0 +1,4 @@
+CREATE TYPE "public"."industry" AS ENUM('Real Estate', 'Healthcare', 'Banking & Financial Services', 'Insurance', 'Energy', 'Retail & E-commerce', 'Education', 'Manufacturing', 'Transportation & Logistics', 'Hospitality & Travel', 'Legal Services', 'Media & Entertainment', 'Telecommunications', 'Government & Public Sector', 'Non-profit', 'Agriculture', 'Construction', 'Software Development', 'Professional Services & Consulting', 'Other');--> statement-breakpoint
+ALTER TABLE "job_leads" ADD COLUMN "industry" "industry";--> statement-breakpoint
+ALTER TABLE "job_leads" ADD COLUMN "industry_other_description" text;--> statement-breakpoint
+ALTER TABLE "job_leads" ADD COLUMN "industry_classified_at" timestamp with time zone;

@@ -16,7 +16,9 @@ import { ExportLeadsDto } from './dto/export-leads.dto';
 import { SetHiringContactDto } from './dto/set-hiring-contact.dto';
 import { EXPORT_COLUMNS, type ExportColumn } from './export-columns';
 import { GeminiClassifierService } from './gemini-classifier.service';
+import { IndustryClassifierService } from './industry-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
+import { OpenaiIndustryClassifierService } from './openai-industry-classifier.service';
 import { LEAD_RETENTION_DAYS } from './lead-retention';
 import { LeadStatus } from './lead-status';
 import { isObviouslyNonIt } from './non-it-keywords';
@@ -38,6 +40,8 @@ export class LeadsService {
     private readonly geminiClassifier: GeminiClassifierService,
     private readonly claudeClassifier: ClaudeClassifierService,
     private readonly openaiClassifier: OpenaiClassifierService,
+    private readonly industryClassifierGemini: IndustryClassifierService,
+    private readonly industryClassifierOpenai: OpenaiIndustryClassifierService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -452,6 +456,58 @@ export class LeadsService {
       company: existing.company,
       company_website: existing.company_website,
       provider: resolvedProvider,
+      ...result,
+    };
+  }
+
+  // Industry classification (24.08 follow-up, per the 19.08 call) — one lead at a time, manual
+  // trigger only for now (dashboard button), same "single-lead call, no automatic bulk loop yet"
+  // scope as DM search started at. Company name is required (same reasoning as lprSearch above);
+  // company_website is required too here (unlike lprSearch, where it's optional) — this feature
+  // has NOTHING to classify from without it, so the classifier itself already returns a clean
+  // ok:false rather than guessing, but failing fast here avoids the wasted round-trip.
+  // Only writes the three industry_* fields on a successful classification (result.ok) — same
+  // "a failed call must never wipe out a previously-good saved result" rule as lprSearch/deepen.
+  //
+  // `provider` defaults to OpenAI (second 24.08 follow-up: Gemini started throwing "high demand"
+  // errors during manual testing — see IndustryClassifierService's own doc comment). Same
+  // "OpenAI became the default, the original provider stayed selectable" pattern LPR already
+  // established. FLAG, not yet resolved: OpenAI's per-token cost was accepted for LPR's
+  // manager-triggered, per-person research, but that reasoning doesn't automatically carry over
+  // here — Industry classification is meant to eventually run across the full 1400+-lead
+  // database, a very different volume profile where Gemini's free tier mattered enough to be the
+  // original choice. Don't let "switched for a quick manual test" quietly become the permanent
+  // production default without revisiting that cost question once Gemini's demand issue is
+  // confirmed resolved or not.
+  async classifyIndustry(id: string, provider?: string) {
+    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!existing) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    if (!existing.company) {
+      throw new AppError(HttpStatus.BAD_REQUEST, 'MISSING_COMPANY', 'This lead has no company name — nothing to classify.');
+    }
+
+    const resolvedProvider: 'openai' | 'gemini' = provider === 'gemini' ? 'gemini' : 'openai';
+    const classifier = resolvedProvider === 'gemini' ? this.industryClassifierGemini : this.industryClassifierOpenai;
+
+    const result = await classifier.classifyIndustry(existing.company, existing.company_website);
+
+    if (result.ok) {
+      await this.db
+        .update(job_leads)
+        .set({
+          industry: result.industry,
+          industry_other_description: result.otherDescription,
+          industry_classified_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where(eq(job_leads.id, id));
+    }
+
+    return {
+      company: existing.company,
+      company_website: existing.company_website,
       ...result,
     };
   }

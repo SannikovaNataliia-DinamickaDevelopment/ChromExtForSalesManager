@@ -84,6 +84,19 @@ function lprCell(r: JobLeadRecord): string {
     .join('\n');
 }
 
+// Industry classification (24.08 follow-up) — no not_checked/found/not_specified three-state
+// here, same reasoning as lprCell above: industry is simply null until the first classification.
+// "Other" gets its stored free-text explanation appended, same "Name — Role" spirit as
+// hiringContactCell above, so a manager reading the export sees WHY it landed in Other without
+// opening the sidebar.
+function industryCell(r: JobLeadRecord): string {
+  if (!r.industry) return '';
+  if (r.industry === 'Other' && r.industry_other_description) {
+    return `${r.industry} — ${r.industry_other_description}`;
+  }
+  return r.industry;
+}
+
 export type ExportColumn = {
   key: string;
   label: string;
@@ -102,6 +115,7 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'job_title', label: 'Title', value: (r) => cell(r.job_title) },
   { key: 'company', label: 'Company', value: (r) => cell(r.company) },
   { key: 'company_website', label: 'Website', value: (r) => cell(r.company_website) },
+  { key: 'industry', label: 'Industry', value: (r) => industryCell(r) },
   { key: 'location', label: 'Location', value: (r) => cell(r.location) },
   { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
   { key: 'hiring_contact', label: 'Hiring Contact', value: (r) => hiringContactCell(r) },

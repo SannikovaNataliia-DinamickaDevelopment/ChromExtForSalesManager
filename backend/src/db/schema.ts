@@ -22,6 +22,19 @@ export const companyLinkedinStatusEnum = pgEnum('company_linkedin_status', ['not
 // (there's no "not_checked" state here: lpr_provider/lpr_results/lpr_reasoning/lpr_searched_at
 // are simply all null until the first search, see job_leads below).
 export const lprProviderEnum = pgEnum('lpr_provider', ['openai', 'gemini', 'claude']);
+// Industry classification (24.08 follow-up, per the 19.08 call) — classifies the COMPANY's
+// industry/vertical, not what its product technically is (a CRM vendor for the energy sector is
+// "Energy," not "Software Development" — see industry-classifier.service.ts's own doc comment
+// for the full rule). Fixed 20-value taxonomy, confirmed with the manager before implementation;
+// expected to gain values over time as "Other" entries reveal real gaps — a new enum value only
+// ever needs a migration to ADD one, never to remove/rename an existing lead's stored value.
+export const industryEnum = pgEnum('industry', [
+  'Real Estate', 'Healthcare', 'Banking & Financial Services', 'Insurance', 'Energy',
+  'Retail & E-commerce', 'Education', 'Manufacturing', 'Transportation & Logistics',
+  'Hospitality & Travel', 'Legal Services', 'Media & Entertainment', 'Telecommunications',
+  'Government & Public Sector', 'Non-profit', 'Agriculture', 'Construction',
+  'Software Development', 'Professional Services & Consulting', 'Other',
+]);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -103,6 +116,17 @@ export const job_leads = pgTable(
     lpr_reasoning: text('lpr_reasoning'),
     lpr_provider: lprProviderEnum('lpr_provider'),
     lpr_searched_at: timestamp('lpr_searched_at', { withTimezone: true }),
+    // Industry classification (24.08 follow-up — see industryEnum above and
+    // industry-classifier.service.ts). Null = not yet classified (never attempted, or attempted
+    // with no usable company_website) — same "null means not yet, not a special enum value"
+    // convention as lpr_results/lpr_provider above, not a 21st "Unclassified" enum member.
+    // industry_other_description is only ever populated when industry = 'Other' — the model is
+    // asked to explain what the company actually does so these can be reviewed later to spot a
+    // missing taxonomy category, same review-later spirit as CLAUDE.md's own "will adjust as we
+    // go" framing for this taxonomy.
+    industry: industryEnum('industry'),
+    industry_other_description: text('industry_other_description'),
+    industry_classified_at: timestamp('industry_classified_at', { withTimezone: true }),
     status: leadStatusEnum('status').default('new').notNull(),
     // CLAUDE.md scope C: broad IT/not-IT flag from Gemini, never used to delete leads.
     is_it: leadIsItEnum('is_it').default('unprocessed').notNull(),

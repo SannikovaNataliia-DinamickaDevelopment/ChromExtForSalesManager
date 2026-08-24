@@ -214,6 +214,17 @@ export class LeadsController {
     return this.leadsService.lprSearch(id, provider);
   }
 
+  // Industry classification (24.08 follow-up) — see LeadsService.classifyIndustry's own comment.
+  // POST (not PATCH), same reasoning as lpr-search above: a real, non-idempotent LLM call, not an
+  // idempotent field update. Manual single-lead trigger only for now — no bulk/all-leads endpoint
+  // yet, per this task's own explicit scope. ?provider=gemini falls back to the original Gemini
+  // path (OpenAI is the default — see LeadsService.classifyIndustry's own comment on why, and the
+  // flag not to let that default go unrevisited).
+  @Post(':id/industry-classify')
+  async classifyIndustry(@Param('id') id: string, @Query('provider') provider?: string) {
+    return this.leadsService.classifyIndustry(id, provider);
+  }
+
   // Soft delete (dashboard "Delete" action in the detail panel). Any authenticated user, no
   // owner check — same shared-lead-base rule as status.
   @Patch(':id/delete')

@@ -1137,6 +1137,33 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="no">No data</option>
       </select>
     </span>
+    <span>
+      <label for="filter-industry">Industry</label>
+      <select id="filter-industry">
+        <option value="all">All</option>
+        <option value="Real Estate">Real Estate</option>
+        <option value="Healthcare">Healthcare</option>
+        <option value="Banking &amp; Financial Services">Banking &amp; Financial Services</option>
+        <option value="Insurance">Insurance</option>
+        <option value="Energy">Energy</option>
+        <option value="Retail &amp; E-commerce">Retail &amp; E-commerce</option>
+        <option value="Education">Education</option>
+        <option value="Manufacturing">Manufacturing</option>
+        <option value="Transportation &amp; Logistics">Transportation &amp; Logistics</option>
+        <option value="Hospitality &amp; Travel">Hospitality &amp; Travel</option>
+        <option value="Legal Services">Legal Services</option>
+        <option value="Media &amp; Entertainment">Media &amp; Entertainment</option>
+        <option value="Telecommunications">Telecommunications</option>
+        <option value="Government &amp; Public Sector">Government &amp; Public Sector</option>
+        <option value="Non-profit">Non-profit</option>
+        <option value="Agriculture">Agriculture</option>
+        <option value="Construction">Construction</option>
+        <option value="Software Development">Software Development</option>
+        <option value="Professional Services &amp; Consulting">Professional Services &amp; Consulting</option>
+        <option value="Other">Other</option>
+        <option value="unclassified">Unclassified</option>
+      </select>
+    </span>
     <span class="daterange-wrap">
       <label for="filter-published-range-input">Published Date</label>
       <span class="daterange-field" id="filter-published-range-field">
@@ -1249,6 +1276,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // AI-powered LPR search (20.08 follow-up) in-flight guard — same pattern as
   // enrichingLeadIds above (buildLprSearchBlock/startLprSearch).
   var lprSearchInFlight = {};
+  // Industry classification (24.08 follow-up) in-flight guard — same pattern as
+  // lprSearchInFlight above (buildIndustryClassifyBlock/startIndustryClassify).
+  var industryClassifyInFlight = {};
 
   // Bulk "Enrich selected" (extension messaging over a long-lived Port — see background.ts's
   // ENRICH_LEADS handler, chrome.runtime.onConnectExternal). A Port, not one-shot sendMessage
@@ -1285,6 +1315,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'job_title', label: 'Title' },
     { key: 'company', label: 'Company' },
     { key: 'company_website', label: 'Website' },
+    { key: 'industry', label: 'Industry' },
     { key: 'location', label: 'Location' },
     { key: 'company_linkedin', label: 'Company LinkedIn' },
     { key: 'hiring_contact', label: 'Hiring Contact' },
@@ -1329,6 +1360,12 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // enum-backed filters use — lpr_results is a plain nullable array (never searched vs.
     // searched-with-zero-survivors both read as "no data" here), not a tri-state DB enum.
     filterLpr: 'all',
+    // Same "fixed small enum, hardcoded <option>s" pattern as the IT filter (not Source's
+    // dynamically-derived one) — industry is our own fixed taxonomy, not site-derived data.
+    // 'unclassified' is a synthetic filter value (mapped to lead.industry === null below), same
+    // spirit as the IT filter's own 'unprocessed' option — industry itself stays a plain
+    // nullable column, never a 21st DB enum value (see schema.ts's own comment).
+    filterIndustry: 'all',
     // null = "All dates"; otherwise { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' } (Kyiv calendar
     // days, inclusive both ends) — see createDateRangeFilter().
     filterPublishedRange: null,
@@ -1574,6 +1611,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
     if (state.filterCompanyLinkedin !== 'all') lines.push('Company LinkedIn: ' + (COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS[state.filterCompanyLinkedin] || state.filterCompanyLinkedin));
     if (state.filterLpr !== 'all') lines.push('DM: ' + (LPR_FILTER_SUMMARY_LABELS[state.filterLpr] || state.filterLpr));
+    if (state.filterIndustry !== 'all') lines.push('Industry: ' + (state.filterIndustry === 'unclassified' ? 'Unclassified' : state.filterIndustry));
     if (state.filterPublishedRange) lines.push('Published date: ' + formatUsDate(state.filterPublishedRange.start) + ' \\u2013 ' + formatUsDate(state.filterPublishedRange.end));
     if (state.filterScrapedRange) lines.push('Scraped date: ' + formatUsDate(state.filterScrapedRange.start) + ' \\u2013 ' + formatUsDate(state.filterScrapedRange.end));
     if (state.search) lines.push('Search: "' + state.search + '"');
@@ -2655,6 +2693,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         if (state.filterLpr === 'has' && !hasLprData) return false;
         if (state.filterLpr === 'no' && hasLprData) return false;
       }
+      if (state.filterIndustry !== 'all') {
+        if (state.filterIndustry === 'unclassified') {
+          if (lead.industry) return false;
+        } else if (lead.industry !== state.filterIndustry) {
+          return false;
+        }
+      }
       // Kyiv calendar-day comparison (formatKyiv's own Intl.DateTimeFormat approach), same
       // convention as every other date already shown on this page — plain string comparison of
       // YYYY-MM-DD is chronologically correct since it's already zero-padded/lexicographic.
@@ -2793,6 +2838,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
     if (lead.hiring_contact_status === 'not_specified') return 'не вказано';
     return '';
+  }
+
+  // Sidebar's "Industry" detail row value (24.08 follow-up, per the 19.08 call) — null (never
+  // classified, or classified with no usable website) returns '' so buildDetailRow's own '—'
+  // fallback applies, same convention as hiringContactDetailValue above. 'Other' appends its
+  // stored free-text explanation so a manager doesn't have to guess why a lead landed there.
+  function industryDetailValue(lead) {
+    if (!lead.industry) return '';
+    if (lead.industry === 'Other' && lead.industry_other_description) {
+      return lead.industry + ' \\u2014 ' + lead.industry_other_description;
+    }
+    return lead.industry;
   }
 
   // Sidebar's "Company LinkedIn" detail row — a plain container (not buildDetailRow's own
@@ -2981,6 +3038,74 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  // "Industry Classify" (24.08 follow-up, per the 19.08 call) — triggers a fresh Gemini
+  // classification of this lead's company_website content into the fixed industry taxonomy.
+  // Same "trigger + reload, don't render its own result" pattern as buildLprSearchBlock above —
+  // a successful classification is persisted, so it shows up through industryDetailValue once
+  // the sidebar refreshes. Gated by the caller (openSidebar) on company_website being present,
+  // the one hard requirement (see IndustryClassifierService — there's nothing to fetch/classify
+  // without it). Reuses the LPR Search block's own CSS classes (same button+status-line shape,
+  // no provider dropdown needed since there's only one provider for this task).
+  function buildIndustryClassifyBlock(lead) {
+    var wrap = document.createElement('div');
+    wrap.className = 'lpr-search-block';
+
+    var inFlight = !!industryClassifyInFlight[lead.id];
+    var button = el('button', {
+      className: 'lpr-search-btn',
+      type: 'button',
+      text: inFlight ? 'Classifying\\u2026' : 'Classify Industry',
+    });
+    button.disabled = inFlight;
+    button.title = 'Fetches this lead\\u2019s company website and classifies the company\\u2019s industry/vertical (not its product) via Gemini.';
+
+    var statusEl = document.createElement('div');
+    statusEl.className = 'lpr-search-status';
+
+    button.addEventListener('click', function () {
+      startIndustryClassify(lead, button, statusEl);
+    });
+
+    wrap.appendChild(button);
+    wrap.appendChild(statusEl);
+    return wrap;
+  }
+
+  function startIndustryClassify(lead, button, statusEl) {
+    if (industryClassifyInFlight[lead.id]) return;
+    industryClassifyInFlight[lead.id] = true;
+    button.disabled = true;
+    button.textContent = 'Classifying\\u2026';
+    statusEl.className = 'lpr-search-status';
+    statusEl.textContent = 'Classifying\\u2026';
+
+    apiFetch('/leads/' + lead.id + '/industry-classify', { method: 'POST' })
+      .then(function (result) {
+        if (!result || !result.ok) {
+          var errText = 'Classification failed: ' + ((result && result.error) || 'unknown error');
+          if (result && result.quotaExhausted) errText += ' (quota exhausted)';
+          statusEl.className = 'lpr-search-status lpr-search-error';
+          statusEl.textContent = errText;
+          return;
+        }
+        statusEl.textContent = 'Saved \\u2014 refreshing\\u2026';
+        loadLeads().then(function () {
+          if (currentSidebarLeadId !== lead.id) return;
+          var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
+          if (updated) openSidebar(updated);
+        });
+      })
+      .catch(function (err) {
+        statusEl.className = 'lpr-search-status lpr-search-error';
+        statusEl.textContent = 'Failed: ' + err.message;
+      })
+      .finally(function () {
+        delete industryClassifyInFlight[lead.id];
+        button.disabled = false;
+        button.textContent = 'Classify Industry';
+      });
+  }
+
   // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
   // (any lead can be deleted, not just undetailed ones). Confirmed once, mentioning it's
   // recoverable — distinct from /dashboard/deleted's "Delete permanently" confirm, which is
@@ -3117,8 +3242,16 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       content.appendChild(buildLprSearchBlock(lead));
     }
 
+    // Industry Classify button, see buildIndustryClassifyBlock's own comment. Gated on
+    // company_website specifically (not just company) — the one hard requirement for this call,
+    // since there's nothing to fetch/classify from without it.
+    if (lead.company_website) {
+      content.appendChild(buildIndustryClassifyBlock(lead));
+    }
+
     content.appendChild(buildDetailRow('Company', lead.company));
     content.appendChild(buildDetailRow('Website', lead.company_website, true));
+    content.appendChild(buildDetailRow('Industry', industryDetailValue(lead)));
     content.appendChild(buildDetailRow('Job link', lead.source_url, true));
     content.appendChild(buildDetailRow('Location', lead.location));
     content.appendChild(buildDetailRow('Contact', hiringContactDetailValue(lead)));
@@ -3352,6 +3485,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     },
     company: function (lead) { return el('td', { text: lead.company || '\\u2014' }); },
     company_website: function (lead) { return buildLinkTd(lead.company_website, lead.company_website); },
+    industry: function (lead) { return el('td', { text: industryDetailValue(lead) || '\\u2014' }); },
     location: function (lead) { return el('td', { text: lead.location || '\\u2014' }); },
     company_linkedin: function (lead) { return buildCompanyLinkedinTd(lead); },
     hiring_contact: function (lead) { return el('td', { text: hiringContactDetailValue(lead) || '\\u2014' }); },
@@ -4032,6 +4166,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   });
   document.getElementById('filter-lpr').addEventListener('change', function (e) {
     state.filterLpr = e.target.value;
+    render();
+  });
+  document.getElementById('filter-industry').addEventListener('change', function (e) {
+    state.filterIndustry = e.target.value;
     render();
   });
   createDateRangeFilter({
