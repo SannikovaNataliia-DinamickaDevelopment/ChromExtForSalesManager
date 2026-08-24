@@ -47,6 +47,63 @@ const PHASE2_MAX_OUTPUT_TOKENS = 1024;
 // individual phase-2 lookup, same as any other unverified entry.
 const PHASE2_CANDIDATE_CAP = 10;
 
+// 24.08 follow-up, fifth revision: web_search results for the same person/query are
+// non-deterministic between calls (confirmed live — see searchPersonLinkedin's own doc comment)
+// — a genuinely real person can fail verification on one attempt and pass on the next with no
+// change to the prompt. Up to 2 retries (3 attempts total) per candidate before giving up, same
+// trust bar every attempt. Cost stays negligible at this scale even 3x'd (~$0.03-0.045/candidate
+// worst case) — see PHASE2_CANDIDATE_CAP's own comment for the underlying per-call cost data.
+const PHASE2_MAX_ATTEMPTS_PER_CANDIDATE = 3;
+
+// 24.08 follow-up bug fix: a scale/relevance problem, not a hallucination one — one lead
+// (Karat) returned 26 "people," nearly all "VP of Engineering," because a large company's team
+// page lists many people under a shared title and phase 1 reported all of them. This caps what
+// actually gets SAVED to a lead, separate from PHASE2_CANDIDATE_CAP above (a cost sanity limit
+// on lookups, not a usability limit on the final list). 8, reasoning: LPR_ROLES has 11 distinct
+// role labels, but a genuinely useful outreach list is CEO/Founder-type roles (rare, always
+// relevant, at most 1-2 people) plus a handful of other C-level/VP names — not one slot per
+// possible title. 8 leaves room for that real diversity without becoming an unusable roster
+// dump; trimming favors ROLE_PRIORITY_ORDER below (company-wide leadership first) rather than
+// an arbitrary first-N cut, so a late-listed CEO is never dropped in favor of an early-listed
+// VP of Engineering when both can't fit.
+const FINAL_PEOPLE_CAP = 8;
+
+// Same 11 values as LPR_ROLES, reordered by how uniquely relevant a role is for outreach —
+// CEO/Founder-type roles are rare (usually exactly one real person per company) and always
+// worth contacting; VP-of-X titles are the ones most likely to be shared by many people at a
+// larger company (see FINAL_PEOPLE_CAP's comment — this is exactly what went wrong for Karat),
+// so they're deprioritized when trimming to the cap. Must stay the same SET of values as
+// LPR_ROLES (just reordered) — roleSortIndex below falls back to "lowest priority" for anything
+// not found here, so a drift wouldn't break, just silently stop prioritizing that role.
+const ROLE_PRIORITY_ORDER = [
+  'CEO', 'Founder', 'Co-Founder', 'Owner', 'Co-Owner',
+  'CTO', 'CIO', 'COO', 'General Manager',
+  'VP of Engineering', 'VP of Technology',
+];
+
+// 24.08 follow-up, sixth revision: the top tier of ROLE_PRIORITY_ORDER — used to scope the extra
+// company-website-search attempt (see searchPersonLinkedin's own comment) to exactly the roles
+// where the Juniper Square test found a systematic verification gap (real CEO/Co-Founders failed
+// while COO/VP-of-Engineering passed). Not the whole role list — a company's own Team/About page
+// is a startup-founder convention, not something every VP-level hire is likely to be listed on,
+// so there's no reason to spend the extra call outside this tier.
+const TOP_TIER_ROLES = ['CEO', 'Founder', 'Co-Founder', 'Owner', 'Co-Owner'];
+
+function roleSortIndex(role: string): number {
+  const i = ROLE_PRIORITY_ORDER.indexOf(role);
+  return i === -1 ? ROLE_PRIORITY_ORDER.length : i;
+}
+
+// Stable sort by role priority — ties (same role) keep their original relative order rather
+// than being reshuffled, so this can be applied more than once (before phase-2 selection, then
+// again before the final cap) without scrambling order each time.
+function sortByRolePriority<T extends { role: string }>(items: T[]): T[] {
+  return items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => roleSortIndex(a.item.role) - roleSortIndex(b.item.role) || a.i - b.i)
+    .map(({ item }) => item);
+}
+
 // Structured Outputs requires an OBJECT at the schema root — a bare JSON array is rejected
 // (confirmed via OpenAI's own docs, not assumed) — hence the {people: [...]} / {linkedin_url}
 // wrappers below rather than array/bare-string schemas.
@@ -82,12 +139,22 @@ const PHASE1_SCHEMA = {
 };
 
 // Phase 2's schema — a single URL, since this call is already scoped to one known person.
+// company_match_confirmed (24.08 follow-up, second revision): replaces a blunt post-hoc
+// domain-string check that turned out to reject genuinely correct matches (real bio sources like
+// theorg.com/crunchbase describe an employer in TEXT, without ever linking to the company's own
+// domain) while doing nothing to actually rule out a same-named-company collision (action.sources
+// exposes bare URLs, not page content, so there's nothing to string-match against that content
+// anyway). This asks the model to make the actual judgment call it's the only party positioned
+// to make — it read the search results, it can say whether they connect this person to THIS
+// company. Required (strict Structured Outputs), so the model can't omit it — see
+// searchPersonLinkedin's prompt for why "true" requires real evidence, not a default.
 const PHASE2_SCHEMA = {
   type: 'object',
   properties: {
     linkedin_url: { type: 'string' },
+    company_match_confirmed: { type: 'boolean' },
   },
-  required: ['linkedin_url'],
+  required: ['linkedin_url', 'company_match_confirmed'],
   additionalProperties: false,
 };
 
@@ -145,6 +212,16 @@ export class OpenaiClassifierService {
         'from general knowledge or common naming patterns — if nothing you searched confirms ' +
         'someone holds one of the listed roles, leave them out entirely.',
       '',
+      'CRITICAL: Report each person’s full first and last name — never abbreviate to initials ' +
+        'or a partial name.',
+      '',
+      'CRITICAL: You are looking for a SMALL number of top-level decision-makers, not a full ' +
+        'team roster. If a page or listing shows many people sharing a similar title (a large ' +
+        'company’s engineering organization can have many people who all carry some variant of ' +
+        'a title like VP of Engineering), do not report all of them — favor company-wide ' +
+        'leadership (CEO, Founder, CTO, COO) and include only the handful of people at the very ' +
+        'top of each relevant area, not every person who holds a matching-sounding title.',
+      '',
       'Do NOT report a LinkedIn URL or any other profile link in this step — only role and ' +
         'name. Each person’s LinkedIn profile will be looked up in a separate, dedicated step ' +
         'afterward, so it is not needed here.',
@@ -179,20 +256,45 @@ export class OpenaiClassifierService {
     const phase1Text = phase1Response.output_text ?? '';
     const phase1Queries = extractSearchQueries(phase1Response);
 
-    // Dedupe by name (trimmed, case-insensitive), keeping first occurrence — phase 1's own
-    // final JSON has been observed repeating the same person twice in a single response.
-    const seenNames = new Set<string>();
-    const candidates = parsePhase1Candidates(phase1Text).filter((c) => {
+    // Dedupe by name (trimmed, case-insensitive) — phase 1's own final JSON has been observed
+    // repeating the same person twice in a single response, sometimes under TWO DIFFERENT roles
+    // (e.g. Yonas Fisseha listed as both "VP of Engineering" and "Co-Founder" — a real dual
+    // title, not a hallucination). This is the CHEAP, pre-phase-2 dedupe pass (catches
+    // exact-string repeats before spending a lookup call on them); a second, URL-based pass
+    // after phase 2 (below) catches name VARIANTS of the same person (e.g. "Mike Liberty" vs
+    // "Michael Liberty") that this pass can't, since it only has strings to compare at this
+    // point.
+    //
+    // 24.08 follow-up, seventh revision, bug fix: this used to keep whichever occurrence came
+    // FIRST in phase 1's own (arbitrary) output order — for Yonas Fisseha, "VP of Engineering"
+    // happened to be listed before "Co-Founder", so his real Co-Founder title was silently
+    // discarded, which then wrongly excluded him from the TOP_TIER_ROLES company-site search
+    // attempt below (he was never actually less than a Co-Founder — the dedupe just picked the
+    // wrong duplicate). Fixed to keep the HIGHER-PRIORITY role per ROLE_PRIORITY_ORDER
+    // regardless of which one phase 1 happened to list first — a Map so a later, higher-priority
+    // duplicate can still overwrite an earlier, lower-priority one.
+    const byName = new Map<string, Phase1Candidate>();
+    for (const c of parsePhase1Candidates(phase1Text)) {
       const key = c.name.trim().toLowerCase();
-      if (seenNames.has(key)) return false;
-      seenNames.add(key);
-      return true;
-    });
+      const existing = byName.get(key);
+      if (!existing || roleSortIndex(c.role) < roleSortIndex(existing.role)) {
+        byName.set(key, c);
+      }
+    }
+    const namedCandidates = Array.from(byName.values());
+    // Priority-sorted BEFORE the phase-2 cap (24.08 follow-up) — so a limited lookup budget goes
+    // to the most relevant candidates first (CEO/Founder-type roles) rather than whichever ones
+    // happened to appear earliest in phase 1's own (arbitrary) output order.
+    const candidates = sortByRolePriority(namedCandidates);
 
     const toLookUp = candidates.slice(0, PHASE2_CANDIDATE_CAP);
     const overflow = candidates.slice(PHASE2_CANDIDATE_CAP);
     if (overflow.length > 0) {
-      this.logger.log(`[LPR DEBUG] ${overflow.length} candidate(s) past PHASE2_CANDIDATE_CAP (${PHASE2_CANDIDATE_CAP}) — kept as name+role, unverified, no phase-2 lookup`);
+      // 24.08 follow-up, second revision: overflow candidates never get a phase-2 lookup, so
+      // there's no way to confirm they're the right company — excluded entirely rather than
+      // surfaced as name+role (see this method's "no unverified middle state" doc comment above
+      // the people.push logic below).
+      this.logger.log(`[LPR DEBUG] ${overflow.length} candidate(s) past PHASE2_CANDIDATE_CAP (${PHASE2_CANDIDATE_CAP}) — excluded, no phase-2 lookup so company match can't be confirmed`);
     }
 
     // ---- Phase 2: one SEPARATE, individually forced call per candidate ----
@@ -200,37 +302,55 @@ export class OpenaiClassifierService {
     // must not lose every other candidate's result — same "no silent failures, don't let one bad
     // item abort the run" principle used throughout this codebase's other batch flows.
     const phase2Settled = await Promise.allSettled(
-      toLookUp.map((c) => this.searchPersonLinkedin(client, c, company)),
+      toLookUp.map((c) => this.searchPersonLinkedin(client, c, company, companyWebsite)),
     );
 
     const allQueries = [...phase1Queries];
     const people: LprPerson[] = [];
 
+    // 24.08 follow-up, second revision: this is a deliberate reversal of the earlier "flag,
+    // don't drop" design for THIS provider specifically. Previously an unverified/failed/
+    // overflow candidate was still pushed with a blank URL — a "here's a name, but we couldn't
+    // confirm it" middle state, surfaced in the dashboard as greyed-out/unclickable. The Karat
+    // incident showed why that's not good enough on its own: a name+role that might belong to a
+    // different, same-named company is still noise someone has to manually re-check — the goal
+    // is a list Mariia can act on directly, not one she has to re-verify. So as of this
+    // revision, only a candidate whose phase-2 call BOTH returned a real, sources-verified URL
+    // AND had company_match_confirmed === true from the model gets included at all; everything
+    // else (unverified, failed call, or never looked up due to the phase-2 cap) is excluded from
+    // the result entirely, logged for visibility, never surfaced as a person.
     phase2Settled.forEach((settled, i) => {
       const candidate = toLookUp[i];
       if (settled.status === 'fulfilled') {
         allQueries.push(...settled.value.queries);
-        people.push(
-          settled.value.verified
-            ? { role: candidate.role, name: candidate.name, linkedin_url: settled.value.linkedinUrl, linkedin_url_verified: true }
-            : { role: candidate.role, name: candidate.name, linkedin_url: '', linkedin_url_verified: false },
-        );
+        if (settled.value.verified) {
+          people.push({ role: candidate.role, name: candidate.name, linkedin_url: settled.value.linkedinUrl, linkedin_url_verified: true });
+        } else {
+          this.logger.log(`[LPR DEBUG] "${candidate.name}" excluded — phase-2 could not confirm both a real URL and the correct company`);
+        }
       } else {
-        // The dedicated per-person call itself failed (rate limit, network, etc.) — keep the
-        // person visible (phase 1 genuinely found them) rather than losing them because of an
-        // unrelated transient failure in their specific lookup.
-        this.logger.warn(`OpenAI LPR phase-2 search failed for "${candidate.name}": ${String(settled.reason)}`);
-        people.push({ role: candidate.role, name: candidate.name, linkedin_url: '', linkedin_url_verified: false });
+        // The dedicated per-person call itself failed (rate limit, network, etc.) — with no
+        // company-match confirmation obtained, this candidate can't be told apart from a
+        // same-named-company collision, so it's excluded rather than surfaced unverified.
+        this.logger.warn(`OpenAI LPR phase-2 search failed for "${candidate.name}": ${String(settled.reason)} — excluded`);
       }
     });
 
-    for (const c of overflow) {
-      people.push({ role: c.role, name: c.name, linkedin_url: '', linkedin_url_verified: false });
+    const deduped = dedupeByUrlThenName(people);
+    // Final priority-sorted cap (FINAL_PEOPLE_CAP's own comment has the reasoning) — applied
+    // AFTER dedup so the cap counts real distinct people, not URL/name duplicates. Candidates
+    // were already priority-sorted going into phase 2, so this mostly just trims the tail; it's
+    // reapplied here (not assumed to already hold) because dedup can change which entries survive
+    // and in what order.
+    const finalPeople = sortByRolePriority(deduped).slice(0, FINAL_PEOPLE_CAP);
+    const droppedByCap = deduped.length - finalPeople.length;
+    if (droppedByCap > 0) {
+      this.logger.log(`[LPR DEBUG] ${droppedByCap} deduped candidate(s) past FINAL_PEOPLE_CAP (${FINAL_PEOPLE_CAP}) — not saved`);
     }
 
     const reasoning = allQueries.length > 0 ? `Searched: ${allQueries.join('; ')}` : undefined;
 
-    return { ok: true, people, raw: phase1Text, reasoning, quotaExhausted: false };
+    return { ok: true, people: finalPeople, raw: phase1Text, reasoning, quotaExhausted: false };
   }
 
   // Phase 2: ONE dedicated, forced web-search call for exactly one already-identified person —
@@ -239,26 +359,63 @@ export class OpenaiClassifierService {
   // under live testing). Throws on request failure (caught by the caller's Promise.allSettled);
   // returns a verified/unverified result otherwise, using the SAME action.sources cross-check
   // built for the single-call design (normalizeForComparison below), scoped to just this call's
-  // own sources.
+  // own sources — PLUS a company-identity check (24.08 follow-up bug fix, see this method's own
+  // doc comment further down for the full incident).
+  // 24.08 follow-up, fifth revision: web_search's own results are non-deterministic between
+  // calls — live-tested on this exact lead, the SAME person (Mohit Bhende) got a real,
+  // verifiable linkedin.com source on one call and no usable source at all on the next, with no
+  // change to the prompt or candidate. A single phase-2 attempt is therefore testing search luck
+  // as much as it's testing whether the person is real. This retries up to
+  // PHASE2_MAX_ATTEMPTS_PER_CANDIDATE independent search rolls for the SAME candidate before
+  // giving up — same trust bar every attempt, just more chances to land a verifiable one. Stops
+  // at the first attempt that verifies; only exhausts all attempts when every one fails.
+  //
+  // 24.08 follow-up, sixth revision: live testing (Juniper Square, a normal non-adversarial
+  // company) found the general search above has a systematic gap for exactly the highest-value
+  // roles — the real CEO and both real Co-Founders failed verification while the COO and a VP of
+  // Engineering passed. For TOP_TIER_ROLES candidates only, if every general attempt still comes
+  // back unverified, this adds ONE further attempt with a differently targeted search — the
+  // company's own website rather than the open web (searchPersonLinkedinAttempt's own doc
+  // comment on the company-site prompt has the reasoning for why that's a distinct, not
+  // redundant, search). Same verification logic, same trust bar — just one more, better-aimed
+  // roll for the roles that most need it.
   private async searchPersonLinkedin(
     client: OpenAI,
     candidate: Phase1Candidate,
     company: string,
+    companyWebsite: string | null,
   ): Promise<{ linkedinUrl: string; verified: boolean; queries: string[] }> {
-    const prompt = [
-      `Find the LinkedIn profile URL for ${candidate.name}, ${candidate.role} at ${company}.`,
-      '',
-      'Search specifically for this person by their full name together with the company name.',
-      '',
-      'CRITICAL: Only report linkedin_url if your search actually returned this specific ' +
-        'person’s real LinkedIn profile page as a result. Never construct, guess, normalize, ' +
-        'or "clean up" a URL from their name — copy the exact URL you saw in a search result, ' +
-        'character for character. If your search does not turn up a confirmable LinkedIn ' +
-        'profile URL for this specific person, report linkedin_url as an empty string ("") — ' +
-        'that is a completely acceptable, correct answer. It is far better to report no URL ' +
-        'than one you are not certain you actually saw.',
-    ].join('\n');
+    const companyIdentifier = companyWebsite ? `${company} (${companyWebsite})` : company;
+    const allQueries: string[] = [];
+    let last: { linkedinUrl: string; verified: boolean; queries: string[] } = { linkedinUrl: '', verified: false, queries: [] };
 
+    for (let attempt = 1; attempt <= PHASE2_MAX_ATTEMPTS_PER_CANDIDATE; attempt++) {
+      const prompt = buildGeneralPhase2Prompt(candidate, companyIdentifier);
+      last = await this.searchPersonLinkedinAttempt(client, candidate, prompt, `general ${attempt}/${PHASE2_MAX_ATTEMPTS_PER_CANDIDATE}`, companyWebsite);
+      allQueries.push(...last.queries);
+      if (last.verified) break;
+    }
+
+    if (!last.verified && companyWebsite && TOP_TIER_ROLES.includes(candidate.role)) {
+      const prompt = buildCompanySitePhase2Prompt(candidate, company, companyWebsite);
+      last = await this.searchPersonLinkedinAttempt(client, candidate, prompt, 'company-site', companyWebsite);
+      allQueries.push(...last.queries);
+    }
+
+    return { linkedinUrl: last.linkedinUrl, verified: last.verified, queries: allQueries };
+  }
+
+  // Single search-and-verify attempt — unchanged trust bar regardless of which prompt is passed
+  // in (general open-web search vs. the company-site-scoped search, see searchPersonLinkedin
+  // above). `attemptLabel` is only used for the debug log line below (which attempt produced
+  // which result).
+  private async searchPersonLinkedinAttempt(
+    client: OpenAI,
+    candidate: Phase1Candidate,
+    prompt: string,
+    attemptLabel: string,
+    companyWebsite: string | null,
+  ): Promise<{ linkedinUrl: string; verified: boolean; queries: string[] }> {
     const response = await client.responses.create({
       model: MODEL,
       input: prompt,
@@ -281,18 +438,216 @@ export class OpenaiClassifierService {
     const rawSourceUrls = extractRawSourceUrls(response);
     const realUrls = new Set(rawSourceUrls.map((u) => normalizeForComparison(u)));
 
-    const modelUrl = parsePhase2Url(response.output_text ?? '').trim();
+    const { linkedinUrl: modelUrlRaw, companyMatchConfirmed } = parsePhase2Response(response.output_text ?? '');
+    const modelUrl = modelUrlRaw.trim();
     const normalizedModelUrl = normalizeForComparison(modelUrl);
-    const verified = modelUrl !== '' && realUrls.has(normalizedModelUrl);
+    const urlVerifiedExact = modelUrl !== '' && realUrls.has(normalizedModelUrl);
+
+    // Narrow relaxation (24.08 follow-up, fourth revision — live-tested regression from revision
+    // 3): LinkedIn blocks generic crawling of /in/ profile pages, so web_search's own sources
+    // essentially never contain the canonical /in/ URL itself verbatim — only ADJACENT LinkedIn
+    // pages (a /posts/... URL, a /company/... page) whose URL happens to embed the same vanity
+    // slug, from which the model can correctly read off the real slug. Confirmed via a live
+    // diagnostic call on this exact lead: Mohit Bhende's real slug ("mohit-bhende-4358b2") is
+    // sitting right there in a genuine source URL
+    // (linkedin.com/posts/mohit-bhende-4358b2_...), but urlVerifiedExact above still rejected it
+    // because that source isn't itself the /in/ page.
+    //
+    // Deliberately narrow, to avoid reopening the original clean-slug-fabrication hole this whole
+    // verification mechanism exists to close: the slug match only counts when the SOURCE URL
+    // containing it is itself on the linkedin.com domain (any subdomain/path — posts, company,
+    // regional subdomains like ar.linkedin.com all qualify). A slug that merely appears in a
+    // third-party site's URL text (theorg.com, crunchbase.com, etc.) is NOT accepted here — that
+    // would be indistinguishable from the model matching a name to a plausible-looking slug on an
+    // unrelated page, exactly the weak evidence this feature was built to reject.
+    let urlVerified = urlVerifiedExact;
+    if (!urlVerified && modelUrl !== '') {
+      const slug = extractLinkedinSlug(modelUrl);
+      if (slug) {
+        urlVerified = rawSourceUrls.some((u) => isLinkedinDomainUrl(u) && u.toLowerCase().includes(slug.toLowerCase()));
+      }
+    }
+
+    // Production bug fix (24.08 follow-up, THIRD revision — found via manual verification on
+    // the Karat/karat.com lead, twice now): the URL-in-sources check above only confirms a
+    // LinkedIn URL is REAL — it says nothing about whether it's the RIGHT company. "Will Kim"
+    // and "Eric Wei" were returned as verified Co-Founders of "Karat" — their LinkedIn URLs are
+    // genuine and genuinely appeared in that call's own sources — but they're Co-Founders of
+    // Karat Financial, an unrelated fintech sharing the bare word "Karat" with karat.com (this
+    // lead's actual company).
+    //
+    // Revision 1: a code-level check that at least one source URL's domain literally equaled the
+    // company website. Too blunt — most real bio sources (theorg.com, crunchbase.com, forbes
+    // councils) describe an employer in TEXT, never by linking to the company's own domain, so it
+    // rejected genuinely correct matches too.
+    //
+    // Revision 2: replaced the domain check with company_match_confirmed, the model's own
+    // self-reported judgment on whether its sources connect this person to the right company.
+    // Also too weak on its own — live-tested regression: the model confidently self-confirmed
+    // Will Kim/Eric Wei (the WRONG "Karat") as company-matched, while the genuinely correct pair
+    // came back excluded. A same-named-company collision is exactly the kind of mistake a model's
+    // own unaided judgment can't be trusted to catch every time.
+    //
+    // Revision 3 (this one): require ALL THREE signals together, not one replacing another —
+    // urlVerified (a real URL, not fabricated), companyMatchConfirmed (the model's own read of
+    // its sources' content, which code alone can't see), AND domainConfirmed (a concrete,
+    // code-level fact — at least one of THIS call's own sources references the company's actual
+    // website domain) brought back as an independent check, not a replacement for the other two.
+    // domainConfirmed stays null (doesn't block) only when companyWebsite itself is unavailable
+    // to check against; once a website exists, this is a required, not optional, signal — the
+    // explicit tradeoff the user asked for: a shorter, trustworthy list beats a longer one a
+    // single unreliable signal (model self-report alone) can be fooled into extending.
+    const companyDomain = companyWebsite ? extractDomain(companyWebsite) : null;
+    const domainConfirmed =
+      companyDomain === null ? null : rawSourceUrls.some((u) => u.toLowerCase().includes(companyDomain.toLowerCase()));
+    const verified = urlVerified && companyMatchConfirmed && domainConfirmed !== false;
+
+    // KNOWN LIMITATION, accepted as-is (24.08 follow-up — decided after live-testing this exact
+    // three-way AND against Karat, a deliberately adversarial same-named-company case, karat.com
+    // vs. the unrelated "Karat Financial"): this AND is intentionally NOT loosened further, even
+    // though it produces real, reproducible false negatives — confirmed via 3 independent retry
+    // attempts each (not one-off noise) for two genuinely correct people on that lead:
+    //   1. No linkedin.com-domain source ever surfaces for some real people at all (their
+    //      LinkedIn presence apparently isn't indexed under this query phrasing) — urlVerified
+    //      can never pass for them no matter how many attempts, even with companyMatchConfirmed
+    //      and domainConfirmed both true.
+    //   2. Some real people's sources never literally contain the company's website domain
+    //      string, even though a genuine, slug-verified LinkedIn source and a confirmed company
+    //      match both exist — domainConfirmed can never pass for them.
+    // Both are accepted false negatives, not bugs to keep chasing: domainConfirmed is exactly the
+    // signal that caught Will Kim/Eric Wei (Karat Financial) even when the model's own
+    // self-reported companyMatchConfirmed got fooled — loosening it back out to fix these two
+    // false negatives would reopen that exact danger. A shorter, trustworthy list beats a longer
+    // one a single weak signal can be fooled into extending.
 
     // TEMPORARY DEBUG LOGGING — added during the 20.08 architecture change to confirm phase 2
-    // actually runs and actually verifies correctly per person. Remove once confirmed stable.
+    // actually runs and actually verifies correctly per person; updated 24.08 (fourth revision) to
+    // show the exact-vs-slug-relaxed urlVerified path separately. Remove once stable.
     this.logger.log(
-      `[LPR DEBUG] phase2 "${candidate.name}": raw sources=${JSON.stringify(rawSourceUrls)} ` +
-        `modelUrl_raw="${modelUrl}" modelUrl_normalized="${normalizedModelUrl}" verified=${verified}`,
+      `[LPR DEBUG] phase2 "${candidate.name}" attempt ${attemptLabel}: ` +
+        `raw sources=${JSON.stringify(rawSourceUrls)} ` +
+        `modelUrl_raw="${modelUrl}" modelUrl_normalized="${normalizedModelUrl}" urlVerifiedExact=${urlVerifiedExact} ` +
+        `urlVerified=${urlVerified} companyMatchConfirmed=${companyMatchConfirmed} ` +
+        `companyDomain=${JSON.stringify(companyDomain)} domainConfirmed=${domainConfirmed} verified=${verified}`,
     );
 
     return { linkedinUrl: modelUrl, verified, queries };
+  }
+}
+
+// The general, open-web phase-2 search prompt — unchanged wording from before the sixth
+// revision, just extracted into its own function so searchPersonLinkedin can build a fresh one
+// per retry attempt (and so buildCompanySitePhase2Prompt below can sit next to it for
+// comparison). companyIdentifier already folds in the website when available (24.08 bug fix —
+// see searchPersonLinkedin's own doc comment).
+function buildGeneralPhase2Prompt(candidate: Phase1Candidate, companyIdentifier: string): string {
+  return [
+    `Find the LinkedIn profile URL for ${candidate.name}, ${candidate.role} at ${companyIdentifier}.`,
+    '',
+    'Search specifically for this person by their full name together with the company name.',
+    '',
+    'CRITICAL: Company names are sometimes shared by multiple unrelated companies. Before ' +
+      'reporting a linkedin_url, confirm the search results actually connect this specific ' +
+      'person to the company identified above (matching its name AND, if a website was ' +
+      'given, its website) — not merely to a different company that happens to have a ' +
+      'similar or identical name. If you cannot confirm this is the same company, or the ' +
+      'person you found appears to work at a different, same-named company, report ' +
+      'linkedin_url as an empty string ("") rather than a URL for the wrong company.',
+    '',
+    'You must also report company_match_confirmed: a true/false judgment call, based only on ' +
+      'what your search actually returned. Set it to true ONLY if what you found gives you a ' +
+      'real, specific basis to believe this person works at the company identified above — ' +
+      'for example a search result whose text explicitly names that company (or its website) ' +
+      'in connection with this person. Do not default to true, and do not set it to true just ' +
+      'because you found a plausible-looking person with a matching name or role — the whole ' +
+      'point of this field is to catch cases where a same-named but different company is the ' +
+      'real employer. If you found nothing that specifically ties this person to this company, ' +
+      'or you are genuinely unsure, set company_match_confirmed to false.',
+    '',
+    'CRITICAL: Only report linkedin_url if your search actually returned this specific ' +
+      'person’s real LinkedIn profile page as a result. Never construct, guess, normalize, ' +
+      'or "clean up" a URL from their name — copy the exact URL you saw in a search result, ' +
+      'character for character. If your search does not turn up a confirmable LinkedIn ' +
+      'profile URL for this specific person, report linkedin_url as an empty string ("") — ' +
+      'that is a completely acceptable, correct answer. It is far better to report no URL ' +
+      'than one you are not certain you actually saw.',
+  ].join('\n');
+}
+
+// 24.08 follow-up, sixth revision: a second, differently targeted phase-2 prompt for
+// TOP_TIER_ROLES candidates who exhaust every general attempt unverified — see
+// searchPersonLinkedin's own doc comment for the Juniper Square finding that motivated this.
+// Deliberately scoped to the company's OWN website (companyWebsite is required by the caller
+// before this is used) rather than the open web: many startups list founders/leadership on a
+// Team/About/Leadership page with a direct LinkedIn link, which the general prompt's plain
+// name+company search doesn't specifically go looking for. Not a relaxation of what counts as
+// verified — same PHASE2_SCHEMA, same company_match_confirmed requirement, same
+// don't-construct-a-URL anti-fabrication instruction as the general prompt; only the search
+// target changes.
+function buildCompanySitePhase2Prompt(candidate: Phase1Candidate, company: string, companyWebsite: string): string {
+  return [
+    `Find the LinkedIn profile URL for ${candidate.name}, ${candidate.role} at ${company}, by ` +
+      'searching the company\'s OWN website specifically — not the open web in general.',
+    '',
+    `Company website: ${companyWebsite}`,
+    '',
+    'Search specifically within this website\'s own domain (for example, a site-restricted ' +
+      'search using that domain) for a Team, About, Leadership, or Founders page that lists ' +
+      'this person, and check whether that page directly links to their LinkedIn profile. Many ' +
+      'startups list their founders and leadership with a direct LinkedIn link right on their ' +
+      'own site — that direct link, if you find it, is exactly what this search is looking for.',
+    '',
+    'You must also report company_match_confirmed: a true/false judgment call, based only on ' +
+      'what your search actually returned. Set it to true ONLY if what you found gives you a ' +
+      'real, specific basis to believe this person works at this company — a page on the ' +
+      'company’s own website naming them is strong evidence. Do not default to true. If you ' +
+      'found nothing on the company’s own site that specifically ties this person to this ' +
+      'company, set company_match_confirmed to false.',
+    '',
+    'CRITICAL: Only report linkedin_url if your search actually returned a real LinkedIn link ' +
+      'for this specific person from the company’s own website. Never construct, guess, ' +
+      'normalize, or "clean up" a URL from their name — copy the exact URL you saw, character ' +
+      'for character. If you do not find a confirmable LinkedIn link on the company’s own site ' +
+      'for this specific person, report linkedin_url as an empty string ("") — that is a ' +
+      'completely acceptable, correct answer.',
+  ].join('\n');
+}
+
+// Extracts a bare hostname (no scheme, no "www.") from a company_website value for the
+// domain-disambiguation check above — e.g. "https://www.karat.com/careers" → "karat.com".
+// Returns null for a malformed/unparseable website rather than throwing, since company_website
+// is free-form data from an earlier deepening step, not guaranteed to be a clean URL.
+function extractDomain(website: string): string | null {
+  try {
+    const url = new URL(website.startsWith('http') ? website : `https://${website}`);
+    return url.hostname.replace(/^www\./i, '');
+  } catch {
+    return null;
+  }
+}
+
+// Slug-relaxed urlVerified (see searchPersonLinkedin's own comment for the full incident) — two
+// small helpers, kept separate so each stays independently obvious: is this URL on the
+// linkedin.com domain at all (any subdomain — ar., ru., www., none), and what's the /in/ vanity
+// slug of a candidate LinkedIn profile URL, if it has one. Both return null/false rather than
+// throwing on a malformed URL, same defensive style as extractDomain above.
+function isLinkedinDomainUrl(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
+  } catch {
+    return false;
+  }
+}
+
+function extractLinkedinSlug(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!isLinkedinDomainUrl(url)) return null;
+    const match = parsed.pathname.match(/\/in\/([^/]+)/i);
+    return match ? match[1] : null;
+  } catch {
+    return null;
   }
 }
 
@@ -357,6 +712,32 @@ function normalizeForComparison(url: string): string {
   return withoutQuery.endsWith('/') ? withoutQuery.slice(0, -1) : withoutQuery;
 }
 
+// 24.08 follow-up bug fix: "Mike Liberty" (Co-Founder) and "Michael Liberty" (COO) were saved
+// as two separate people — same real linkedin.com/in/mliberty profile, found via two different
+// name variants that phase 1's name-string dedupe (upstream, before phase 2 runs — see its own
+// comment) can't catch, since "Mike" !== "Michael" as strings. A verified linkedin_url is the
+// unambiguous identity signal a name string never can be, so this dedupes by normalized URL
+// first, and only falls back to name-string matching for entries that never got a verified URL
+// (nothing better to compare there — same limitation the upstream pass already has, just applied
+// again post-phase-2 in case an unverified duplicate slipped through with a different name
+// variant). Keeps first occurrence in both cases, same convention as the upstream dedupe.
+function dedupeByUrlThenName(people: LprPerson[]): LprPerson[] {
+  const seenUrls = new Set<string>();
+  const seenNames = new Set<string>();
+  return people.filter((p) => {
+    if (p.linkedin_url_verified && p.linkedin_url) {
+      const key = normalizeForComparison(p.linkedin_url.trim());
+      if (seenUrls.has(key)) return false;
+      seenUrls.add(key);
+      return true;
+    }
+    const key = p.name.trim().toLowerCase();
+    if (seenNames.has(key)) return false;
+    seenNames.add(key);
+    return true;
+  });
+}
+
 // Structured Outputs guarantees response.output_text is valid JSON matching PHASE1_SCHEMA — this
 // still defensively re-validates rather than trusting that blindly, but doesn't need
 // parseLprPeople's markdown-fence-stripping or catch-everything leniency, since there's no
@@ -376,18 +757,46 @@ function parsePhase1Candidates(text: string): Phase1Candidate[] {
       role: typeof p.role === 'string' ? p.role : '',
       name: typeof p.name === 'string' ? p.name : '',
     }))
-    .filter((p) => p.name);
+    .filter((p) => p.name && looksLikeFullName(p.name));
+}
+
+// 24.08 follow-up bug fix: the same Karat lead that returned 26 "people" included entries whose
+// entire "name" field was bare initials ("KH", "EB", "SW", "RM", "AJ") — fragments/duplicates of
+// full-name entries already in the list, not real distinct people. Rejected here at the
+// parsing/validation stage rather than left to the prompt alone (the prompt says "full name",
+// but nothing enforced it — same lesson as the role-enum fix: a schema/code-level constraint
+// beats hoping the model follows an instruction). Requires at least two space-separated tokens
+// that each look like a real name word (2+ letters, allowing internal hyphens/apostrophes for
+// names like "Jean-Paul" or "O'Brien") — a lone "KH" has no space at all and is rejected
+// outright; "K H" (two single-letter tokens) is rejected because neither token clears the
+// 2-letter-minimum. A middle initial ("John J. Smith") still passes since two OTHER tokens
+// already clear the bar.
+function looksLikeFullName(name: string): boolean {
+  const tokens = name.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return false;
+  const realTokens = tokens.filter((t) => /^[A-Za-zÀ-ÖØ-öø-ÿ]{2,}([-'][A-Za-zÀ-ÖØ-öø-ÿ]+)*$/.test(t));
+  return realTokens.length >= 2;
 }
 
 // Same defensive-but-lenient-free parsing as parsePhase1Candidates, for phase 2's
-// single-field {linkedin_url} schema.
-function parsePhase2Url(text: string): string {
+// {linkedin_url, company_match_confirmed} schema. companyMatchConfirmed defaults to false on
+// any parse failure or missing/malformed field (24.08 follow-up, second revision) — never a
+// default of true. This is a strict-schema-required field, so a missing value here means
+// something went wrong with the response itself, not a legitimate "no opinion" from the model;
+// treating that the same as an explicit false keeps the fail-safe direction consistent with the
+// rest of this file ("a false unverified is much safer than a false verified").
+function parsePhase2Response(text: string): { linkedinUrl: string; companyMatchConfirmed: boolean } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return '';
+    return { linkedinUrl: '', companyMatchConfirmed: false };
   }
-  const url = (parsed as { linkedin_url?: unknown } | null)?.linkedin_url;
-  return typeof url === 'string' ? url : '';
+  const obj = parsed as { linkedin_url?: unknown; company_match_confirmed?: unknown } | null;
+  const url = obj?.linkedin_url;
+  const confirmed = obj?.company_match_confirmed;
+  return {
+    linkedinUrl: typeof url === 'string' ? url : '',
+    companyMatchConfirmed: confirmed === true,
+  };
 }
