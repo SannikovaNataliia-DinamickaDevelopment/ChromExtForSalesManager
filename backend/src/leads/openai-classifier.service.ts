@@ -379,6 +379,17 @@ export class OpenaiClassifierService {
   // comment on the company-site prompt has the reasoning for why that's a distinct, not
   // redundant, search). Same verification logic, same trust bar — just one more, better-aimed
   // roll for the roles that most need it.
+  //
+  // 24.08 follow-up, eighth revision — ATTEMPTED, REVERTED: tried restricting the first general
+  // attempt to linkedin.com via the web_search tool's own `filters.allowed_domains` (the real,
+  // documented mechanism — not a `site:` query-text hint, which OpenAI's docs don't list as
+  // honored). Live-tested across the same 5-lead sample and reverted immediately: the API itself
+  // rejects it — `Error: 400 Parameter 'filters' not supported with model 'gpt-4.1-mini'` — on
+  // every single phase-2 call, so every candidate on every lead failed outright and got excluded,
+  // including Juniper Square's previously-verified Stephanie D. Miller/Adam Hyder (0/19 verified
+  // this run vs. 2/19 before). `filters` requires a newer web_search tool version tied to a
+  // different model than the one this file uses for cost reasons — not compatible as a drop-in
+  // change. Reverted to the unrestricted call every attempt used before this revision.
   private async searchPersonLinkedin(
     client: OpenAI,
     candidate: Phase1Candidate,
@@ -409,6 +420,13 @@ export class OpenaiClassifierService {
   // in (general open-web search vs. the company-site-scoped search, see searchPersonLinkedin
   // above). `attemptLabel` is only used for the debug log line below (which attempt produced
   // which result).
+  //
+  // 24.08 follow-up, eighth revision — ATTEMPTED, REVERTED: this briefly took an `allowedDomains`
+  // param and passed it as the web_search tool's `filters.allowed_domains` to restrict the first
+  // attempt to linkedin.com. Reverted after a live test across the 5-lead sample threw
+  // `Error: 400 Parameter 'filters' not supported with model 'gpt-4.1-mini'` on every call — see
+  // searchPersonLinkedin's own doc comment for the full incident. Back to the plain, unrestricted
+  // tool call every attempt has always used.
   private async searchPersonLinkedinAttempt(
     client: OpenAI,
     candidate: Phase1Candidate,
