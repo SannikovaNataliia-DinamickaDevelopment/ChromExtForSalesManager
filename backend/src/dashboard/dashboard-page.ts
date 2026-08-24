@@ -1129,6 +1129,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         <option value="not_checked">Not detailed</option>
       </select>
     </span>
+    <span>
+      <label for="filter-lpr">DM</label>
+      <select id="filter-lpr">
+        <option value="all">All</option>
+        <option value="has">Has data</option>
+        <option value="no">No data</option>
+      </select>
+    </span>
     <span class="daterange-wrap">
       <label for="filter-published-range-input">Published Date</label>
       <span class="daterange-field" id="filter-published-range-field">
@@ -1280,7 +1288,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'location', label: 'Location' },
     { key: 'company_linkedin', label: 'Company LinkedIn' },
     { key: 'hiring_contact', label: 'Hiring Contact' },
-    { key: 'lpr', label: 'LPR' },
+    { key: 'lpr', label: 'DM' },
     { key: 'source_url', label: 'Job link' },
     { key: 'is_it', label: 'IT?' },
     { key: 'salary', label: 'Salary' },
@@ -1317,6 +1325,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     filterDetail: 'all',
     filterContact: 'all',
     filterCompanyLinkedin: 'all',
+    // 'has'/'no' rather than the three-state not_checked/found/not_specified pattern the other
+    // enum-backed filters use — lpr_results is a plain nullable array (never searched vs.
+    // searched-with-zero-survivors both read as "no data" here), not a tri-state DB enum.
+    filterLpr: 'all',
     // null = "All dates"; otherwise { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' } (Kyiv calendar
     // days, inclusive both ends) — see createDateRangeFilter().
     filterPublishedRange: null,
@@ -1551,6 +1563,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var DETAIL_FILTER_SUMMARY_LABELS = { not_detailed: 'Not detailed', detailed: 'Detailed', error: 'Error' };
   var CONTACT_FILTER_SUMMARY_LABELS = { found: 'Has contact person', not_specified: 'Not specified', not_checked: 'Not detailed for contact person' };
   var COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS = { found: 'Has company LinkedIn', not_specified: 'Not specified', not_checked: 'Not detailed' };
+  var LPR_FILTER_SUMMARY_LABELS = { has: 'Has data', no: 'No data' };
 
   function buildExportFilterSummaryLines() {
     var lines = [];
@@ -1560,6 +1573,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterDetail !== 'all') lines.push('Detail: ' + (DETAIL_FILTER_SUMMARY_LABELS[state.filterDetail] || state.filterDetail));
     if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
     if (state.filterCompanyLinkedin !== 'all') lines.push('Company LinkedIn: ' + (COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS[state.filterCompanyLinkedin] || state.filterCompanyLinkedin));
+    if (state.filterLpr !== 'all') lines.push('DM: ' + (LPR_FILTER_SUMMARY_LABELS[state.filterLpr] || state.filterLpr));
     if (state.filterPublishedRange) lines.push('Published date: ' + formatUsDate(state.filterPublishedRange.start) + ' \\u2013 ' + formatUsDate(state.filterPublishedRange.end));
     if (state.filterScrapedRange) lines.push('Scraped date: ' + formatUsDate(state.filterScrapedRange.start) + ' \\u2013 ' + formatUsDate(state.filterScrapedRange.end));
     if (state.search) lines.push('Search: "' + state.search + '"');
@@ -2636,6 +2650,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       // already exactly the DB enum value, same relationship the IT filter has to lead.is_it.
       if (state.filterContact !== 'all' && lead.hiring_contact_status !== state.filterContact) return false;
       if (state.filterCompanyLinkedin !== 'all' && lead.company_linkedin_status !== state.filterCompanyLinkedin) return false;
+      if (state.filterLpr !== 'all') {
+        var hasLprData = !!(lead.lpr_results && lead.lpr_results.length > 0);
+        if (state.filterLpr === 'has' && !hasLprData) return false;
+        if (state.filterLpr === 'no' && hasLprData) return false;
+      }
       // Kyiv calendar-day comparison (formatKyiv's own Intl.DateTimeFormat approach), same
       // convention as every other date already shown on this page — plain string comparison of
       // YYYY-MM-DD is chronologically correct since it's already zero-padded/lexicographic.
@@ -2812,7 +2831,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function buildLprResultsRow(lead) {
     var row = document.createElement('div');
     row.className = 'detail-row';
-    row.appendChild(el('span', { className: 'detail-label', text: 'LPR' }));
+    row.appendChild(el('span', { className: 'detail-label', text: 'DM' }));
 
     var valueWrap = document.createElement('span');
     valueWrap.className = 'detail-value';
@@ -2854,7 +2873,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (!lead.lpr_reasoning) return null;
     var details = document.createElement('details');
     details.className = 'lpr-reasoning-section';
-    details.appendChild(el('summary', { text: 'LPR search reasoning' }));
+    details.appendChild(el('summary', { text: 'DM search reasoning' }));
     details.appendChild(el('pre', { text: lead.lpr_reasoning }));
     return details;
   }
@@ -2895,7 +2914,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var button = el('button', {
       className: 'lpr-search-btn',
       type: 'button',
-      text: inFlight ? 'Searching\\u2026' : 'LPR Search',
+      text: inFlight ? 'Searching\\u2026' : 'DM Search',
     });
     button.disabled = inFlight;
     button.title = 'Searches for this company\\u2019s leadership (CEO/CTO/Founder/etc.) via the selected provider and saves the result to this lead.';
@@ -2957,7 +2976,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       .finally(function () {
         delete lprSearchInFlight[lead.id];
         button.disabled = false;
-        button.textContent = 'LPR Search';
+        button.textContent = 'DM Search';
         providerSelect.disabled = false;
       });
   }
@@ -4009,6 +4028,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   });
   document.getElementById('filter-company-linkedin').addEventListener('change', function (e) {
     state.filterCompanyLinkedin = e.target.value;
+    render();
+  });
+  document.getElementById('filter-lpr').addEventListener('change', function (e) {
+    state.filterLpr = e.target.value;
     render();
   });
   createDateRangeFilter({

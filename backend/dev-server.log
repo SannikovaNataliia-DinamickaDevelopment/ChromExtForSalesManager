@@ -347,3 +347,411 @@ Backend listening on http://localhost:3000
 [32m[Nest] 27572  - [39m24.08.2026, 20:33:47 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +1ms[39m
 [32m[Nest] 27572  - [39m24.08.2026, 20:33:47 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +29ms[39m
 Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:42:28[0m] File change detected. Starting incremental compilation...
+
+[[90m20:42:29[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +22ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +76ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +5ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11516  - [39m24.08.2026, 20:42:35 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +21ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:42:43[0m] File change detected. Starting incremental compilation...
+
+[[90m20:42:43[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +21ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +59ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +3ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3032  - [39m24.08.2026, 20:42:49 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +18ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:42:50[0m] File change detected. Starting incremental compilation...
+
+[[90m20:42:51[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m20:42:57[0m] File change detected. Starting incremental compilation...
+
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +58ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +118ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +6ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[[90m20:42:57[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 28560  - [39m24.08.2026, 20:42:57 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +38ms[39m
+Backend listening on http://localhost:3000
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +21ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +61ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15072  - [39m24.08.2026, 20:43:03 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +19ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:43:05[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:06[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +22ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +61ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +3ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +1ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 2428  - [39m24.08.2026, 20:43:11 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +24ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:43:13[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:14[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m20:43:20[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:20[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +35ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 1212  - [39m24.08.2026, 20:43:20 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +20ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:25 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +75ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +6ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 15532  - [39m24.08.2026, 20:43:26 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +21ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:43:27[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:27[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m20:43:33[0m] File change detected. Starting incremental compilation...
+
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +39ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[[90m20:43:33[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +89ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +5ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 25584  - [39m24.08.2026, 20:43:33 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +38ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:43:38[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:38[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m20:43:43[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:44[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +31ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +65ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +5ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11400  - [39m24.08.2026, 20:43:49 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +20ms[39m
+Backend listening on http://localhost:3000
+[2J[3J[H[[90m20:43:56[0m] File change detected. Starting incremental compilation...
+
+[[90m20:43:56[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +23ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +64ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 9456  - [39m24.08.2026, 20:44:02 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +19ms[39m
+Backend listening on http://localhost:3000
