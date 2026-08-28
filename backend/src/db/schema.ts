@@ -17,11 +17,13 @@ export const hiringContactStatusEnum = pgEnum('hiring_contact_status', ['not_che
 // 'not_specified' (fetched fine, genuinely no LinkedIn link on the page — or the fetch itself
 // failed, treated the same per spec) so a backfill run never re-touches an already-resolved lead.
 export const companyLinkedinStatusEnum = pgEnum('company_linkedin_status', ['not_checked', 'found', 'not_specified']);
-// AI-powered LPR (leadership) search (20.08 follow-up) — records which of the three providers
+// AI-powered LPR (leadership) search (20.08 follow-up) — records which of the providers
 // produced the currently-saved lpr_results, not a status/lifecycle enum like the two above
 // (there's no "not_checked" state here: lpr_provider/lpr_results/lpr_reasoning/lpr_searched_at
-// are simply all null until the first search, see job_leads below).
-export const lprProviderEnum = pgEnum('lpr_provider', ['openai', 'gemini', 'claude']);
+// are simply all null until the first search, see job_leads below). 'apollo' added 26.08
+// follow-up — a maintained lookup database (Apollo.io), not a generative model like the other
+// three; see apollo-classifier.service.ts's own doc comment for how that changes its pipeline.
+export const lprProviderEnum = pgEnum('lpr_provider', ['openai', 'gemini', 'claude', 'apollo']);
 // Industry classification (24.08 follow-up, per the 19.08 call) — classifies the COMPANY's
 // industry/vertical, not what its product technically is (a CRM vendor for the energy sector is
 // "Energy," not "Software Development" — see industry-classifier.service.ts's own doc comment
@@ -116,6 +118,19 @@ export const job_leads = pgTable(
     lpr_reasoning: text('lpr_reasoning'),
     lpr_provider: lprProviderEnum('lpr_provider'),
     lpr_searched_at: timestamp('lpr_searched_at', { withTimezone: true }),
+    // Apollo organization id cache (28.08 follow-up) — apollo-classifier.service.ts's DM search
+    // used to filter by domain (q_organization_domains_list), which Apollo's own docs flag as
+    // less reliable than organization_ids[] (breaks on subdomains/redirects/multi-brand domains).
+    // Resolving a domain to an organization id costs 1 Apollo credit (organizations/enrich), so
+    // it's resolved once per company and cached here, reused across every lead that shares the
+    // same company_website domain — never re-resolved for a domain that already has one cached
+    // on ANY lead. Null = not yet resolved (never attempted, or the lookup found no match — see
+    // ApolloClassifierService.resolveOrganizationId's own comment on why a "no match" result
+    // isn't distinguished from "not yet tried" here: both fall back to the same domain-based
+    // search, so there's no behavioral reason to tell them apart, same "null means not yet, not
+    // a special value" convention as lpr_provider/industry above).
+    apollo_organization_id: text('apollo_organization_id'),
+    apollo_organization_resolved_at: timestamp('apollo_organization_resolved_at', { withTimezone: true }),
     // Industry classification (24.08 follow-up — see industryEnum above and
     // industry-classifier.service.ts). Null = not yet classified (never attempted, or attempted
     // with no usable company_website) — same "null means not yet, not a special enum value"

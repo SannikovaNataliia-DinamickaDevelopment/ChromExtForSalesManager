@@ -66,7 +66,12 @@ const PHASE2_MAX_ATTEMPTS_PER_CANDIDATE = 3;
 // dump; trimming favors ROLE_PRIORITY_ORDER below (company-wide leadership first) rather than
 // an arbitrary first-N cut, so a late-listed CEO is never dropped in favor of an early-listed
 // VP of Engineering when both can't fit.
-const FINAL_PEOPLE_CAP = 8;
+// Exported (24.08 follow-up, ninth revision — Apollo provider added) for reuse by
+// apollo-classifier.service.ts, same cap/priority-order convention requested for that provider
+// too. Not exported for OpenAI-specific reasons — this constant/ordering is genuinely
+// provider-agnostic policy ("what makes a final LPR list useful"), so it lives here once rather
+// than being redefined per provider.
+export const FINAL_PEOPLE_CAP = 8;
 
 // Same 11 values as LPR_ROLES, reordered by how uniquely relevant a role is for outreach —
 // CEO/Founder-type roles are rare (usually exactly one real person per company) and always
@@ -75,7 +80,7 @@ const FINAL_PEOPLE_CAP = 8;
 // so they're deprioritized when trimming to the cap. Must stay the same SET of values as
 // LPR_ROLES (just reordered) — roleSortIndex below falls back to "lowest priority" for anything
 // not found here, so a drift wouldn't break, just silently stop prioritizing that role.
-const ROLE_PRIORITY_ORDER = [
+export const ROLE_PRIORITY_ORDER = [
   'CEO', 'Founder', 'Co-Founder', 'Owner', 'Co-Owner',
   'CTO', 'CIO', 'COO', 'General Manager',
   'VP of Engineering', 'VP of Technology',
@@ -89,7 +94,7 @@ const ROLE_PRIORITY_ORDER = [
 // so there's no reason to spend the extra call outside this tier.
 const TOP_TIER_ROLES = ['CEO', 'Founder', 'Co-Founder', 'Owner', 'Co-Owner'];
 
-function roleSortIndex(role: string): number {
+export function roleSortIndex(role: string): number {
   const i = ROLE_PRIORITY_ORDER.indexOf(role);
   return i === -1 ? ROLE_PRIORITY_ORDER.length : i;
 }
@@ -97,7 +102,7 @@ function roleSortIndex(role: string): number {
 // Stable sort by role priority — ties (same role) keep their original relative order rather
 // than being reshuffled, so this can be applied more than once (before phase-2 selection, then
 // again before the final cap) without scrambling order each time.
-function sortByRolePriority<T extends { role: string }>(items: T[]): T[] {
+export function sortByRolePriority<T extends { role: string }>(items: T[]): T[] {
   return items
     .map((item, i) => ({ item, i }))
     .sort((a, b) => roleSortIndex(a.item.role) - roleSortIndex(b.item.role) || a.i - b.i)
@@ -634,8 +639,10 @@ function buildCompanySitePhase2Prompt(candidate: Phase1Candidate, company: strin
 // Extracts a bare hostname (no scheme, no "www.") from a company_website value for the
 // domain-disambiguation check above — e.g. "https://www.karat.com/careers" → "karat.com".
 // Returns null for a malformed/unparseable website rather than throwing, since company_website
-// is free-form data from an earlier deepening step, not guaranteed to be a clean URL.
-function extractDomain(website: string): string | null {
+// is free-form data from an earlier deepening step, not guaranteed to be a clean URL. Exported
+// (24.08 follow-up, ninth revision) for reuse by apollo-classifier.service.ts, which needs the
+// same domain extraction for Apollo's q_organization_domains_list search parameter.
+export function extractDomain(website: string): string | null {
   try {
     const url = new URL(website.startsWith('http') ? website : `https://${website}`);
     return url.hostname.replace(/^www\./i, '');
@@ -720,14 +727,28 @@ function logCallCost(logger: Logger, label: string, response: OpenAI.Responses.R
 // ?miniProfileUrn=... on LinkedIn ones specifically) — an artifact of the citation mechanism, not
 // part of the real URL. The model's own linkedin_url answer has no reason to preserve that
 // tracking string, so a verbatim comparison rejected even fully honest, correct answers. Strips
-// ONLY the query string and one trailing slash — both trivially cosmetic / OpenAI-injected, never
-// applied to the linkedin_url actually stored (verification comparison only) — and stays
-// deliberately strict on everything else (no lowercasing, no www./https normalization): the
-// point is still distinguishing a URL the model actually saw from one it constructed, and
-// loosening the comparison further risks accepting a plausible-but-wrong reconstruction.
+// the query string and one trailing slash — both trivially cosmetic / OpenAI-injected, never
+// applied to the linkedin_url actually stored (verification comparison only).
+//
+// 28.08 follow-up (audit + fix): originally stayed deliberately strict beyond that — no
+// lowercasing, no www./https normalization — on the theory that loosening the comparison further
+// risked accepting a plausible-but-wrong reconstruction. An audit of this exact function found
+// that reasoning didn't hold: case, a leading "www.", and http-vs-https are all purely cosmetic
+// properties of how a URL is written, not evidence of whether the model actually saw it — unlike
+// a slug the model could plausibly guess (what Check B / extractLinkedinSlug guards against),
+// nobody is fabricating a correct LinkedIn profile by getting the scheme or "www." right. Now also
+// lowercases the whole string, strips a leading "www." (after the scheme, so it only ever matches
+// the host, never something later in the path), and strips the scheme entirely (equivalent to
+// treating http:// and https:// as the same URL) — applied identically to both sides of the
+// comparison (both call sites route through this same function, see Check A in
+// searchPersonLinkedinAttempt). Still string-based, not URL-parsing-based, so a malformed input
+// still can't throw here — same defensive style as the rest of this file.
 function normalizeForComparison(url: string): string {
   const withoutQuery = url.split('?')[0];
-  return withoutQuery.endsWith('/') ? withoutQuery.slice(0, -1) : withoutQuery;
+  const withoutTrailingSlash = withoutQuery.endsWith('/') ? withoutQuery.slice(0, -1) : withoutQuery;
+  const lowercased = withoutTrailingSlash.toLowerCase();
+  const withoutScheme = lowercased.replace(/^https?:\/\//, '');
+  return withoutScheme.replace(/^www\./, '');
 }
 
 // 24.08 follow-up bug fix: "Mike Liberty" (Co-Founder) and "Michael Liberty" (COO) were saved

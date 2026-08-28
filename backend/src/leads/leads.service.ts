@@ -8,6 +8,7 @@ import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads, users } from '../db/schema';
 import { DESTINATION, Destination } from '../destinations/destination.interface';
+import { ApolloClassifierService } from './apollo-classifier.service';
 import { ClaudeClassifierService } from './claude-classifier.service';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
@@ -42,6 +43,7 @@ export class LeadsService {
     private readonly openaiClassifier: OpenaiClassifierService,
     private readonly industryClassifierGemini: IndustryClassifierService,
     private readonly industryClassifierOpenai: OpenaiIndustryClassifierService,
+    private readonly apolloClassifier: ApolloClassifierService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -410,15 +412,17 @@ export class LeadsService {
   // are unchanged, still the original ephemeral-test implementations (lenient JSON parsing,
   // Gemini's grounded search still blocked on the free tier) — but a search through either of
   // them now ALSO gets saved here, same as OpenAI: this method persists on every call
-  // regardless of provider, not just for OpenAI.
+  // regardless of provider, not just for OpenAI. 'apollo' added 26.08 follow-up — a maintained
+  // lookup database, not a generative model (see apollo-classifier.service.ts's own doc comment
+  // for how that changes its pipeline); same persistence contract as the other three.
   //
   // Overwrites (no history) on every re-run, matching the existing hiring_contact_*/
   // company_linkedin_* convention. Only writes on a successful search (result.ok) — a failed
-  // call must never wipe out a previously-good saved result. Gemini/Claude don't populate
-  // `result.reasoning` (see LprSearchResult's own comment), so lpr_reasoning falls back to their
-  // `raw` text — for Claude in particular, `raw` is exactly where that narrative-before-JSON
-  // text already lives, so this still gives a meaningful reasoning value without touching
-  // either provider file.
+  // call must never wipe out a previously-good saved result. Gemini/Claude/Apollo don't populate
+  // `result.reasoning` the way OpenAI's DM path does with real narrative — Gemini/Claude fall
+  // back to their own `raw` text (for Claude in particular, `raw` is exactly where that
+  // narrative-before-JSON text already lives); Apollo DOES populate `result.reasoning` itself
+  // (a short candidate/match-count summary, not model narrative — see its own searchLeadership).
   async lprSearch(id: string, provider?: string) {
     const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
     if (!existing) {
@@ -428,14 +432,16 @@ export class LeadsService {
       throw new AppError(HttpStatus.BAD_REQUEST, 'MISSING_COMPANY', 'This lead has no company name — nothing to search for.');
     }
 
-    const resolvedProvider: 'openai' | 'gemini' | 'claude' =
-      provider === 'gemini' || provider === 'claude' ? provider : 'openai';
+    const resolvedProvider: 'openai' | 'gemini' | 'claude' | 'apollo' =
+      provider === 'gemini' || provider === 'claude' || provider === 'apollo' ? provider : 'openai';
     const classifier =
       resolvedProvider === 'gemini'
         ? this.geminiClassifier
         : resolvedProvider === 'claude'
           ? this.claudeClassifier
-          : this.openaiClassifier;
+          : resolvedProvider === 'apollo'
+            ? this.apolloClassifier
+            : this.openaiClassifier;
 
     const result = await classifier.searchLeadership(existing.company, existing.company_website);
 

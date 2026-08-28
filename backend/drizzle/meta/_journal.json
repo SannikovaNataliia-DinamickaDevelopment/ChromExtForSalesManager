@@ -92,6 +92,20 @@
       "when": 1787594921613,
       "tag": "0012_nosy_kylun",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787754755227,
+      "tag": "0013_hot_victor_mancha",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787759458165,
+      "tag": "0014_light_boomerang",
+      "breakpoints": true
     }
   ]
 }

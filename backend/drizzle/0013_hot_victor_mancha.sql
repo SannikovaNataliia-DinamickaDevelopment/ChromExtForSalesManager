@@ -1,0 +1,1 @@
+ALTER TYPE "public"."lpr_provider" ADD VALUE 'apollo';

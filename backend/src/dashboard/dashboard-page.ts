@@ -2961,7 +2961,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // duplicating what those two now display. Gated on lead.company being present — company name
   // is the one hard requirement per the original task spec, and the search would just error
   // immediately without it.
-  var LPR_PROVIDER_LABELS = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude' };
+  var LPR_PROVIDER_LABELS = { openai: 'OpenAI', gemini: 'Gemini', claude: 'Claude', apollo: 'Apollo' };
 
   function buildLprSearchBlock(lead) {
     var wrap = document.createElement('div');
@@ -2983,6 +2983,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       el('option', { value: 'openai', text: 'OpenAI + web search' }),
       el('option', { value: 'gemini', text: 'Gemini + Google Search' }),
       el('option', { value: 'claude', text: 'Claude + web search' }),
+      el('option', { value: 'apollo', text: 'Apollo (lookup database)' }),
     ]);
     providerSelect.disabled = inFlight;
 
