@@ -1328,6 +1328,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // 14.08 call) — Oleksandr's own sequence from that call (Published, Source, Title, Company,
   // Website, Location, Company LinkedIn, Hiring Contact), then the rest of the pre-existing
   // columns in their previous relative order. This is also what "Reset" restores.
+  //
+  // 30.08 follow-up (27.08 meeting decision): the three DM columns now sit right after Location,
+  // before Company LinkedIn/Hiring Contact — DM/LinkedIn data is what Mariia actually needs for
+  // outreach, so it's prominent near the front; company-level contextual columns shift later.
+  // Moved as a block, own relative order preserved (role, name, linkedin_url).
   var ALL_COLUMNS = [
     { key: 'published_at', label: 'Published' },
     { key: 'source_site', label: 'Source' },
@@ -1336,11 +1341,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'company_website', label: 'Website' },
     { key: 'industry', label: 'Industry' },
     { key: 'location', label: 'Location' },
-    { key: 'company_linkedin', label: 'Company LinkedIn' },
-    { key: 'hiring_contact', label: 'Hiring Contact' },
     { key: 'lpr_role', label: 'DM: Посада' },
     { key: 'lpr_name', label: "DM: Ім'я та Прізвище" },
     { key: 'lpr_linkedin_url', label: 'DM: LinkedIn URL' },
+    { key: 'company_linkedin', label: 'Company LinkedIn' },
+    { key: 'hiring_contact', label: 'Hiring Contact' },
     { key: 'source_url', label: 'Job link' },
     { key: 'is_it', label: 'IT?' },
     { key: 'salary', label: 'Salary' },
