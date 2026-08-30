@@ -643,9 +643,22 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     min-height: 0;
   }
   table { border-collapse: collapse; width: 100%; min-width: 980px; }
+  /* Sticky header (30.08 follow-up) — .table-wrap (overflow: auto, above) is the only ancestor
+     with overflow set between here and the scroll container, so position: sticky's positioning
+     context resolves correctly against it; top: 0 pins these <th>s to .table-wrap's own top edge
+     as it scrolls, not the page (the page itself never scrolls — html/body are overflow: hidden,
+     see the 07.08 responsive-table-height comment above). background is already solid and
+     dark-theme-correct (var(--panel-alt), same tone used elsewhere for raised/alt surfaces) so
+     scrolled row content doesn't show through underneath. z-index is deliberately low (5) — just
+     enough to guarantee this paints above ordinary in-flow table rows regardless of any future
+     row-level styling, while staying well below every modal/popover/dropdown layer already using
+     z-index 40/50/60 elsewhere in this file, so a popover never renders behind the header.
+     IMPORTANT: this "sticky" declaration used to be silently overridden — see th.col-header below
+     for why, now fixed. */
   thead th {
     position: sticky;
     top: 0;
+    z-index: 5;
     background: var(--panel-alt);
     color: var(--accent);
     text-align: left;
@@ -661,8 +674,16 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
   thead th:hover { color: var(--pink); }
   thead th .arrow { color: var(--pink); margin-left: 4px; font-size: 10px; }
-  /* Draggable/hideable dashboard columns (Task DI-2966, 14.08 call). */
-  th.col-header { position: relative; }
+  /* Draggable/hideable dashboard columns (Task DI-2966, 14.08 call). 30.08 follow-up bug fix:
+     this used to set "position: relative", which — because a class selector outweighs
+     thead+th's two bare-element selectors in CSS specificity (0,1,1 > 0,0,2) — silently
+     overrode thead th's "position: sticky" above on every real header cell (every <th>
+     rendered by renderHeader() gets this exact className), so the sticky header never actually
+     worked despite the CSS above looking complete. Removed rather than reconciled: nothing here
+     depends on this <th> being a positioning context — the drag-insert markers just below
+     (.col-header-insert-before/-after) use box-shadow, not position:absolute children, and
+     nothing else under .col-header does either. */
+  th.col-header { }
   .col-header-label { pointer-events: none; }
   /* Drag in progress: the source header dims in place (no ghost element — mouse-event drag,
      not native HTML5 DnD, same style as the rest of this page's custom pointer-tracking) and

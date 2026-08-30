@@ -65,27 +65,39 @@ function hiringContactCell(r: JobLeadRecord): string {
   return '';
 }
 
-// AI-powered LPR search (20.08 follow-up) — one line per person, "\n"-separated so a spreadsheet
-// cell with wrap-text shows each entry on its own line, same "role + clickable link, one per
-// line" spirit as the dashboard table/sidebar (a spreadsheet cell has no link-rendering context
-// though, so this is the plain-URL equivalent — see the dashboard's own buildCompanyLinkedinRow
-// comment on why that one similarly doesn't try to fake a hyperlink here). No not_checked/found/
-// not_specified three-state here (unlike Company LinkedIn/Hiring Contact above) — lpr_results is
-// simply null until the first search, empty array after a search that found nobody.
-function lprCell(r: JobLeadRecord): string {
+// AI-powered LPR search (20.08 follow-up; split into three columns 30.08 follow-up, matching the
+// dashboard table's own lpr_role/lpr_name/lpr_linkedin_url split — see dashboard-page.ts's
+// buildLprRoleTd/buildLprNameTd/buildLprLinkedinTd). Each of the three functions below iterates
+// the SAME r.lpr_results array, in its existing (never re-sorted) order, one line per person,
+// "\n"-separated so a spreadsheet cell with wrap-text shows each entry on its own line — that's
+// what keeps line N in one exported column referring to the same person as line N in the other
+// two, same index-alignment rule as the dashboard table. No not_checked/found/not_specified
+// three-state here (unlike Company LinkedIn/Hiring Contact above) — lpr_results is simply null
+// until the first search, empty array after a search that found nobody.
+function lprRoleCell(r: JobLeadRecord): string {
   const people = r.lpr_results;
   if (!people || people.length === 0) return '';
-  // linkedin_url_verified === false (20.08 follow-up bug fix): linkedin_url is already blanked
-  // by openai-classifier.service.ts in this case — same "(unverified)" note as the dashboard's
-  // buildLprResultsRow/buildLprTd, so a manager reading the export doesn't mistake a blank URL
-  // for "nothing found" when a real name/role was.
-  return people
-    .map((p) => `${p.role}: ${p.name}${p.linkedin_url ? ' — ' + p.linkedin_url : ''}${p.linkedin_url_verified === false ? ' (unverified)' : ''}`)
-    .join('\n');
+  return people.map((p) => p.role || '?').join('\n');
+}
+
+function lprNameCell(r: JobLeadRecord): string {
+  const people = r.lpr_results;
+  if (!people || people.length === 0) return '';
+  return people.map((p) => p.name || '(no name)').join('\n');
+}
+
+// "не знайдено" (not blank, not omitted) for a missing or unverified URL — same placeholder and
+// same reasoning as the dashboard's buildLprLinkedinTd: this column must always have exactly as
+// many lines as the Role/Name columns for the same lead, never a skipped line, so a manager
+// reading the export can still tell which line belongs to which person by position alone.
+function lprLinkedinCell(r: JobLeadRecord): string {
+  const people = r.lpr_results;
+  if (!people || people.length === 0) return '';
+  return people.map((p) => (p.linkedin_url && p.linkedin_url_verified !== false ? p.linkedin_url : 'не знайдено')).join('\n');
 }
 
 // Industry classification (24.08 follow-up) — no not_checked/found/not_specified three-state
-// here, same reasoning as lprCell above: industry is simply null until the first classification.
+// here, same reasoning as the lpr*Cell functions above: industry is simply null until the first classification.
 // "Other" gets its stored free-text explanation appended, same "Name — Role" spirit as
 // hiringContactCell above, so a manager reading the export sees WHY it landed in Other without
 // opening the sidebar.
@@ -119,7 +131,9 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { key: 'location', label: 'Location', value: (r) => cell(r.location) },
   { key: 'company_linkedin', label: 'Company LinkedIn', value: (r) => companyLinkedinCell(r) },
   { key: 'hiring_contact', label: 'Hiring Contact', value: (r) => hiringContactCell(r) },
-  { key: 'lpr', label: 'DM', value: (r) => lprCell(r) },
+  { key: 'lpr_role', label: 'DM: Посада', value: (r) => lprRoleCell(r) },
+  { key: 'lpr_name', label: "DM: Ім'я та Прізвище", value: (r) => lprNameCell(r) },
+  { key: 'lpr_linkedin_url', label: 'DM: LinkedIn URL', value: (r) => lprLinkedinCell(r) },
   { key: 'source_url', label: 'Job link', value: (r) => cell(r.source_url) },
   { key: 'is_it', label: 'IT?', value: (r) => IS_IT_LABELS[r.is_it] },
   { key: 'salary', label: 'Salary', value: (r) => cell(r.salary) },
