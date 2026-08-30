@@ -58,7 +58,31 @@ export class SheetsDestination implements Destination {
     return id;
   }
 
+  // 30.08 follow-up (27.08 call): the dashboard has fully replaced the Sheet as how the team
+  // views leads — Oleksandr's own words, "можеш поки відключити, буде потреба — включити" (turn
+  // it off for now, turn it back on if it's needed) — so this is a reversible toggle, not a
+  // rip-out; every method below (including resyncAll, the maintenance script's own operation —
+  // see its own comment) is untouched and still fully functional once this is flipped back.
+  // Defaults to DISABLED: requires an explicit "true" to turn on, so simply not setting this var
+  // in a normal .env (the common case, and what .env.example now documents) already means off —
+  // there's no separate "off" value anyone has to remember to set.
+  private get sheetsSyncEnabled(): boolean {
+    return process.env.GOOGLE_SHEETS_SYNC_ENABLED === 'true';
+  }
+
   async save(record: JobLeadRecord): Promise<SaveResult> {
+    if (!this.sheetsSyncEnabled) {
+      // Returns before getClient()/ensureSheetTab()/etc. are ever called — no credential load,
+      // no API request, no retry. 'created' is an arbitrary-but-harmless status: every caller of
+      // Destination.save() only branches on status === 'failed' vs. anything else (see
+      // leads.service.ts/company-linkedin.service.ts), never on created-vs-updated specifically,
+      // so this can never be mistaken for a real Sheets failure — the debug log below, not the
+      // return value, is the actual "this was skipped" signal (NFR-12/13: no *silent* failures —
+      // this isn't a failure at all, but it still shouldn't be invisible).
+      this.logger.debug(`Sheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for ${record.source_url}`);
+      return { status: 'created' };
+    }
+
     try {
       const sheets = await this.getClient();
       await this.ensureSheetTab(sheets);
