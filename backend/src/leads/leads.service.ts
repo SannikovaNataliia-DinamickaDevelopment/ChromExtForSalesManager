@@ -468,10 +468,13 @@ export class LeadsService {
 
   // Industry classification (24.08 follow-up, per the 19.08 call) — one lead at a time, manual
   // trigger only for now (dashboard button), same "single-lead call, no automatic bulk loop yet"
-  // scope as DM search started at. Company name is required (same reasoning as lprSearch above);
-  // company_website is required too here (unlike lprSearch, where it's optional) — this feature
-  // has NOTHING to classify from without it, so the classifier itself already returns a clean
-  // ok:false rather than guessing, but failing fast here avoids the wasted round-trip.
+  // scope as DM search started at. Company name is required (same reasoning as lprSearch above).
+  // company_website used to be required too — as of the 30.08 follow-up it's only required when
+  // there's no cached Apollo organization data for this lead (see apolloInput below); when
+  // Apollo's own industry/keywords/description are available, the classifier uses those instead
+  // and never needs to fetch the website at all. The classifier itself owns this decision (see
+  // its own classifyIndustry doc comment) — this method just passes through whatever the lead
+  // row already has.
   // Only writes the three industry_* fields on a successful classification (result.ok) — same
   // "a failed call must never wipe out a previously-good saved result" rule as lprSearch/deepen.
   //
@@ -497,7 +500,20 @@ export class LeadsService {
     const resolvedProvider: 'openai' | 'gemini' = provider === 'gemini' ? 'gemini' : 'openai';
     const classifier = resolvedProvider === 'gemini' ? this.industryClassifierGemini : this.industryClassifierOpenai;
 
-    const result = await classifier.classifyIndustry(existing.company, existing.company_website);
+    // 30.08 follow-up: pass through whatever Apollo enrichment data this lead's row already has
+    // (captured by apollo-classifier.service.ts's resolveOrganization/persistOrganization,
+    // independent of this call). All 5 fields null (never resolved, or resolved and found
+    // nothing) is a valid, expected shape — buildApolloIndustryInputText treats that the same as
+    // "no Apollo data" and the classifier falls back to fetching the website, unchanged.
+    const apolloInput = {
+      apolloIndustry: existing.apollo_industry,
+      apolloIndustries: existing.apollo_industries,
+      apolloSecondaryIndustries: existing.apollo_secondary_industries,
+      apolloKeywords: existing.apollo_keywords,
+      apolloShortDescription: existing.apollo_short_description,
+    };
+
+    const result = await classifier.classifyIndustry(existing.company, existing.company_website, apolloInput);
 
     if (result.ok) {
       await this.db

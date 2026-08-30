@@ -19,7 +19,7 @@ const BULK_MATCH_PATH = '/people/bulk_match';
 // 28.08 follow-up — GET, not POST (confirmed against docs.apollo.io/reference/
 // organization-enrichment, not guessed). Costs 1 credit per call (also per those docs); resolved
 // once per company and cached (see the apollo_organization_id column comment in schema.ts and
-// resolveOrganizationId's own comment below) specifically to keep this rare, not per-search.
+// resolveOrganization's own comment below) specifically to keep this rare, not per-search.
 const ORG_ENRICH_PATH = '/organizations/enrich';
 
 // 26.08 follow-up: this is Apollo's own documented HARD LIMIT for a single bulk_match request
@@ -90,6 +90,36 @@ interface ApolloMatchedPerson {
   name: string;
   title: string;
   linkedinUrl: string | null;
+}
+
+// 30.08 follow-up — the full result of a successful organizations/enrich resolution: the
+// organization_id (what DM search actually needs, see runApolloSearch) plus the industry-related
+// fields captured from that same response for future industry-classification use (see the
+// schema.ts comment on apollo_industry/apollo_industries/apollo_secondary_industries/
+// apollo_keywords/apollo_short_description). Each field independently nullable — see
+// resolveOrganization's own comment on why a missing field never fails the whole resolution.
+interface ApolloOrganizationEnrichment {
+  organizationId: string;
+  industry: string | null;
+  industries: string[] | null;
+  secondaryIndustries: string[] | null;
+  keywords: string[] | null;
+  shortDescription: string | null;
+}
+
+// Defensive field extraction for the organizations/enrich response — a missing field, wrong
+// type, or an array containing non-string entries all resolve to null for that field alone
+// (per this task's own requirement 3), never a thrown error and never a silently-wrong default.
+function parseApolloStringField(org: Record<string, unknown> | undefined, field: string): string | null {
+  const value = org?.[field];
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function parseApolloStringArrayField(org: Record<string, unknown> | undefined, field: string): string[] | null {
+  const value = org?.[field];
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const strings = value.filter((v): v is string => typeof v === 'string');
+  return strings.length > 0 ? strings : null;
 }
 
 // Apollo's title text is real, human-written job-title data (e.g. "Chief Executive Officer",
@@ -247,6 +277,16 @@ export class ApolloClassifierService {
   // the rest of this file already relies on. Fine at current scale; if this table grows large
   // enough for that scan to matter, the real fix is a proper companies/organizations table, not a
   // cleverer WHERE clause — out of scope for this single, isolated change.
+  //
+  // 30.08 follow-up: this cache check keys off apollo_organization_id ONLY — it says nothing about
+  // whether apollo_industry/apollo_industries/apollo_keywords/apollo_short_description are
+  // populated for that same row. A company resolved BEFORE this revision has an organization id
+  // cached but null enrichment fields, and will keep hitting this cache hit (skipping
+  // resolveOrganization entirely, per searchLeadership below) forever — those fields will never
+  // get backfilled by this code path. Deliberately not fixed here (e.g. by also checking
+  // apollo_industry IS NOT NULL) — that's a real design decision (re-spend a credit to backfill
+  // old rows, or write a separate one-off backfill script) for the next step, not something to
+  // silently decide as a side effect of this data-capture change.
   private async getCachedOrganizationId(domain: string): Promise<string | null> {
     const rows = await this.db
       .select({ company_website: job_leads.company_website, apollo_organization_id: job_leads.apollo_organization_id })
@@ -261,14 +301,17 @@ export class ApolloClassifierService {
     return null;
   }
 
-  // Writes a newly-resolved organization id to every CURRENT lead sharing this domain that
-  // doesn't already have one cached — not just the one lead that happened to trigger this
-  // search — so the very next search for any other lead at this company hits
-  // getCachedOrganizationId() above instead of spending another credit. Same domain-normalization
-  // approach as the read above, same "fine at current scale" caveat. Best-effort: a failure here
-  // is logged, not thrown — the search this call is part of already has its organizationId in
-  // hand and should proceed regardless of whether the cache write succeeds.
-  private async persistOrganizationId(domain: string, organizationId: string): Promise<void> {
+  // Writes a newly-resolved organization id AND the enrichment fields captured alongside it
+  // (30.08 follow-up — same organizations/enrich response, no extra credit) to every CURRENT lead
+  // sharing this domain that doesn't already have an organization id cached — not just the one
+  // lead that happened to trigger this search — so the very next search for any other lead at
+  // this company hits getCachedOrganizationId() above instead of spending another credit. Same
+  // domain-normalization approach as the read above, same "fine at current scale" caveat.
+  // Best-effort: a failure here is logged, not thrown — the search this call is part of already
+  // has its organizationId in hand and should proceed regardless of whether the cache write
+  // succeeds. Renamed from persistOrganizationId (was id-only) now that it writes the full
+  // enrichment record.
+  private async persistOrganization(domain: string, enrichment: ApolloOrganizationEnrichment): Promise<void> {
     try {
       const rows = await this.db
         .select({ id: job_leads.id, company_website: job_leads.company_website })
@@ -283,19 +326,28 @@ export class ApolloClassifierService {
 
       await this.db
         .update(job_leads)
-        .set({ apollo_organization_id: organizationId, apollo_organization_resolved_at: new Date() })
+        .set({
+          apollo_organization_id: enrichment.organizationId,
+          apollo_organization_resolved_at: new Date(),
+          apollo_industry: enrichment.industry,
+          apollo_industries: enrichment.industries,
+          apollo_secondary_industries: enrichment.secondaryIndustries,
+          apollo_keywords: enrichment.keywords,
+          apollo_short_description: enrichment.shortDescription,
+        })
         .where(inArray(job_leads.id, matchingIds));
     } catch (err) {
-      this.logger.warn(`Apollo organization id cache write failed for domain "${domain}": ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(`Apollo organization cache write failed for domain "${domain}": ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // GET /organizations/enrich (28.08 follow-up) — resolves a domain to Apollo's own stable
+  // GET /organizations/enrich (28.08 follow-up; extended 30.08 to also capture industry data from
+  // the SAME response — no extra Apollo credit) — resolves a domain to Apollo's own stable
   // organization_id, per Apollo's own recommendation that this is more reliable than
   // q_organization_domains_list (which breaks on subdomains, redirects, and multi-brand domains
   // sharing one domain). Costs 1 credit — see ORG_ENRICH_PATH's own comment — which is exactly
-  // why this is cached (getCachedOrganizationId/persistOrganizationId above) rather than called
-  // on every search. `name` is optional and, per Apollo's docs, improves match confidence when
+  // why this is cached (getCachedOrganizationId/persistOrganization above) rather than called on
+  // every search. `name` is optional and, per Apollo's docs, improves match confidence when
   // provided alongside domain.
   //
   // Returns null — never throws, no retries — for EVERY failure mode alike: a genuine "no such
@@ -305,7 +357,15 @@ export class ApolloClassifierService {
   // error — because searchLeadership's fallback behavior is identical either way: proceed with
   // the existing domain-based search. Collapsing every failure into one null return is what makes
   // that fallback simple and unconditional rather than needing its own error-classification logic.
-  private async resolveOrganizationId(domain: string, name?: string): Promise<string | null> {
+  // Renamed from resolveOrganizationId (returned a bare string) now that it returns the full
+  // enrichment record the caller needs to both use (organizationId) and persist (everything else).
+  //
+  // Each enrichment field below is parsed independently — a missing/wrong-type field becomes null
+  // for THAT field only (per this task's own requirement 3), never a reason to fail the whole
+  // resolution, and never defaulted to '' / [] in a way indistinguishable from "not captured yet"
+  // (that distinction is what apollo_organization_id/apollo_organization_resolved_at being null
+  // is for — see their own schema.ts comment).
+  private async resolveOrganization(domain: string, name?: string): Promise<ApolloOrganizationEnrichment | null> {
     const params = new URLSearchParams({ domain });
     if (name) params.set('name', name);
 
@@ -329,14 +389,29 @@ export class ApolloClassifierService {
       return null;
     }
 
-    const orgId = (data as { organization?: { id?: unknown } } | null)?.organization?.id;
+    const org = (data as { organization?: Record<string, unknown> } | null)?.organization;
+    const orgId = org?.id;
     if (typeof orgId !== 'string' || orgId === '') {
       this.logger.log(`[APOLLO DEBUG] organization enrich for domain "${domain}": 200 response but no organization.id present`);
       return null;
     }
 
-    this.logger.log(`[APOLLO DEBUG] organization enrich for domain "${domain}" resolved to organization_id "${orgId}" (1 credit spent)`);
-    return orgId;
+    const enrichment: ApolloOrganizationEnrichment = {
+      organizationId: orgId,
+      industry: parseApolloStringField(org, 'industry'),
+      industries: parseApolloStringArrayField(org, 'industries'),
+      secondaryIndustries: parseApolloStringArrayField(org, 'secondary_industries'),
+      keywords: parseApolloStringArrayField(org, 'keywords'),
+      shortDescription: parseApolloStringField(org, 'short_description'),
+    };
+
+    this.logger.log(
+      `[APOLLO DEBUG] organization enrich for domain "${domain}" resolved to organization_id "${orgId}" (1 credit spent) — ` +
+        `industry=${JSON.stringify(enrichment.industry)} industries=${JSON.stringify(enrichment.industries)} ` +
+        `secondary_industries=${JSON.stringify(enrichment.secondaryIndustries)} keywords_count=${enrichment.keywords?.length ?? null} ` +
+        `short_description_present=${enrichment.shortDescription !== null}`,
+    );
+    return enrichment;
   }
 
   // The one mixed_people/api_search call this provider makes now (26.08 follow-up, third
@@ -413,13 +488,17 @@ export class ApolloClassifierService {
     // ---- Organization id resolution (28.08 follow-up) — cached, at most 1 credit per company ----
     // Reuse-forever: check every currently-cached id first; only spend a credit resolving a
     // domain that's never been resolved by ANY lead. A resolution failure (no match, error,
-    // network issue — resolveOrganizationId collapses all of these to null, see its own comment)
+    // network issue — resolveOrganization collapses all of these to null, see its own comment)
     // falls back to the pre-existing domain-based filter rather than failing the lead, per spec.
+    // 30.08 follow-up: resolveOrganization now also captures industry-related fields from the
+    // same response (see ApolloOrganizationEnrichment) — organizationId is still all this method
+    // itself needs for the search filter below; the rest just gets persisted for later use.
     let organizationId = await this.getCachedOrganizationId(domain);
     if (!organizationId) {
-      organizationId = await this.resolveOrganizationId(domain, company);
-      if (organizationId) {
-        await this.persistOrganizationId(domain, organizationId);
+      const resolved = await this.resolveOrganization(domain, company);
+      if (resolved) {
+        organizationId = resolved.organizationId;
+        await this.persistOrganization(domain, resolved);
       }
     }
     const organizationFilter = organizationId

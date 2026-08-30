@@ -101,7 +101,54 @@ export async function fetchWebsiteText(companyWebsite: string): Promise<string |
   return htmlToPlainText(html).slice(0, MAX_CONTENT_CHARS);
 }
 
-export function buildIndustryPrompt(company: string, websiteText: string): string {
+// 30.08 follow-up — the 5 apollo_* fields captured on job_leads alongside organization_id
+// resolution (apollo-classifier.service.ts's resolveOrganization/persistOrganization). Each is
+// independently optional, same nullability as the DB columns themselves — a lead can have some
+// of these set and not others.
+export interface ApolloIndustryInput {
+  apolloIndustry: string | null;
+  apolloIndustries: string[] | null;
+  apolloSecondaryIndustries: string[] | null;
+  apolloKeywords: string[] | null;
+  apolloShortDescription: string | null;
+}
+
+// Builds a compact, labeled text block from whichever apollo_* fields are present, for use as
+// classifyIndustry's model input INSTEAD OF fetchWebsiteText's scraped HTML — cheaper (already
+// short, curated text vs. raw page markup) and, per real testing (DriveWealth, Sniffspot,
+// 10a Labs, Keeper), often names the target customer explicitly ("banks, fintechs, and consumer
+// brands", "dog owners", "frontier AI labs, Fortune 10 companies") in short_description alone.
+// Returns null — same "nothing usable" contract as fetchWebsiteText returning null — when none of
+// the 5 fields are present, which is exactly the signal callers use to fall back to the existing
+// website-fetch path unchanged (see classifyIndustry in this file and in
+// openai-industry-classifier.service.ts). Only ever changes what TEXT gets classified — the
+// instructions in buildIndustryPrompt (target-audience-not-product rule, "Other"-preference rule,
+// Professional-Services tightening rule) are untouched by this function and by every call site
+// that uses it.
+export function buildApolloIndustryInputText(apollo: ApolloIndustryInput): string | null {
+  const lines: string[] = [];
+  if (apollo.apolloIndustry) lines.push(`Apollo industry: ${apollo.apolloIndustry}`);
+  if (apollo.apolloIndustries && apollo.apolloIndustries.length > 0) {
+    lines.push(`Related industries: ${apollo.apolloIndustries.join(', ')}`);
+  }
+  if (apollo.apolloSecondaryIndustries && apollo.apolloSecondaryIndustries.length > 0) {
+    lines.push(`Secondary industries: ${apollo.apolloSecondaryIndustries.join(', ')}`);
+  }
+  if (apollo.apolloKeywords && apollo.apolloKeywords.length > 0) {
+    lines.push(`Keywords: ${apollo.apolloKeywords.join(', ')}`);
+  }
+  if (apollo.apolloShortDescription) lines.push(`Description: ${apollo.apolloShortDescription}`);
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+// 30.08 follow-up, second change — which source produced `inputText`, so buildIndustryPrompt can
+// label it accurately (see the function's own comment). Passed explicitly by the caller rather
+// than inferred from the text's shape, per this task's own instruction — classifyIndustry already
+// knows exactly which branch it took (buildApolloIndustryInputText vs. fetchWebsiteText), so there
+// is a real, unambiguous answer to pass through instead of guessing from content.
+export type IndustryInputSource = 'website' | 'apollo';
+
+export function buildIndustryPrompt(company: string, inputText: string, inputSource: IndustryInputSource): string {
   return [
     'You are classifying which INDUSTRY a company operates in, based on the text of its own ' +
       'website below.',
@@ -148,8 +195,8 @@ export function buildIndustryPrompt(company: string, websiteText: string): strin
       'Services & Consulting," confirm the company’s core offering genuinely IS paid human ' +
       'expertise, not a software product that happens to have some human review built in.',
     '',
-    'Website content:',
-    websiteText,
+    inputSource === 'apollo' ? 'Apollo company data:' : 'Website content:',
+    inputText,
   ].join('\n');
 }
 
@@ -203,38 +250,60 @@ export class IndustryClassifierService {
     return process.env.GEMINI_MODEL || DEFAULT_MODEL;
   }
 
-  async classifyIndustry(company: string, companyWebsite: string | null): Promise<IndustryClassifyResult> {
-    if (!companyWebsite) {
-      return {
-        ok: false,
-        industry: null,
-        otherDescription: null,
-        error: 'This lead has no company website on file — nothing to classify from.',
-        quotaExhausted: false,
-      };
+  // `apolloInput` (30.08 follow-up) is optional so every existing call site that doesn't pass it
+  // behaves EXACTLY as before this revision — see the else branch below, byte-for-byte the same
+  // sequence of checks/calls this method already had. When present and at least one of its 5
+  // fields is non-null, that becomes the model's input INSTEAD OF fetchWebsiteText — cheaper,
+  // curated text that (per real testing) often names the target customer explicitly. When absent,
+  // or present but empty (all 5 fields null — e.g. organization_id resolution never ran, or ran
+  // and found nothing), falls back to the original website-fetch path unchanged.
+  async classifyIndustry(
+    company: string,
+    companyWebsite: string | null,
+    apolloInput?: ApolloIndustryInput,
+  ): Promise<IndustryClassifyResult> {
+    const apolloText = apolloInput ? buildApolloIndustryInputText(apolloInput) : null;
+
+    let inputText: string;
+    let inputSource: IndustryInputSource;
+    if (apolloText !== null) {
+      inputText = apolloText;
+      inputSource = 'apollo';
+    } else {
+      inputSource = 'website';
+      if (!companyWebsite) {
+        return {
+          ok: false,
+          industry: null,
+          otherDescription: null,
+          error: 'This lead has no company website on file — nothing to classify from.',
+          quotaExhausted: false,
+        };
+      }
+
+      const websiteText = await fetchWebsiteText(companyWebsite);
+      if (websiteText === null) {
+        return {
+          ok: false,
+          industry: null,
+          otherDescription: null,
+          error: 'Could not fetch the company website (unreachable, timed out, or returned an error).',
+          quotaExhausted: false,
+        };
+      }
+      if (websiteText.length === 0) {
+        return {
+          ok: false,
+          industry: null,
+          otherDescription: null,
+          error: 'The company website returned no readable text content.',
+          quotaExhausted: false,
+        };
+      }
+      inputText = websiteText;
     }
 
-    const websiteText = await fetchWebsiteText(companyWebsite);
-    if (websiteText === null) {
-      return {
-        ok: false,
-        industry: null,
-        otherDescription: null,
-        error: 'Could not fetch the company website (unreachable, timed out, or returned an error).',
-        quotaExhausted: false,
-      };
-    }
-    if (websiteText.length === 0) {
-      return {
-        ok: false,
-        industry: null,
-        otherDescription: null,
-        error: 'The company website returned no readable text content.',
-        quotaExhausted: false,
-      };
-    }
-
-    const prompt = buildIndustryPrompt(company, websiteText);
+    const prompt = buildIndustryPrompt(company, inputText, inputSource);
 
     let data: unknown;
     try {

@@ -106,6 +106,13 @@
       "when": 1787759458165,
       "tag": "0014_light_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788083340029,
+      "tag": "0015_minor_professor_monster",
+      "breakpoints": true
     }
   ]
 }

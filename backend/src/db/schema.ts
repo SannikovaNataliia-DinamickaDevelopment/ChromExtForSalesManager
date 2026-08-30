@@ -131,6 +131,22 @@ export const job_leads = pgTable(
     // a special value" convention as lpr_provider/industry above).
     apollo_organization_id: text('apollo_organization_id'),
     apollo_organization_resolved_at: timestamp('apollo_organization_resolved_at', { withTimezone: true }),
+    // 30.08 follow-up — captured from the SAME organizations/enrich response as
+    // apollo_organization_id above (no extra Apollo credit spent), for use as future industry-
+    // classification input instead of/alongside raw website scraping. Plain string-array fields
+    // use .array() (Postgres native text[]), same convention as company_linkedin_urls above —
+    // not jsonb, which this schema reserves for structured/object data (lpr_results, snapshot).
+    // Each field is independently nullable: Apollo can return some of these and omit others for a
+    // given organization, and a genuinely-absent field (Apollo had nothing) must stay
+    // distinguishable from "we haven't captured this company's Apollo data at all yet" — the
+    // latter is tracked by apollo_organization_id/apollo_organization_resolved_at being null,
+    // not by these fields being null, so these are allowed to be null even once resolution has
+    // happened.
+    apollo_industry: text('apollo_industry'),
+    apollo_industries: text('apollo_industries').array(),
+    apollo_secondary_industries: text('apollo_secondary_industries').array(),
+    apollo_keywords: text('apollo_keywords').array(),
+    apollo_short_description: text('apollo_short_description'),
     // Industry classification (24.08 follow-up — see industryEnum above and
     // industry-classifier.service.ts). Null = not yet classified (never attempted, or attempted
     // with no usable company_website) — same "null means not yet, not a special enum value"
