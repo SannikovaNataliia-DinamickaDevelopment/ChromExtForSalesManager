@@ -745,6 +745,25 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
   .column-menu-reset:hover { color: var(--pink); }
   td.description-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 30.08 follow-up, third change — DM columns. min-width (not max-width) on purpose: these
+     three should get WIDER than automatic table layout would otherwise give them, so long role
+     strings ("Chief Operating Officer, Drivewealth Singapore", ~48 chars) wrap less often — this
+     doesn't eliminate wrapping for the longest strings, which is exactly why the divider +
+     syncDmColumnHeights() height-equalizing below still exist. Widths are rough estimates against
+     real data (role up to ~40-50 chars; names short; the LinkedIn column only ever holds "Open ↗"
+     or "не знайдено"), not measured pixel-for-pixel. */
+  td.lpr-role-cell { min-width: 260px; }
+  td.lpr-name-cell { min-width: 170px; }
+  td.lpr-linkedin-cell { min-width: 110px; }
+  /* One person's entry within a DM cell. border-bottom is the visible divider between people;
+     :last-child removes it (matches tbody tr:last-child td above — no dangling divider at the
+     cell's own bottom edge, that's already tbody td's own border-bottom). min-height is set
+     per-block by syncDmColumnHeights() at render time, matched by position across the three DM
+     columns — never set here as a fixed CSS value, since the right height depends on that row's
+     actual (possibly wrapped) content. */
+  .lpr-cell-block { padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .lpr-cell-block:first-child { padding-top: 0; }
+  .lpr-cell-block:last-child { padding-bottom: 0; border-bottom: none; }
   tbody td {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
@@ -1319,7 +1338,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     { key: 'location', label: 'Location' },
     { key: 'company_linkedin', label: 'Company LinkedIn' },
     { key: 'hiring_contact', label: 'Hiring Contact' },
-    { key: 'lpr', label: 'DM' },
+    { key: 'lpr_role', label: 'DM: Посада' },
+    { key: 'lpr_name', label: "DM: Ім'я та Прізвище" },
+    { key: 'lpr_linkedin_url', label: 'DM: LinkedIn URL' },
     { key: 'source_url', label: 'Job link' },
     { key: 'is_it', label: 'IT?' },
     { key: 'salary', label: 'Salary' },
@@ -3422,30 +3443,121 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
-  // Table cell for the "LPR" column (20.08 follow-up — see leads.service.ts's lprSearch).
-  // Compact summary, NOT the full per-person multi-line list this used to render — a lead with
-  // many results (e.g. 19 people from a single search) was blowing up row height and pushing
-  // the rest of the table out of view, making it look stuck/broken. Same "first N + (+M more)"
-  // idiom as buildCompanyLinkedinTd above, adapted to show role labels (the useful-at-a-glance
-  // info here) instead of a link; the full list — names, links, unverified markers — is still
-  // available two ways: the native "title" hover tooltip on this cell, and unchanged in the
-  // sidebar's buildLprResultsRow (a single-lead view, where the full list was never the problem).
-  var LPR_TD_ROLES_SHOWN = 2;
-
-  function buildLprTd(lead) {
+  // Three table cells for the DM columns (30.08 follow-up — replaces the single combined "LPR"
+  // column and its compact "N found (...)" summary; see this file's own git history for why that
+  // summary existed in the first place — a lead with many results was blowing up row height. That
+  // tradeoff is deliberately reversed here per Nataliia's explicit ask: full, untruncated
+  // per-person lines in every one of the three columns, no "+N more"/tooltip compromise, so the
+  // sidebar is never needed just to see the full DM list.
+  //
+  // All three functions below iterate the SAME lead.lpr_results array, in its existing order
+  // (never re-sorted, never independently filtered) — that's what keeps line N in one column
+  // referring to the same person as line N in the other two. Never derive one of these three
+  // lists from a filtered/mapped copy of another; always index straight off lpr_results itself.
+  //
+  // 30.08 follow-up, third change: each person is now a separate ".lpr-cell-block" <div> (a real
+  // element, not just text + <br>) — two reasons. First, the CSS border-bottom divider between
+  // people (see the stylesheet) needs a real element boundary to attach to. Second, and more
+  // important, syncDmColumnHeights() (called at the end of render(), below) needs one measurable
+  // element per person per column to equalize heights across the three columns when one of them
+  // (almost always Role — "Chief Operating Officer, Drivewealth Singapore" wraps, names/links
+  // usually don't) wraps to more lines than the others for the same person. Each <td> gets a
+  // dedicated className (lpr-role-cell/lpr-name-cell/lpr-linkedin-cell) purely so that sync pass
+  // can find the right three cells per row without adding a data-attribute nobody else needs.
+  function buildLprRoleTd(lead) {
     var td = document.createElement('td');
+    td.className = 'lpr-role-cell';
     var people = lead.lpr_results || [];
     if (people.length === 0) {
       td.textContent = '\\u2014';
       return td;
     }
-    var shownRoles = people.slice(0, LPR_TD_ROLES_SHOWN).map(function (p) { return p.role || '?'; });
-    var remaining = people.length - shownRoles.length;
-    td.textContent = people.length + ' found (' + shownRoles.join(', ') + (remaining > 0 ? ', +' + remaining : '') + ')';
-    td.title = people.map(function (p) {
-      return (p.role || '?') + ': ' + (p.name || '(no name)') + (p.linkedin_url_verified === false ? ' (unverified)' : '');
-    }).join('\\n');
+    people.forEach(function (p) {
+      var block = el('div', { className: 'lpr-cell-block', text: p.role || '?' });
+      td.appendChild(block);
+    });
     return td;
+  }
+
+  function buildLprNameTd(lead) {
+    var td = document.createElement('td');
+    td.className = 'lpr-name-cell';
+    var people = lead.lpr_results || [];
+    if (people.length === 0) {
+      td.textContent = '\\u2014';
+      return td;
+    }
+    people.forEach(function (p) {
+      var block = el('div', { className: 'lpr-cell-block', text: p.name || '(no name)' });
+      td.appendChild(block);
+    });
+    return td;
+  }
+
+  // "не знайдено" (not "\\u2014"/blank) for a missing or unverified URL — deliberately distinct
+  // from the empty-lpr_results "\\u2014" case above, and never an omitted block: this column must
+  // always have exactly as many blocks as Role/Name for the same lead, or the three columns stop
+  // being index-aligned at a glance (and syncDmColumnHeights below would pair up the wrong people).
+  function buildLprLinkedinTd(lead) {
+    var td = document.createElement('td');
+    td.className = 'lpr-linkedin-cell';
+    var people = lead.lpr_results || [];
+    if (people.length === 0) {
+      td.textContent = '\\u2014';
+      return td;
+    }
+    people.forEach(function (p) {
+      var block = document.createElement('div');
+      block.className = 'lpr-cell-block';
+      var hasVerifiedLink = !!p.linkedin_url && p.linkedin_url_verified !== false && isSafeUrl(p.linkedin_url);
+      if (hasVerifiedLink) {
+        var a = el('a', { className: 'website-link', href: p.linkedin_url, target: '_blank', rel: 'noreferrer', text: 'Open \\u2197' });
+        a.addEventListener('click', function (e) { e.stopPropagation(); });
+        block.appendChild(a);
+      } else {
+        block.appendChild(document.createTextNode('не знайдено'));
+      }
+      td.appendChild(block);
+    });
+    return td;
+  }
+
+  // Post-render height-sync pass (30.08 follow-up, third change) — see the doc comment above
+  // buildLprRoleTd for why each person is a separate .lpr-cell-block element. Native <table>
+  // layout has no mechanism to synchronize a sub-element's height across independent sibling
+  // <td>s on its own (each column wraps its own text independently), so this measures the
+  // natural (unconstrained) height of each column's Nth block after they're in the live DOM,
+  // takes the tallest of the (up to three) columns at that position, and sets it as an explicit
+  // min-height on all of them — matched by array position, not content, so it stays correct
+  // regardless of which of the three columns happens to wrap. Runs across whichever of the three
+  // DM columns are actually visible in a given row (1, 2, or 3 — they're independently
+  // hideable/reorderable, no locked group) — fewer than 2 visible means nothing to sync, skipped.
+  // No "reset previous height" step: this is only ever called once per render(), right after that
+  // function rebuilds #table-body from scratch (body.innerHTML = ''), so every block measured
+  // here is a brand-new element that has never had an inline height set before.
+  function syncDmColumnHeights() {
+    var body = document.getElementById('table-body');
+    Array.from(body.children).forEach(function (tr) {
+      var roleTd = tr.querySelector('td.lpr-role-cell');
+      var nameTd = tr.querySelector('td.lpr-name-cell');
+      var linkedinTd = tr.querySelector('td.lpr-linkedin-cell');
+      var cells = [roleTd, nameTd, linkedinTd].filter(Boolean);
+      if (cells.length < 2) return;
+
+      var blockGroups = cells.map(function (td) { return Array.from(td.children); });
+      var maxCount = 0;
+      blockGroups.forEach(function (blocks) { if (blocks.length > maxCount) maxCount = blocks.length; });
+
+      for (var i = 0; i < maxCount; i++) {
+        var tallest = 0;
+        blockGroups.forEach(function (blocks) {
+          if (blocks[i] && blocks[i].offsetHeight > tallest) tallest = blocks[i].offsetHeight;
+        });
+        blockGroups.forEach(function (blocks) {
+          if (blocks[i]) blocks[i].style.minHeight = tallest + 'px';
+        });
+      }
+    });
   }
 
   // Plain-text row preview for the Description column (table density — the full HTML rendering
@@ -3490,7 +3602,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     location: function (lead) { return el('td', { text: lead.location || '\\u2014' }); },
     company_linkedin: function (lead) { return buildCompanyLinkedinTd(lead); },
     hiring_contact: function (lead) { return el('td', { text: hiringContactDetailValue(lead) || '\\u2014' }); },
-    lpr: function (lead) { return buildLprTd(lead); },
+    lpr_role: function (lead) { return buildLprRoleTd(lead); },
+    lpr_name: function (lead) { return buildLprNameTd(lead); },
+    lpr_linkedin_url: function (lead) { return buildLprLinkedinTd(lead); },
     source_url: function (lead) { return buildLinkTd(lead.source_url, 'Open \\u2197'); },
     is_it: function (lead) {
       var td = document.createElement('td');
@@ -3632,6 +3746,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       body.appendChild(el('tr', {}, [el('td', { colspan: String(columnCount()), className: 'empty-state', text: 'No leads match the current filters.' })]));
     } else {
       filtered.forEach(function (lead) { body.appendChild(buildRow(lead)); });
+      // Must run after every row is attached to the live DOM (offsetHeight needs real layout)
+      // and only when there are real rows to sync — render() is the single, central place every
+      // filter/sort/refresh/column-reorder path already funnels through (see this file's own
+      // Task DI-2966 history), so hooking here covers all of them, not just initial load.
+      syncDmColumnHeights();
     }
 
     document.getElementById('count').textContent = filtered.length + ' of ' + state.leads.length + ' leads';
