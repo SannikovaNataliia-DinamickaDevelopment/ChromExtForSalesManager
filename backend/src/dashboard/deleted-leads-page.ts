@@ -156,6 +156,43 @@ export function renderDeletedLeadsPage(): string {
     color: var(--error);
     margin-top: 4px;
   }
+  .bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .bulk-bar .bulk-count {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+  .bulk-bar button {
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .bulk-bar button:disabled { cursor: not-allowed; opacity: 0.6; }
+  #bulk-restore-btn {
+    background: var(--pink);
+    color: #1A1420;
+    border: none;
+  }
+  #bulk-restore-btn:hover:not(:disabled) { opacity: 0.9; }
+  #bulk-purge-btn {
+    background: transparent;
+    color: var(--error);
+    border: 1px solid var(--error);
+  }
+  #bulk-purge-btn:hover:not(:disabled) { background: var(--error-bg); }
+  .bulk-status {
+    font-size: 12px;
+    color: var(--error);
+  }
+  th.checkbox-col, td.checkbox-col { width: 32px; padding-right: 0; }
 </style>
 </head>
 <body>
@@ -165,10 +202,17 @@ export function renderDeletedLeadsPage(): string {
     <a class="back-link" href="/dashboard">Back to dashboard</a>
   </div>
   <div class="hint-bar">Leads deleted more than ${LEAD_RETENTION_DAYS} days ago are purged automatically. Restore brings a lead back to the main dashboard; deleting permanently cannot be undone.</div>
+  <div class="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0 selected</span>
+    <button id="bulk-restore-btn" type="button" disabled>Restore selected (0)</button>
+    <button id="bulk-purge-btn" type="button" disabled>Delete permanently selected (0)</button>
+    <span class="bulk-status" id="bulk-status"></span>
+  </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
+          <th class="checkbox-col"><input type="checkbox" id="select-all-checkbox" aria-label="Select all"></th>
           <th>Title</th>
           <th>Source</th>
           <th>Company</th>
@@ -178,7 +222,7 @@ export function renderDeletedLeadsPage(): string {
         </tr>
       </thead>
       <tbody id="table-body">
-        <tr><td class="loading-state" colspan="6">Loading deleted leads…</td></tr>
+        <tr><td class="loading-state" colspan="7">Loading deleted leads…</td></tr>
       </tbody>
     </table>
   </div>
@@ -188,6 +232,15 @@ export function renderDeletedLeadsPage(): string {
   var COOKIE_NAME = 'sm_dashboard_session';
   var LEAD_RETENTION_DAYS = ${LEAD_RETENTION_DAYS};
   var DAY_MS = 24 * 60 * 60 * 1000;
+
+  // Bulk restore/purge (08.09 follow-up) — same checkbox + "select all" + bulk-action pattern
+  // as the main dashboard's bulk bar (dashboard-page.ts), scaled down for this page's own
+  // "small, deliberately bulk-action-free... just a small table" scope (see this file's own
+  // top comment): no per-mode progress text or in-flight polling, since both actions here are
+  // a single synchronous request/response, not a multi-step background job.
+  var selected = {}; // leadId -> true
+  var currentLeads = [];
+  var bulkInFlight = false;
 
   function getCookie(name) {
     var parts = document.cookie.split(';');
@@ -271,6 +324,18 @@ export function renderDeletedLeadsPage(): string {
 
   function buildRow(lead) {
     var tr = document.createElement('tr');
+
+    var checkboxTd = el('td', { className: 'checkbox-col' });
+    var checkbox = el('input', { type: 'checkbox' });
+    checkbox.checked = !!selected[lead.id];
+    checkbox.addEventListener('change', function () {
+      if (checkbox.checked) selected[lead.id] = true;
+      else delete selected[lead.id];
+      updateBulkBar();
+    });
+    checkboxTd.appendChild(checkbox);
+    tr.appendChild(checkboxTd);
+
     tr.appendChild(el('td', { className: 'title-cell', text: lead.job_title || '(untitled)' }));
 
     var sourceTd = document.createElement('td');
@@ -332,21 +397,132 @@ export function renderDeletedLeadsPage(): string {
     return tr;
   }
 
+  // Drops selections for leads no longer in the just-loaded list (deleted-list.js — restored,
+  // purged, or purged by someone else) — same defensive pattern as the main dashboard's own
+  // pruneSelection (dashboard-page.ts), so a stale selected id from before a reload can never
+  // crash a later bulk request.
+  function pruneSelection(leads) {
+    var stillPresent = {};
+    leads.forEach(function (lead) { stillPresent[lead.id] = true; });
+    Object.keys(selected).forEach(function (id) {
+      if (!stillPresent[id]) delete selected[id];
+    });
+  }
+
   function render(leads) {
+    currentLeads = leads;
+    pruneSelection(leads);
+
     var body = document.getElementById('table-body');
     body.innerHTML = '';
     if (leads.length === 0) {
-      body.appendChild(el('tr', {}, [el('td', { colspan: '6', className: 'empty-state', text: 'No deleted leads.' })]));
-      return;
+      body.appendChild(el('tr', {}, [el('td', { colspan: '7', className: 'empty-state', text: 'No deleted leads.' })]));
+    } else {
+      leads.forEach(function (lead) { body.appendChild(buildRow(lead)); });
     }
-    leads.forEach(function (lead) { body.appendChild(buildRow(lead)); });
+    updateBulkBar();
   }
+
+  function selectedCount() {
+    return Object.keys(selected).length;
+  }
+
+  function updateBulkBar() {
+    var count = selectedCount();
+    document.getElementById('bulk-count').textContent = count + ' selected';
+
+    var restoreBtn = document.getElementById('bulk-restore-btn');
+    var purgeBtn = document.getElementById('bulk-purge-btn');
+    restoreBtn.textContent = 'Restore selected (' + count + ')';
+    restoreBtn.disabled = bulkInFlight || count === 0;
+    purgeBtn.textContent = 'Delete permanently selected (' + count + ')';
+    purgeBtn.disabled = bulkInFlight || count === 0;
+
+    var selectAll = document.getElementById('select-all-checkbox');
+    selectAll.disabled = bulkInFlight || currentLeads.length === 0;
+    selectAll.checked = currentLeads.length > 0 && currentLeads.every(function (lead) { return !!selected[lead.id]; });
+  }
+
+  document.getElementById('select-all-checkbox').addEventListener('change', function (e) {
+    if (e.target.checked) {
+      currentLeads.forEach(function (lead) { selected[lead.id] = true; });
+    } else {
+      selected = {};
+    }
+    render(currentLeads);
+  });
+
+  // "Restore selected" — no confirm popup, matching the single-row Restore button's existing
+  // (unchanged) behavior.
+  function startBulkRestore() {
+    if (bulkInFlight) return;
+    var leadIds = Object.keys(selected);
+    if (leadIds.length === 0) return;
+
+    bulkInFlight = true;
+    document.getElementById('bulk-status').textContent = '';
+    updateBulkBar();
+
+    apiFetch('/leads/bulk-restore', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: leadIds }),
+    })
+      .then(function () {
+        selected = {};
+        return loadLeads();
+      })
+      .catch(function (err) {
+        document.getElementById('bulk-status').textContent = err.message;
+      })
+      .then(function () {
+        bulkInFlight = false;
+        updateBulkBar();
+      });
+  }
+
+  // "Delete permanently selected" — same "this cannot be undone" wording as the single-row
+  // purge button, mentioning the count. Nothing is sent to the server until confirmed.
+  function startBulkPurge() {
+    if (bulkInFlight) return;
+    var leadIds = Object.keys(selected);
+    if (leadIds.length === 0) return;
+
+    var confirmed = window.confirm(
+      'Permanently delete ' + leadIds.length + ' lead' + (leadIds.length === 1 ? '' : 's') + '? This cannot be undone.',
+    );
+    if (!confirmed) return;
+
+    bulkInFlight = true;
+    document.getElementById('bulk-status').textContent = '';
+    updateBulkBar();
+
+    apiFetch('/leads/bulk-purge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: leadIds }),
+    })
+      .then(function () {
+        selected = {};
+        return loadLeads();
+      })
+      .catch(function (err) {
+        document.getElementById('bulk-status').textContent = err.message;
+      })
+      .then(function () {
+        bulkInFlight = false;
+        updateBulkBar();
+      });
+  }
+
+  document.getElementById('bulk-restore-btn').addEventListener('click', startBulkRestore);
+  document.getElementById('bulk-purge-btn').addEventListener('click', startBulkPurge);
 
   function loadLeads() {
     return apiFetch('/leads/deleted').then(render).catch(function (err) {
       var body = document.getElementById('table-body');
       body.innerHTML = '';
-      body.appendChild(el('tr', {}, [el('td', { colspan: '6', className: 'empty-state', text: 'Failed to load: ' + err.message })]));
+      body.appendChild(el('tr', {}, [el('td', { colspan: '7', className: 'empty-state', text: 'Failed to load: ' + err.message })]));
     });
   }
 

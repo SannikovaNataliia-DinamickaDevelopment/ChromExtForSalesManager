@@ -11,6 +11,8 @@ import { CompanyLinkedinService } from './company-linkedin.service';
 import { BackfillCompanyLinkedinDto } from './dto/backfill-company-linkedin.dto';
 import { BulkApolloSearchDto } from './dto/bulk-apollo-search.dto';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
+import { BulkPurgeLeadsDto } from './dto/bulk-purge-leads.dto';
+import { BulkRestoreLeadsDto } from './dto/bulk-restore-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
@@ -175,6 +177,42 @@ export class LeadsController {
       );
     }
     return this.leadsService.bulkSoftDelete(dto);
+  }
+
+  // Deleted Leads page "Restore selected" (08.09 follow-up) — same route-ordering reasoning as
+  // 'bulk-delete' above: a literal one-segment path, registered BEFORE @Patch(':id') below so
+  // "PATCH /leads/bulk-restore" can't be swallowed by updateStatus's :id route.
+  @Patch('bulk-restore')
+  async bulkRestore(@Body() body: BulkRestoreLeadsDto) {
+    const dto = plainToInstance(BulkRestoreLeadsDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        'leadIds must be a non-empty array of lead id strings',
+      );
+    }
+    return this.leadsService.bulkRestore(dto);
+  }
+
+  // Deleted Leads page "Delete permanently selected" (08.09 follow-up) — same irreversible
+  // semantics as the single-lead DELETE /leads/:id below. POST (not DELETE), same reasoning as
+  // 'apollo-bulk-search'/'company-linkedin/backfill' above: a bulk action driven by a JSON body,
+  // and DELETE-with-a-body is unreliable across clients/proxies — no route-collision concern
+  // either way, since the bare POST /leads root (lead ingestion) has zero extra segments.
+  @Post('bulk-purge')
+  async bulkPurge(@Body() body: BulkPurgeLeadsDto) {
+    const dto = plainToInstance(BulkPurgeLeadsDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        'leadIds must be a non-empty array of lead id strings',
+      );
+    }
+    return this.leadsService.bulkPurge(dto);
   }
 
   // Status is shared per lead (decision log): any authenticated user may change it.

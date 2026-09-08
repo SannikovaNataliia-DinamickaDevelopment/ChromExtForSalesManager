@@ -11,6 +11,8 @@ import { DESTINATION, Destination } from '../destinations/destination.interface'
 import { ApolloClassifierService } from './apollo-classifier.service';
 import { ClaudeClassifierService } from './claude-classifier.service';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
+import { BulkPurgeLeadsDto } from './dto/bulk-purge-leads.dto';
+import { BulkRestoreLeadsDto } from './dto/bulk-restore-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
@@ -538,6 +540,21 @@ export class LeadsService {
     return updated;
   }
 
+  // Deleted Leads page bulk "Restore selected" (08.09 follow-up) — same semantics as restore
+  // above (clears deleted_at, no owner check), applied to every id in one statement instead of
+  // one PATCH per lead. Same shape/reporting convention as bulkSoftDelete above: aggregate
+  // count, missing/not-actually-deleted ids silently not-matched rather than erroring (the
+  // caller only cares how many actually changed).
+  async bulkRestore({ leadIds }: BulkRestoreLeadsDto): Promise<{ restored: number }> {
+    if (leadIds.length === 0) return { restored: 0 };
+    const updated = await this.db
+      .update(job_leads)
+      .set({ deleted_at: null, updated_at: new Date() })
+      .where(inArray(job_leads.id, leadIds))
+      .returning({ id: job_leads.id });
+    return { restored: updated.length };
+  }
+
   // Hard delete — irreversible. Used both for /dashboard/deleted's "Delete permanently" action
   // (on an already soft-deleted lead) and the documented DELETE /leads/:id API in general; it
   // doesn't require deleted_at to be set first, matching plain REST-delete semantics.
@@ -547,6 +564,16 @@ export class LeadsService {
       throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
     }
     return deleted;
+  }
+
+  // Deleted Leads page bulk "Delete permanently selected" (08.09 follow-up) — same semantics
+  // as remove above (irreversible, doesn't require deleted_at to be set first), applied to
+  // every id in one statement instead of one DELETE per lead. Same aggregate-count reporting
+  // shape as bulkSoftDelete/bulkRestore above.
+  async bulkPurge({ leadIds }: BulkPurgeLeadsDto): Promise<{ purged: number }> {
+    if (leadIds.length === 0) return { purged: 0 };
+    const deleted = await this.db.delete(job_leads).where(inArray(job_leads.id, leadIds)).returning({ id: job_leads.id });
+    return { purged: deleted.length };
   }
 
   // Retention purge (CLAUDE.md-style decision log: soft delete first, hard-purge after
