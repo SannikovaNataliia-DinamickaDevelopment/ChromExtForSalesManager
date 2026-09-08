@@ -2884,16 +2884,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return '';
   }
 
-  // Sidebar's "Industry" detail row value (24.08 follow-up, per the 19.08 call) — null (never
-  // classified, or classified with no usable website) returns '' so buildDetailRow's own '—'
-  // fallback applies, same convention as hiringContactDetailValue above. 'Other' appends its
-  // stored free-text explanation so a manager doesn't have to guess why a lead landed there.
+  // Sidebar's "Industry" detail row value (task 2 of 4, 08.09 follow-up: switched from the
+  // LLM-classified industry enum to Apollo's raw apollo_industry field, per the 27.08/01.09
+  // client calls — see leads.service.ts's classifyIndustry comment). null (Apollo organization
+  // resolution hasn't run for this lead's company yet) returns '' so buildDetailRow's own '—'
+  // fallback applies, same convention as hiringContactDetailValue above. apollo_industry is a
+  // plain string with no "Other + explanation" companion field, unlike the old industry enum.
   function industryDetailValue(lead) {
-    if (!lead.industry) return '';
-    if (lead.industry === 'Other' && lead.industry_other_description) {
-      return lead.industry + ' \\u2014 ' + lead.industry_other_description;
-    }
-    return lead.industry;
+    return lead.apollo_industry || '';
   }
 
   // Sidebar's "Company LinkedIn" detail row — a plain container (not buildDetailRow's own

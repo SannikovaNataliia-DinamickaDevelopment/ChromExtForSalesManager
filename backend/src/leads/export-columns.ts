@@ -96,17 +96,13 @@ function lprLinkedinCell(r: JobLeadRecord): string {
   return people.map((p) => (p.linkedin_url && p.linkedin_url_verified !== false ? p.linkedin_url : 'не знайдено')).join('\n');
 }
 
-// Industry classification (24.08 follow-up) — no not_checked/found/not_specified three-state
-// here, same reasoning as the lpr*Cell functions above: industry is simply null until the first classification.
-// "Other" gets its stored free-text explanation appended, same "Name — Role" spirit as
-// hiringContactCell above, so a manager reading the export sees WHY it landed in Other without
-// opening the sidebar.
+// Industry (task 2 of 4, 08.09 follow-up: switched from the LLM-classified industry enum to
+// Apollo's raw apollo_industry field — see dashboard-page.ts's industryDetailValue for the same
+// swap). No not_checked/found/not_specified three-state here, same reasoning as the lpr*Cell
+// functions above: apollo_industry is simply null until Apollo organization resolution has run
+// for this lead's company. Plain string, no "Other + explanation" companion field the old enum had.
 function industryCell(r: JobLeadRecord): string {
-  if (!r.industry) return '';
-  if (r.industry === 'Other' && r.industry_other_description) {
-    return `${r.industry} — ${r.industry_other_description}`;
-  }
-  return r.industry;
+  return r.apollo_industry || '';
 }
 
 export type ExportColumn = {
