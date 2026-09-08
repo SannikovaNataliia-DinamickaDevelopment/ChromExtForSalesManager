@@ -2,6 +2,13 @@
 .env
 .env.*
 !.env.example
+# extension/.env.development and extension/.env.production (08.09 follow-up) hold WXT's own
+# per-mode config (WXT_BACKEND_URL) — a fixed localhost URL and an as-yet-nonexistent placeholder,
+# neither a secret. Committed deliberately, same "documented template, no real credentials"
+# reasoning as !.env.example above, following Vite/WXT's own convention of committing .env.<mode>
+# (only .env.*.local is meant to stay local/gitignored — not used by this project).
+!extension/.env.development
+!extension/.env.production
 *.pem
 *.key
 service-account*.json
