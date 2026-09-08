@@ -79,7 +79,7 @@ This always builds in **development mode** (WXT's own dev/prod convention — se
 
 1. Go to `chrome://extensions`
 2. Enable "Developer mode"
-3. "Load unpacked" → select `extension/.output/chrome-mv3/`. (Dev and prod builds currently share this same output folder — WXT doesn't suffix it per mode in this project's config — so building one after the other overwrites it. That's fine for normal local dev, where you're only ever running one variant at a time; see "Distributing the extension" in Part 2 if you ever need both loaded side by side on one machine.)
+3. "Load unpacked" → select `extension/.output/chrome-mv3-dev/`. (Dev and prod builds land in separate, distinctly named folders — see "Distributing the extension" in Part 2 — so building one never overwrites the other; both can be loaded side by side on one machine if you ever need to.)
 4. Set `EXTENSION_ORIGIN=chrome-extension://<the dev ID>` in `backend/.env`, then restart the backend. (The dev build's ID is stable across reloads/rebuilds now — see Part 2 — so you only need to do this once, not after every reload.)
 
 ### 7. Try it
@@ -147,7 +147,7 @@ The extension is not going through the Chrome Web Store. It has **separate, inde
 
 - **Production build:** `npm run build --workspace extension` (or `npx wxt build` from `extension/`) — uses `extension/.env.production`'s `WXT_BACKEND_URL`. **Before building for real deployment, edit that one line to the actual deployed backend URL** — everything else (manifest key, permissions) is already wired to read from it.
 - The production extension's Chrome ID is fixed by its keypair (`extension/keys/prod-key.pem`, gitignored — **back this file up somewhere outside this machine**; losing it means the production extension's ID changes on the next build, breaking the deployed backend's `EXTENSION_ORIGIN` and requiring Mariia to reinstall).
-- Dev and production builds currently land in the **same** output folder (`extension/.output/chrome-mv3/` — WXT's default `outDirTemplate` doesn't include a per-mode suffix in this project's config, confirmed by building both modes back to back and inspecting the output). In practice this hasn't mattered because dev and prod are built/loaded at different times on different machines (Nataliia's laptop vs. Mariia's) — but if you ever need both loaded side by side on the same machine, build one, copy that folder aside before building the other, or add an `outDirTemplate` with `{{modeSuffix}}` to `extension/wxt.config.ts` for a permanent fix (WXT supports this natively; not currently configured).
+- Dev and production builds land in **separate, distinctly named** output folders — `extension/.output/chrome-mv3-dev/` and `extension/.output/chrome-mv3/` respectively (`wxt.config.ts`'s `outDirTemplate: '{{browser}}-mv{{manifestVersion}}{{modeSuffix}}'`, WXT's own built-in mode-suffix placeholder — confirmed by building both modes back to back and inspecting both folders' output simultaneously). Building one never overwrites the other, so both can be loaded side by side on the same machine if you ever need to.
 - **Installation, since there's no Web Store listing:** build production (`extension/.output/chrome-mv3/`), get that folder to Mariia, and have her:
   1. Go to `chrome://extensions`
   2. Enable "Developer mode" (top-right toggle)

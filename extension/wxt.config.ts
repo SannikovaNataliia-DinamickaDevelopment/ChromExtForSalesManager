@@ -20,6 +20,14 @@ const PROD_MANIFEST_KEY =
 // sites (CLAUDE.md "Deployment: LOCAL").
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // 08.09 follow-up: without this, dev and prod builds both land in the same
+  // .output/chrome-mv3/ folder (WXT's own default outDirTemplate has no per-mode suffix),
+  // silently overwriting each other. {{modeSuffix}} is WXT's own built-in placeholder
+  // (confirmed against the installed wxt@0.19.29 package's own types.d.ts doc comment —
+  // '-dev' for development, '' for production) — this is exactly that type's own documented
+  // @example, not a custom scheme. Now: dev -> .output/chrome-mv3-dev/, prod (unchanged) ->
+  // .output/chrome-mv3/.
+  outDirTemplate: '{{browser}}-mv{{manifestVersion}}{{modeSuffix}}',
   vite: () => ({
     esbuild: {
       jsx: 'automatic',
