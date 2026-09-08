@@ -1209,6 +1209,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     <button id="bulk-enrich-btn" type="button">Enrich selected</button>
     <button id="bulk-contact-btn" type="button">Backfill contact selected</button>
     <button id="bulk-company-linkedin-btn" type="button" title="Fetches each selected lead's company_website and scans it for LinkedIn links (capped at 50/run)">Backfill LinkedIn selected</button>
+    <button id="bulk-apollo-search-btn" type="button" title="Apollo-only: searches for decision-makers (DM) and picks up the company's industry as a side effect. Only leads never searched before are eligible — use the sidebar's DM Search button to re-run one.">DM Search + Industry selected</button>
     <button id="bulk-delete-btn" class="bulk-delete-btn" type="button">Delete selected</button>
     <span class="bulk-status" id="bulk-status"></span>
   </div>
@@ -1304,11 +1305,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var bulkState = {
     selected: {}, // leadId -> true, any lead regardless of detail status
     inFlight: false,
-    // 'enrich' | 'delete' | null — which of the two bulk actions is currently running, so the
-    // shared inFlight flag (constraint: only one bulk batch at a time) can still show the
-    // right progress text. Mutually exclusive by construction: both buttons check
-    // bulkState.inFlight before starting, so a second bulk action can't start from this tab
-    // while one is already running, regardless of mode.
+    // 'enrich' | 'contact' | 'linkedin' | 'apollo' | 'delete' | null — which bulk action is
+    // currently running, so the shared inFlight flag (constraint: only one bulk batch at a time)
+    // can still show the right progress text. Mutually exclusive by construction: every bulk
+    // button checks bulkState.inFlight before starting, so a second bulk action can't start from
+    // this tab while one is already running, regardless of mode.
     mode: null,
     completed: 0,
     total: 0,
@@ -3670,11 +3671,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var enrichBtn = document.getElementById('bulk-enrich-btn');
     var contactBtn = document.getElementById('bulk-contact-btn');
     var linkedinBtn = document.getElementById('bulk-company-linkedin-btn');
+    var apolloSearchBtn = document.getElementById('bulk-apollo-search-btn');
     var deleteBtn = document.getElementById('bulk-delete-btn');
     var statusEl = document.getElementById('bulk-status');
     var notDetailedCount = getSelectedNotDetailedLeads().length;
     var needsContactCount = getSelectedNeedsContactCheck().length;
     var needsLinkedinCount = getSelectedNeedsCompanyLinkedinCheck().length;
+    var needsApolloSearchCount = getSelectedNeedsApolloSearch().length;
 
     if (bulkState.inFlight && bulkState.mode === 'enrich') {
       countEl.textContent = 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
@@ -3682,6 +3685,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       countEl.textContent = 'Checking contacts ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'linkedin') {
       countEl.textContent = 'Checking company LinkedIn ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
+    } else if (bulkState.inFlight && bulkState.mode === 'apollo') {
+      countEl.textContent = 'Searching Apollo ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'delete') {
       countEl.textContent = 'Deleting\\u2026';
     } else {
@@ -3704,6 +3709,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // silently hidden from this label.
     linkedinBtn.textContent = 'Backfill LinkedIn selected (' + needsLinkedinCount + ')';
     linkedinBtn.disabled = bulkState.inFlight || needsLinkedinCount === 0;
+
+    // No cap here or server-side (see apollo-bulk-search.service.ts's own comment) — the count
+    // shown is exactly what a confirmed click will attempt.
+    apolloSearchBtn.textContent = 'DM Search + Industry selected (' + needsApolloSearchCount + ')';
+    apolloSearchBtn.disabled = bulkState.inFlight || needsApolloSearchCount === 0;
 
     deleteBtn.textContent = 'Delete selected (' + count + ')';
     deleteBtn.disabled = bulkState.inFlight || count === 0;
@@ -4113,6 +4123,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     });
   }
 
+  // Task 4 of 4 (08.09 follow-up): eligible strictly means never searched before
+  // (lpr_results is null/undefined) — the single-lead sidebar DM Search button is the only way
+  // to re-run a search on a lead that already has lpr_results. An empty array (searched, found
+  // nobody) is truthy and correctly excluded here, unlike null.
+  function getSelectedNeedsApolloSearch() {
+    return getSelectedLeads().filter(function (l) { return !l.lpr_results; });
+  }
+
   function buildCompanyLinkedinBulkSummary(result) {
     var parts = [result.found + ' found'];
     if (result.notSpecified) parts.push(result.notSpecified + ' not specified');
@@ -4208,6 +4226,120 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         bulkState.total = result.total;
         render();
         pollCompanyLinkedinBulkStatus();
+      })
+      .catch(function (err) {
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = err.message;
+        render();
+      });
+  }
+
+  // Bulk "DM Search + Industry selected" (task 4 of 4, 08.09 follow-up) — same server-side
+  // batch/polling architecture as Backfill LinkedIn above (apollo-bulk-search.service.ts),
+  // Apollo-only (never OpenAI/Gemini/Claude — the sidebar's single-lead DM Search button is
+  // untouched and keeps its own default). No run cap, unlike Backfill LinkedIn's 50 — deliberate,
+  // not scoped for this version — so the confirmation popup below (stating the exact count) is
+  // the only thing standing between a click and Apollo actually being called, since each lead
+  // spends real Apollo credits.
+  var APOLLO_BULK_SEARCH_POLL_MS = 1000;
+  var apolloBulkSearchPollId = null;
+  // Same purpose as companyLinkedinTargetIds above — this tab's own selected-and-eligible target
+  // ids at the moment it started (or attached to) the run, read by
+  // pollApolloBulkSearchStatus's completion branch to selectively deselect only the ones that
+  // actually got searched.
+  var apolloBulkSearchTargetIds = [];
+
+  function buildApolloBulkSearchSummary(status) {
+    var parts = [status.found + ' found'];
+    if (status.noResults) parts.push(status.noResults + ' no results');
+    if (status.failed) parts.push(status.failed + ' failed');
+    if (status.skippedIneligible) parts.push(status.skippedIneligible + ' already searched, skipped');
+    return parts.join(', ');
+  }
+
+  function pollApolloBulkSearchStatus() {
+    apiFetch('/leads/apollo-bulk-search/status')
+      .then(function (status) {
+        bulkState.completed = status.processed;
+        bulkState.total = status.total;
+        render();
+
+        if (status.running) {
+          if (!apolloBulkSearchPollId) {
+            apolloBulkSearchPollId = setInterval(pollApolloBulkSearchStatus, APOLLO_BULK_SEARCH_POLL_MS);
+          }
+          return;
+        }
+
+        if (apolloBulkSearchPollId) {
+          clearInterval(apolloBulkSearchPollId);
+          apolloBulkSearchPollId = null;
+        }
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = buildApolloBulkSearchSummary(status);
+        render();
+        // Refinement: see startBulkEnrich's identical comment — deselect only the leads that
+        // actually got searched (lpr_results is no longer null), keeping unresolved/skipped ones
+        // selected for an easy retry.
+        loadLeads().then(function () {
+          deselectSucceededTargets(apolloBulkSearchTargetIds, function (lead) { return !!lead.lpr_results; });
+          render();
+        });
+      })
+      .catch(function () {
+        // Best-effort — see pollCompanyLinkedinBulkStatus's identical comment: a failed status
+        // poll shouldn't spam errors or abort the run; the next interval tick just retries.
+      });
+  }
+
+  // Deliberately no cap check here (unlike startBulkCompanyLinkedin's Math.min(targets.length,
+  // 50)) — see apollo-bulk-search.service.ts's own comment on why. window.confirm() is the same
+  // "explicit confirmation before an irreversible/costly action" pattern already used by
+  // startBulkDelete above — nothing is sent to the server until the manager confirms.
+  function startBulkApolloSearch() {
+    if (bulkState.inFlight) return;
+
+    var targets = getSelectedNeedsApolloSearch().map(function (l) { return l.id; });
+    if (targets.length === 0) return;
+
+    var confirmed = window.confirm(
+      'Run Apollo DM Search + Industry lookup for ' + targets.length + ' lead' + (targets.length === 1 ? '' : 's') + '? ' +
+        'Each lead spends real Apollo credits \\u2014 nothing runs until you confirm.',
+    );
+    if (!confirmed) return;
+
+    apolloBulkSearchTargetIds = targets;
+
+    bulkState.inFlight = true;
+    bulkState.mode = 'apollo';
+    bulkState.completed = 0;
+    bulkState.total = targets.length;
+    bulkState.status = '';
+    render();
+
+    apiFetch('/leads/apollo-bulk-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: targets }),
+    })
+      .then(function (result) {
+        if (!result.started) {
+          if (result.alreadyRunning) {
+            bulkState.total = 0;
+            pollApolloBulkSearchStatus();
+            return;
+          }
+          bulkState.inFlight = false;
+          bulkState.mode = null;
+          bulkState.status = result.reason || 'Nothing to search.';
+          render();
+          return;
+        }
+        bulkState.total = result.total;
+        render();
+        pollApolloBulkSearchStatus();
       })
       .catch(function (err) {
         bulkState.inFlight = false;
@@ -4332,6 +4464,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
   document.getElementById('bulk-contact-btn').addEventListener('click', startBulkContactBackfill);
   document.getElementById('bulk-company-linkedin-btn').addEventListener('click', startBulkCompanyLinkedin);
+  document.getElementById('bulk-apollo-search-btn').addEventListener('click', startBulkApolloSearch);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
 
   var extensionIdInput = document.getElementById('extension-id');

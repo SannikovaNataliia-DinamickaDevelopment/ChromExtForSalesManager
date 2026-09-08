@@ -6,8 +6,10 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
+import { ApolloBulkSearchService } from './apollo-bulk-search.service';
 import { CompanyLinkedinService } from './company-linkedin.service';
 import { BackfillCompanyLinkedinDto } from './dto/backfill-company-linkedin.dto';
+import { BulkApolloSearchDto } from './dto/bulk-apollo-search.dto';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
@@ -23,6 +25,7 @@ export class LeadsController {
   constructor(
     private readonly leadsService: LeadsService,
     private readonly companyLinkedinService: CompanyLinkedinService,
+    private readonly apolloBulkSearchService: ApolloBulkSearchService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead.
@@ -80,6 +83,31 @@ export class LeadsController {
   @Get('company-linkedin/status')
   async companyLinkedinStatus() {
     return this.companyLinkedinService.getStatus();
+  }
+
+  // Bulk "DM Search + Industry selected" (task 4 of 4, 08.09 follow-up) — Apollo-only, row-
+  // selection-scoped like company-linkedin/backfill above; see apollo-bulk-search.service.ts's
+  // own doc comment for why this is the right architecture (purely backend-driven, same as
+  // Company-LinkedIn, unlike Wellfound's extension-Port bulk actions). POST kicks off a batch
+  // and returns immediately; GET is polled by the dashboard for live progress. Literal
+  // 'apollo-bulk-search' path, same no-route-collision reasoning as 'company-linkedin/...' above.
+  @Post('apollo-bulk-search')
+  async startApolloBulkSearch(@Body() body: unknown) {
+    const dto = plainToInstance(BulkApolloSearchDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(
+        HttpStatus.BAD_REQUEST,
+        'VALIDATION_ERROR',
+        'leadIds must be a non-empty array of lead id strings',
+      );
+    }
+    return this.apolloBulkSearchService.startBatch(dto.leadIds);
+  }
+
+  @Get('apollo-bulk-search/status')
+  async apolloBulkSearchStatus() {
+    return this.apolloBulkSearchService.getStatus();
   }
 
   // Dashboard "Export" button. POST (not GET) because leadIds can be the entire filtered lead
