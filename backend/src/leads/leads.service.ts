@@ -17,9 +17,7 @@ import { ExportLeadsDto } from './dto/export-leads.dto';
 import { SetHiringContactDto } from './dto/set-hiring-contact.dto';
 import { EXPORT_COLUMNS, type ExportColumn } from './export-columns';
 import { GeminiClassifierService } from './gemini-classifier.service';
-import { IndustryClassifierService } from './industry-classifier.service';
 import type { LeadIsIt } from './lead-is-it';
-import { OpenaiIndustryClassifierService } from './openai-industry-classifier.service';
 import { LEAD_RETENTION_DAYS } from './lead-retention';
 import { LeadStatus } from './lead-status';
 import { isObviouslyNonIt } from './non-it-keywords';
@@ -41,8 +39,6 @@ export class LeadsService {
     private readonly geminiClassifier: GeminiClassifierService,
     private readonly claudeClassifier: ClaudeClassifierService,
     private readonly openaiClassifier: OpenaiClassifierService,
-    private readonly industryClassifierGemini: IndustryClassifierService,
-    private readonly industryClassifierOpenai: OpenaiIndustryClassifierService,
     private readonly apolloClassifier: ApolloClassifierService,
   ) {}
 
@@ -466,72 +462,24 @@ export class LeadsService {
     };
   }
 
-  // Industry classification (24.08 follow-up, per the 19.08 call) — one lead at a time, manual
-  // trigger only for now (dashboard button), same "single-lead call, no automatic bulk loop yet"
-  // scope as DM search started at. Company name is required (same reasoning as lprSearch above).
-  // company_website used to be required too — as of the 30.08 follow-up it's only required when
-  // there's no cached Apollo organization data for this lead (see apolloInput below); when
-  // Apollo's own industry/keywords/description are available, the classifier uses those instead
-  // and never needs to fetch the website at all. The classifier itself owns this decision (see
-  // its own classifyIndustry doc comment) — this method just passes through whatever the lead
-  // row already has.
-  // Only writes the three industry_* fields on a successful classification (result.ok) — same
-  // "a failed call must never wipe out a previously-good saved result" rule as lprSearch/deepen.
-  //
-  // `provider` defaults to OpenAI (second 24.08 follow-up: Gemini started throwing "high demand"
-  // errors during manual testing — see IndustryClassifierService's own doc comment). Same
-  // "OpenAI became the default, the original provider stayed selectable" pattern LPR already
-  // established. FLAG, not yet resolved: OpenAI's per-token cost was accepted for LPR's
-  // manager-triggered, per-person research, but that reasoning doesn't automatically carry over
-  // here — Industry classification is meant to eventually run across the full 1400+-lead
-  // database, a very different volume profile where Gemini's free tier mattered enough to be the
-  // original choice. Don't let "switched for a quick manual test" quietly become the permanent
-  // production default without revisiting that cost question once Gemini's demand issue is
-  // confirmed resolved or not.
-  async classifyIndustry(id: string, provider?: string) {
-    const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
-    if (!existing) {
-      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
-    }
-    if (!existing.company) {
-      throw new AppError(HttpStatus.BAD_REQUEST, 'MISSING_COMPANY', 'This lead has no company name — nothing to classify.');
-    }
-
-    const resolvedProvider: 'openai' | 'gemini' = provider === 'gemini' ? 'gemini' : 'openai';
-    const classifier = resolvedProvider === 'gemini' ? this.industryClassifierGemini : this.industryClassifierOpenai;
-
-    // 30.08 follow-up: pass through whatever Apollo enrichment data this lead's row already has
-    // (captured by apollo-classifier.service.ts's resolveOrganization/persistOrganization,
-    // independent of this call). All 5 fields null (never resolved, or resolved and found
-    // nothing) is a valid, expected shape — buildApolloIndustryInputText treats that the same as
-    // "no Apollo data" and the classifier falls back to fetching the website, unchanged.
-    const apolloInput = {
-      apolloIndustry: existing.apollo_industry,
-      apolloIndustries: existing.apollo_industries,
-      apolloSecondaryIndustries: existing.apollo_secondary_industries,
-      apolloKeywords: existing.apollo_keywords,
-      apolloShortDescription: existing.apollo_short_description,
-    };
-
-    const result = await classifier.classifyIndustry(existing.company, existing.company_website, apolloInput);
-
-    if (result.ok) {
-      await this.db
-        .update(job_leads)
-        .set({
-          industry: result.industry,
-          industry_other_description: result.otherDescription,
-          industry_classified_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where(eq(job_leads.id, id));
-    }
-
-    return {
-      company: existing.company,
-      company_website: existing.company_website,
-      ...result,
-    };
+  // Industry classification (24.08 follow-up, per the 19.08 call) — REVERSED by the 27.08/01.09
+  // client calls: the LLM-refinement layer this method used to run (Gemini/OpenAI classifying
+  // apollo_* fields or a scraped website into our own 20-value industry enum) turned out to be
+  // unwanted overhead — the client wants Apollo's raw `apollo_industry` field used as-is, no LLM
+  // interpretation. That switch-over (dashboard Industry column/filter/export reading
+  // apollo_industry directly) is a separate follow-up task; this method's only job now is to stop
+  // the LLM call. The endpoint/route stays (see leads.controller.ts) rather than being deleted, so
+  // the industry/industry_other_description/industry_classified_at columns, their migrations, and
+  // historical rows already classified by the old flow are all left completely untouched — this
+  // just refuses to run a new classification. industry-classifier.service.ts and
+  // openai-industry-classifier.service.ts (the two LLM implementations) are likewise left in
+  // place, just no longer wired into this call.
+  async classifyIndustry(id: string, provider?: string): Promise<never> {
+    throw new AppError(
+      HttpStatus.BAD_REQUEST,
+      'INDUSTRY_CLASSIFY_DISABLED',
+      'Industry now comes from Apollo directly — see the Industry column.',
+    );
   }
 
   // Status is shared per lead (decision log), so any authenticated user may update any lead.

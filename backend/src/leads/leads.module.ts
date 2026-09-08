@@ -5,11 +5,9 @@ import { ApolloClassifierService } from './apollo-classifier.service';
 import { ClaudeClassifierService } from './claude-classifier.service';
 import { CompanyLinkedinService } from './company-linkedin.service';
 import { GeminiClassifierService } from './gemini-classifier.service';
-import { IndustryClassifierService } from './industry-classifier.service';
 import { LeadsController } from './leads.controller';
 import { LeadsService } from './leads.service';
 import { OpenaiClassifierService } from './openai-classifier.service';
-import { OpenaiIndustryClassifierService } from './openai-industry-classifier.service';
 
 @Module({
   imports: [DestinationsModule, AuthModule],
@@ -20,8 +18,6 @@ import { OpenaiIndustryClassifierService } from './openai-industry-classifier.se
     ClaudeClassifierService,
     OpenaiClassifierService,
     CompanyLinkedinService,
-    IndustryClassifierService,
-    OpenaiIndustryClassifierService,
     ApolloClassifierService,
   ],
 })

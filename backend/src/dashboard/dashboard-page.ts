@@ -1316,9 +1316,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // AI-powered LPR search (20.08 follow-up) in-flight guard — same pattern as
   // enrichingLeadIds above (buildLprSearchBlock/startLprSearch).
   var lprSearchInFlight = {};
-  // Industry classification (24.08 follow-up) in-flight guard — same pattern as
-  // lprSearchInFlight above (buildIndustryClassifyBlock/startIndustryClassify).
-  var industryClassifyInFlight = {};
 
   // Bulk "Enrich selected" (extension messaging over a long-lived Port — see background.ts's
   // ENRICH_LEADS handler, chrome.runtime.onConnectExternal). A Port, not one-shot sendMessage
@@ -3086,72 +3083,31 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
-  // "Industry Classify" (24.08 follow-up, per the 19.08 call) — triggers a fresh Gemini
-  // classification of this lead's company_website content into the fixed industry taxonomy.
-  // Same "trigger + reload, don't render its own result" pattern as buildLprSearchBlock above —
-  // a successful classification is persisted, so it shows up through industryDetailValue once
-  // the sidebar refreshes. Gated by the caller (openSidebar) on company_website being present,
-  // the one hard requirement (see IndustryClassifierService — there's nothing to fetch/classify
-  // without it). Reuses the LPR Search block's own CSS classes (same button+status-line shape,
-  // no provider dropdown needed since there's only one provider for this task).
+  // "Industry Classify" — LLM call removed (01.09 follow-up, per the 27.08/01.09 client calls:
+  // Apollo's raw industry field is used directly now, no LLM interpretation layer). The endpoint
+  // (POST /leads/:id/industry-classify) is kept alive but always responds
+  // INDUSTRY_CLASSIFY_DISABLED (see leads.service.ts's own comment) — this button is disabled
+  // and no longer wired to call it at all, rather than calling it just to show that error. Left
+  // in place, not removed, so the sidebar still shows why the old button is gone, until the next
+  // follow-up task switches this sidebar's Industry value over to apollo_industry directly.
   function buildIndustryClassifyBlock(lead) {
     var wrap = document.createElement('div');
     wrap.className = 'lpr-search-block';
 
-    var inFlight = !!industryClassifyInFlight[lead.id];
     var button = el('button', {
       className: 'lpr-search-btn',
       type: 'button',
-      text: inFlight ? 'Classifying\\u2026' : 'Classify Industry',
+      text: 'Classify Industry',
     });
-    button.disabled = inFlight;
-    button.title = 'Fetches this lead\\u2019s company website and classifies the company\\u2019s industry/vertical (not its product) via Gemini.';
+    button.disabled = true;
 
     var statusEl = document.createElement('div');
     statusEl.className = 'lpr-search-status';
-
-    button.addEventListener('click', function () {
-      startIndustryClassify(lead, button, statusEl);
-    });
+    statusEl.textContent = 'Industry now comes from Apollo directly \\u2014 see Industry column.';
 
     wrap.appendChild(button);
     wrap.appendChild(statusEl);
     return wrap;
-  }
-
-  function startIndustryClassify(lead, button, statusEl) {
-    if (industryClassifyInFlight[lead.id]) return;
-    industryClassifyInFlight[lead.id] = true;
-    button.disabled = true;
-    button.textContent = 'Classifying\\u2026';
-    statusEl.className = 'lpr-search-status';
-    statusEl.textContent = 'Classifying\\u2026';
-
-    apiFetch('/leads/' + lead.id + '/industry-classify', { method: 'POST' })
-      .then(function (result) {
-        if (!result || !result.ok) {
-          var errText = 'Classification failed: ' + ((result && result.error) || 'unknown error');
-          if (result && result.quotaExhausted) errText += ' (quota exhausted)';
-          statusEl.className = 'lpr-search-status lpr-search-error';
-          statusEl.textContent = errText;
-          return;
-        }
-        statusEl.textContent = 'Saved \\u2014 refreshing\\u2026';
-        loadLeads().then(function () {
-          if (currentSidebarLeadId !== lead.id) return;
-          var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
-          if (updated) openSidebar(updated);
-        });
-      })
-      .catch(function (err) {
-        statusEl.className = 'lpr-search-status lpr-search-error';
-        statusEl.textContent = 'Failed: ' + err.message;
-      })
-      .finally(function () {
-        delete industryClassifyInFlight[lead.id];
-        button.disabled = false;
-        button.textContent = 'Classify Industry';
-      });
   }
 
   // Soft delete — same spot in the sidebar as the Enrich block, but shown unconditionally
@@ -3290,9 +3246,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       content.appendChild(buildLprSearchBlock(lead));
     }
 
-    // Industry Classify button, see buildIndustryClassifyBlock's own comment. Gated on
-    // company_website specifically (not just company) — the one hard requirement for this call,
-    // since there's nothing to fetch/classify from without it.
+    // Industry Classify button, see buildIndustryClassifyBlock's own comment (now always
+    // disabled). Gating left unchanged from before the LLM call was removed.
     if (lead.company_website) {
       content.appendChild(buildIndustryClassifyBlock(lead));
     }

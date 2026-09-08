@@ -3700,3 +3700,567 @@ Backend listening on http://localhost:3000
 [32m[Nest] 3188  - [39m30.08.2026, 14:50:30 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
 [32m[Nest] 3188  - [39m30.08.2026, 14:50:30 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +19ms[39m
 Backend listening on http://localhost:3000
+[31m[Nest] 3188  - [39m31.08.2026, 12:50:51 [31m  ERROR[39m [38;5;3m[Scheduler] [39m[31mError: read ECONNRESET[39m
+[2J[3J[H[[90m11:39:24[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:27[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:27[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:28[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:29[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:29[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:32[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:33[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:43[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:43[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:44[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:44[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:47[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:47[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:48[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:51[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:39:54[0m] File change detected. Starting incremental compilation...
+
+[[90m11:39:55[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:01[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:02[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:05[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:05[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:09[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:09[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:15[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:16[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:19[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:19[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:20[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:20[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:40:51[0m] File change detected. Starting incremental compilation...
+
+[[90m11:40:51[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:41:01[0m] File change detected. Starting incremental compilation...
+
+[[90m11:41:02[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:41:09[0m] File change detected. Starting incremental compilation...
+
+[[90m11:41:09[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:41:27[0m] File change detected. Starting incremental compilation...
+
+[[90m11:41:28[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:41:34[0m] File change detected. Starting incremental compilation...
+
+[[90m11:41:34[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m11:41:42[0m] File change detected. Starting incremental compilation...
+
+[[90m11:41:42[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +51ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 18924  - [39m08.09.2026, 11:41:43 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +24ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +73ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +4ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/industry-classify, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 11296  - [39m08.09.2026, 11:41:48 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +24ms[39m
+Backend listening on http://localhost:3000
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617952-software-engineer-applied-ai-ml[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609996-software-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609994-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2965683-senior-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627451-senior-software-engineer-cloud-infrastructure[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:09 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607322-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4621560-senior-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612701-staff-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3332561-senior-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3283211-staff-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3757012-full-stack-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:53:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3938129-mobile-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:54:45 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607173-senior-software-engineer-royalties-fully-remote-us-and-latin-america-only[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:54:45 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4523312-senior-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:55:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3711474-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:56:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4618033-staff-software-engineer-healthcare-marketplace-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:56:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607055-software-engineer-2-rcm-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:57:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2889543-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:57:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622453-junior-frontend-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:57:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602333-software-engineer-infrastructure-platform[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:57:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3813741-senior-cleared-software-engineer-ts-sci[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:58:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602333-software-engineer-infrastructure-platform[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:59:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612705-staff-system-software-engineer-aosp-android-os[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:59:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4481110-senior-software-engineer-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 11:59:53 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607392-staff-software-engineer-agentic-engineering[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:00:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602377-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:00:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607163-full-stack-ai-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:00:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4238656-sr-software-engineer-ii-backend-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:00:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602763-sr-software-engineer-ii-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:01:52 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626084-software-engineer-fastapi-react[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:02:46 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4232835-senior-software-engineer-generalist-ai-systems[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:02:46 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607092-senior-software-engineer-mern-stack-react-native[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:02:46 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617875-senior-mobile-engineer-android[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:03:36 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627136-senior-qa-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:03:36 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612643-software-engineer-iii-full-stack-vue-net[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:03:36 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602325-software-engineer-market-data[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:03:36 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602324-software-engineer-market-data[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:04:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602454-software-engineer-backend-python[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:04:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602616-engineering-manager-agent-developer-platform[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:05:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625069-fynliq-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:06:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3062416-quality-assurance-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:06:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3540906-software-engineer-back-end-and-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:06:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602723-forward-deployed-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3090124-senior-software-development-engineer-cash-liquidity[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4546188-software-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627286-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627284-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602582-senior-mobile-engineer-react-native-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:00 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602575-senior-mobile-engineer-react-native[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:08:59 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2311171-sr-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:09:10 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602479-senior-python-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:09:10 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602475-site-reliability-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3211878-senior-backend-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617548-senior-engineer-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607132-product-manager-connectors-remote-uk-or-europe-junior-to-mid-level-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625074-ai-software-and-systems-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617746-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:10:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4209864-staff-backend-engineer-core-product-europe[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:11:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3320028-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:11:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627485-senior-full-stack-engineer-revenue-engine[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:11:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617974-staff-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:11:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/381454-mobile-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:05 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616101-principal-machine-learning-engineer-graph-ml-code-intelligence[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:05 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626095-founding-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616090-implementation-solutions-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/1720070-implementation-solutions-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3991717-technical-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3909956-senior-fullstack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612622-sr-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4628808-applied-ml-scientist-clinical-risk-modelling[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:12:18 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605458-lead-software-qa-automation-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:14:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612616-cto-founding-engineer-scalyx[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:14:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602523-software-development-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:14:44 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607263-sr-strategic-customer-success-engineer-central-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:14:44 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4618061-forward-deployed-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:15:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627355-forward-deployed-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:15:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627341-full-stack-developer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:15:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4420659-mlops-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:15:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612638-founding-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:16:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617794-application-test-qa-test-engineer-automation-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:16:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4201589-senior-backend-engineer-payments[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:16:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617739-devops-engineer-linux-php[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:17:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622523-founding-gtm-commercial-lead-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:17:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605464-agentic-ai-genai-engineer-data-scientist[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:17:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4045919-senior-backend-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:17:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616105-founding-android-engineer-ai-native-app-builder[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:18:23 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607109-intelligence-architect-forward-deployed-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:18:23 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607436-deployment-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:18:23 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3568452-generative-ai-engineer-llms-rag-healthcare-saas[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:18:59 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4220301-junior-gtm-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:18:59 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612518-senior-full-stack-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622536-senior-java-backend-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627387-founding-cto-pre-seed-mobility-technology-company[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627595-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627331-cto-ai-deeptech-technology-leadership[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3794754-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:21:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617779-account-executive-enterprise[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:22:27 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617750-senior-full-stack-product-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:22:27 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612620-technical-co-founder-founding-product-engineer-vertical-saas-equity-only[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:22:27 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617901-senior-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:22:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612629-managed-it-services-cybersecurity-solutions-metro-vancouver-bc[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:22:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3342005-founding-backend-engineer-equity-only-aws-ci-cd[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:23:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627378-chief-technology-officer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:23:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602457-senior-backend-python-developer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:23:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605449-founding-business-development-partnerships-lead-ai-software[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:23:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622502-contract-engineer-harden-extend-native-desktop-app-swift-cocoa-webview2[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:23:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2657129-backend-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:24:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602337-ai-machine-learning-engineer-at-human-centered-social-network-startup[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:24:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627442-founding-product-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:24:45 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616112-vlsi-design-and-verification-mentor[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:25:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617952-software-engineer-applied-ai-ml[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:25:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617952-software-engineer-applied-ai-ml[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609996-software-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609996-software-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609994-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4609994-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:22 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627451-senior-software-engineer-cloud-infrastructure[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:22 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627451-senior-software-engineer-cloud-infrastructure[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:29 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4621560-senior-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:29 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4621560-senior-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612701-staff-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612701-staff-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3332561-senior-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3332561-senior-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3283211-staff-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:26:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3283211-staff-software-engineer-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4618033-staff-software-engineer-healthcare-marketplace-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4618033-staff-software-engineer-healthcare-marketplace-remote[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2889543-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2889543-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622453-junior-frontend-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622453-junior-frontend-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602377-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602377-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:37 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602763-sr-software-engineer-ii-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:37 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602763-sr-software-engineer-ii-full-stack[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:47 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626084-software-engineer-fastapi-react[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:47 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626084-software-engineer-fastapi-react[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627136-senior-qa-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:27:54 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627136-senior-qa-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612643-software-engineer-iii-full-stack-vue-net[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612643-software-engineer-iii-full-stack-vue-net[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602454-software-engineer-backend-python[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602454-software-engineer-backend-python[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602616-engineering-manager-agent-developer-platform[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602616-engineering-manager-agent-developer-platform[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:26 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625069-fynliq-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:26 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625069-fynliq-founding-software-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602723-forward-deployed-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:33 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602723-forward-deployed-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4546188-software-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4546188-software-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627286-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627286-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627284-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:28:58 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627284-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2311171-sr-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:07 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2311171-sr-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602479-senior-python-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:13 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602479-senior-python-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602475-site-reliability-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602475-site-reliability-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607132-product-manager-connectors-remote-uk-or-europe-junior-to-mid-level-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607132-product-manager-connectors-remote-uk-or-europe-junior-to-mid-level-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625074-ai-software-and-systems-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4625074-ai-software-and-systems-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:41 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4209864-staff-backend-engineer-core-product-europe[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:41 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4209864-staff-backend-engineer-core-product-europe[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:50 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3320028-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:29:50 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3320028-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627485-senior-full-stack-engineer-revenue-engine[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:25 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627485-senior-full-stack-engineer-revenue-engine[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617974-staff-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:32 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617974-staff-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:37 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/381454-mobile-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/381454-mobile-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:45 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626095-founding-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:45 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4626095-founding-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:53 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3991717-technical-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:30:53 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3991717-technical-support-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:01 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3909956-senior-fullstack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:01 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3909956-senior-fullstack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:08 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612622-sr-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:08 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612622-sr-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:17 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4628808-applied-ml-scientist-clinical-risk-modelling[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:17 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4628808-applied-ml-scientist-clinical-risk-modelling[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:23 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605458-lead-software-qa-automation-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:23 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605458-lead-software-qa-automation-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612616-cto-founding-engineer-scalyx[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:31 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612616-cto-founding-engineer-scalyx[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:41 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602523-software-development-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:41 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602523-software-development-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607263-sr-strategic-customer-success-engineer-central-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:49 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607263-sr-strategic-customer-success-engineer-central-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:57 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627355-forward-deployed-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:31:57 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627355-forward-deployed-engineer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627341-full-stack-developer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627341-full-stack-developer-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4420659-mlops-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4420659-mlops-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:24 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612638-founding-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:24 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612638-founding-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:34 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622523-founding-gtm-commercial-lead-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:34 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622523-founding-gtm-commercial-lead-us[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605464-agentic-ai-genai-engineer-data-scientist[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:43 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605464-agentic-ai-genai-engineer-data-scientist[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:51 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4045919-senior-backend-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:32:51 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4045919-senior-backend-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:01 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616105-founding-android-engineer-ai-native-app-builder[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:01 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616105-founding-android-engineer-ai-native-app-builder[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607109-intelligence-architect-forward-deployed-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:11 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607109-intelligence-architect-forward-deployed-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607436-deployment-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:20 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4607436-deployment-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:30 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3568452-generative-ai-engineer-llms-rag-healthcare-saas[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:30 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3568452-generative-ai-engineer-llms-rag-healthcare-saas[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4220301-junior-gtm-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:40 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4220301-junior-gtm-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:48 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612518-senior-full-stack-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:48 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612518-senior-full-stack-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622536-senior-java-backend-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:33:56 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622536-senior-java-backend-developer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627387-founding-cto-pre-seed-mobility-technology-company[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627387-founding-cto-pre-seed-mobility-technology-company[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627595-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627595-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627331-cto-ai-deeptech-technology-leadership[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627331-cto-ai-deeptech-technology-leadership[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:28 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3794754-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:34:28 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3794754-ai-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617779-account-executive-enterprise[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:21 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617779-account-executive-enterprise[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:30 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617750-senior-full-stack-product-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:30 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617750-senior-full-stack-product-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612620-technical-co-founder-founding-product-engineer-vertical-saas-equity-only[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:38 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612620-technical-co-founder-founding-product-engineer-vertical-saas-equity-only[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:48 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617901-senior-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:48 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4617901-senior-full-stack-engineer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:55 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612629-managed-it-services-cybersecurity-solutions-metro-vancouver-bc[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:35:55 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4612629-managed-it-services-cybersecurity-solutions-metro-vancouver-bc[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3342005-founding-backend-engineer-equity-only-aws-ci-cd[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:04 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/3342005-founding-backend-engineer-equity-only-aws-ci-cd[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627378-chief-technology-officer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:14 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627378-chief-technology-officer[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:22 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602457-senior-backend-python-developer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:22 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4602457-senior-backend-python-developer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:29 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605449-founding-business-development-partnerships-lead-ai-software[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:29 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4605449-founding-business-development-partnerships-lead-ai-software[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:37 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622502-contract-engineer-harden-extend-native-desktop-app-swift-cocoa-webview2[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:37 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4622502-contract-engineer-harden-extend-native-desktop-app-swift-cocoa-webview2[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:46 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2657129-backend-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:46 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/2657129-backend-intern[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:57 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627442-founding-product-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:36:57 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4627442-founding-product-engineer-clone[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:37:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616112-vlsi-design-and-verification-mentor[39m
+[95m[Nest] 11296  - [39m08.09.2026, 12:37:06 [95m  DEBUG[39m [38;5;3m[SheetsDestination] [39m[95mSheets sync disabled (GOOGLE_SHEETS_SYNC_ENABLED is not "true") — skipped for https://wellfound.com/jobs/4616112-vlsi-design-and-verification-mentor[39m
+[2J[3J[H[[90m12:41:36[0m] File change detected. Starting incremental compilation...
+
+[2J[3J[H[[90m12:42:43[0m] File change detected. Starting incremental compilation...
+
+[96msrc/leads/leads.service.ts[0m:[93m42[0m:[93m48[0m - [91merror[0m[90m TS2552: [0mCannot find name 'IndustryClassifierService'. Did you mean 'GeminiClassifierService'?
+
+[7m42[0m     private readonly industryClassifierGemini: IndustryClassifierService,
+[7m  [0m [91m                                               ~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/leads/leads.service.ts[0m:[93m43[0m:[93m48[0m - [91merror[0m[90m TS2552: [0mCannot find name 'OpenaiIndustryClassifierService'. Did you mean 'OpenaiClassifierService'?
+
+[7m43[0m     private readonly industryClassifierOpenai: OpenaiIndustryClassifierService,
+[7m  [0m [91m                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[[90m12:42:47[0m] Found 2 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:42:47[0m] File change detected. Starting incremental compilation...
+
+[96msrc/leads/leads.service.ts[0m:[93m497[0m:[93m61[0m - [91merror[0m[90m TS2339: [0mProperty 'industryClassifierGemini' does not exist on type 'LeadsService'.
+
+[7m497[0m     const classifier = resolvedProvider === 'gemini' ? this.industryClassifierGemini : this.industryClassifierOpenai;
+[7m   [0m [91m                                                            ~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/leads/leads.service.ts[0m:[93m497[0m:[93m93[0m - [91merror[0m[90m TS2339: [0mProperty 'industryClassifierOpenai' does not exist on type 'LeadsService'.
+
+[7m497[0m     const classifier = resolvedProvider === 'gemini' ? this.industryClassifierGemini : this.industryClassifierOpenai;
+[7m   [0m [91m                                                                                            ~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[[90m12:42:49[0m] Found 2 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:10[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:11[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:13[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:14[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:18[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:18[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:23[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:24[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:29[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:30[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:32[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:33[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:33[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:33[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:35[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:37[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:37[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:38[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:42[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:42[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:49[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:50[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:52[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:53[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:43:56[0m] File change detected. Starting incremental compilation...
+
+[[90m12:43:56[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:00[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:01[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:01[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:01[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:03[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:03[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:08[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:09[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:12[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:12[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:13[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:13[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:21[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:21[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:42[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:43[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:44:52[0m] File change detected. Starting incremental compilation...
+
+[[90m12:44:52[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:45:01[0m] File change detected. Starting incremental compilation...
+
+[[90m12:45:02[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:45:09[0m] File change detected. Starting incremental compilation...
+
+[[90m12:45:09[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:45:17[0m] File change detected. Starting incremental compilation...
+
+[[90m12:45:25[0m] Found 0 errors. Watching for file changes.
+
+[2J[3J[H[[90m12:45:28[0m] File change detected. Starting incremental compilation...
+
+[[90m12:45:40[0m] Found 0 errors. Watching for file changes.
+
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +24ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDbModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDestinationsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDiscoveryModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mDashboardModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mScheduleModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mLeadsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAuthController {/}:[39m[38;5;3m +80ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/login, GET} route[39m[38;5;3m +5ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/callback, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/auth/logout, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/me/dashboard-columns, PUT} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mLeadsController {/leads}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/stats, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/backfill, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/company-linkedin/status, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/export, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/bulk-delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/deepen, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/contact, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/classify, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/lpr-search, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/industry-classify, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/delete, PATCH} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id/restore, PATCH} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/:id, DELETE} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/leads/deleted/purge-now, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mDashboardController {/}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard, GET} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/dashboard/deleted, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 26572  - [39m08.09.2026, 12:45:50 [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +27ms[39m
+Backend listening on http://localhost:3000
