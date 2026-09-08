@@ -1181,27 +1181,6 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       <label for="filter-industry">Industry</label>
       <select id="filter-industry">
         <option value="all">All</option>
-        <option value="Real Estate">Real Estate</option>
-        <option value="Healthcare">Healthcare</option>
-        <option value="Banking &amp; Financial Services">Banking &amp; Financial Services</option>
-        <option value="Insurance">Insurance</option>
-        <option value="Energy">Energy</option>
-        <option value="Retail &amp; E-commerce">Retail &amp; E-commerce</option>
-        <option value="Education">Education</option>
-        <option value="Manufacturing">Manufacturing</option>
-        <option value="Transportation &amp; Logistics">Transportation &amp; Logistics</option>
-        <option value="Hospitality &amp; Travel">Hospitality &amp; Travel</option>
-        <option value="Legal Services">Legal Services</option>
-        <option value="Media &amp; Entertainment">Media &amp; Entertainment</option>
-        <option value="Telecommunications">Telecommunications</option>
-        <option value="Government &amp; Public Sector">Government &amp; Public Sector</option>
-        <option value="Non-profit">Non-profit</option>
-        <option value="Agriculture">Agriculture</option>
-        <option value="Construction">Construction</option>
-        <option value="Software Development">Software Development</option>
-        <option value="Professional Services &amp; Consulting">Professional Services &amp; Consulting</option>
-        <option value="Other">Other</option>
-        <option value="unclassified">Unclassified</option>
       </select>
     </span>
     <span class="daterange-wrap">
@@ -1404,11 +1383,10 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // enum-backed filters use — lpr_results is a plain nullable array (never searched vs.
     // searched-with-zero-survivors both read as "no data" here), not a tri-state DB enum.
     filterLpr: 'all',
-    // Same "fixed small enum, hardcoded <option>s" pattern as the IT filter (not Source's
-    // dynamically-derived one) — industry is our own fixed taxonomy, not site-derived data.
-    // 'unclassified' is a synthetic filter value (mapped to lead.industry === null below), same
-    // spirit as the IT filter's own 'unprocessed' option — industry itself stays a plain
-    // nullable column, never a 21st DB enum value (see schema.ts's own comment).
+    // Task 3 of 4 (08.09 follow-up): now Source's dynamically-derived pattern, not a fixed
+    // hardcoded enum — apollo_industry is Apollo's own free-text taxonomy, not a list we control
+    // (see populateIndustryOptions). 'unresolved' is the synthetic null-bucket value (mapped to
+    // lead.apollo_industry == null below) — apollo_industry itself stays a plain nullable column.
     filterIndustry: 'all',
     // null = "All dates"; otherwise { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' } (Kyiv calendar
     // days, inclusive both ends) — see createDateRangeFilter().
@@ -1655,7 +1633,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     if (state.filterContact !== 'all') lines.push('Contact: ' + (CONTACT_FILTER_SUMMARY_LABELS[state.filterContact] || state.filterContact));
     if (state.filterCompanyLinkedin !== 'all') lines.push('Company LinkedIn: ' + (COMPANY_LINKEDIN_FILTER_SUMMARY_LABELS[state.filterCompanyLinkedin] || state.filterCompanyLinkedin));
     if (state.filterLpr !== 'all') lines.push('DM: ' + (LPR_FILTER_SUMMARY_LABELS[state.filterLpr] || state.filterLpr));
-    if (state.filterIndustry !== 'all') lines.push('Industry: ' + (state.filterIndustry === 'unclassified' ? 'Unclassified' : state.filterIndustry));
+    if (state.filterIndustry !== 'all') lines.push('Industry: ' + (state.filterIndustry === 'unresolved' ? 'Not resolved yet' : state.filterIndustry));
     if (state.filterPublishedRange) lines.push('Published date: ' + formatUsDate(state.filterPublishedRange.start) + ' \\u2013 ' + formatUsDate(state.filterPublishedRange.end));
     if (state.filterScrapedRange) lines.push('Scraped date: ' + formatUsDate(state.filterScrapedRange.start) + ' \\u2013 ' + formatUsDate(state.filterScrapedRange.end));
     if (state.search) lines.push('Search: "' + state.search + '"');
@@ -2738,9 +2716,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         if (state.filterLpr === 'no' && hasLprData) return false;
       }
       if (state.filterIndustry !== 'all') {
-        if (state.filterIndustry === 'unclassified') {
-          if (lead.industry) return false;
-        } else if (lead.industry !== state.filterIndustry) {
+        if (state.filterIndustry === 'unresolved') {
+          if (lead.apollo_industry) return false;
+        } else if (lead.apollo_industry !== state.filterIndustry) {
           return false;
         }
       }
@@ -2813,6 +2791,32 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var next = stillValid ? previous : 'all';
     select.value = next;
     state.filterSource = next;
+  }
+
+  // Industry filter (task 3 of 4, 08.09 follow-up: replaces the old fixed 20-value LLM-enum
+  // <select> now that the column reads apollo_industry directly — see task 2's own comment on
+  // industryDetailValue). apollo_industry is Apollo's own free-text taxonomy, not a list we
+  // control, so same "derive from what's actually loaded" approach as populateSourceOptions
+  // above, not a hardcoded list. 'unresolved' is the null-bucket option — Apollo organization
+  // resolution hasn't produced an industry for this lead yet (a different meaning than the old
+  // 'unclassified' value, which meant "the LLM hasn't run"), so it's kept as its own option
+  // rather than reused/relabeled.
+  function populateIndustryOptions() {
+    var select = document.getElementById('filter-industry');
+    var previous = select.value || state.filterIndustry;
+    var industries = Array.from(new Set(state.leads.map(function (l) { return l.apollo_industry; }).filter(Boolean))).sort();
+
+    select.innerHTML = '';
+    select.appendChild(el('option', { value: 'all', text: 'All' }));
+    select.appendChild(el('option', { value: 'unresolved', text: 'Not resolved yet' }));
+    industries.forEach(function (i) {
+      select.appendChild(el('option', { value: i, text: i }));
+    });
+
+    var stillValid = previous === 'all' || previous === 'unresolved' || industries.indexOf(previous) !== -1;
+    var next = stillValid ? previous : 'all';
+    select.value = next;
+    state.filterIndustry = next;
   }
 
   function buildDetailRow(label, value, isLink) {
@@ -3753,6 +3757,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         if (!data) return;
         state.leads = data;
         populateSourceOptions();
+        populateIndustryOptions();
         render();
       })
       .catch(function (err) {
