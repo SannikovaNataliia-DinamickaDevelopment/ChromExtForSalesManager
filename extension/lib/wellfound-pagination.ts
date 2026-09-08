@@ -341,11 +341,16 @@ export interface WellfoundAutoPaginationResult {
  * signal — see the loop below, where the no-more-pages check happens on the raw (pre-filter)
  * leads array, never on how many of them survived the date filter.
  *
- * Range filtering happens per-posting as each page is scanned
- * (wellfound-relative-date.ts's parseWellfoundRelativePosted — necessarily an approximation,
- * since Wellfound's list only ever exposes relative text like "4 days ago", see that file for
- * why). An in-range posting is saved immediately as part of that page's batch; an out-of-range
- * one is discarded on the spot and never sent to saveLeads at all — there is no staging step.
+ * Range filtering happens per-posting as each page is scanned. As of the 08.09 follow-up, a
+ * lead's own `published_at` (parsers/wellfound.ts's extractLiveStartAt — the page's __NEXT_DATA__
+ * Apollo cache, precise to the second) is compared directly against the manager's picked range
+ * when present, converted to a Kyiv-day the same way formatKyivDate does elsewhere in this
+ * codebase; wellfound-relative-date.ts's parseWellfoundRelativePosted (necessarily an
+ * approximation — "N months ago" can be off by roughly two weeks either way — see that file for
+ * why) is now only a fallback for the rare case extractLiveStartAt fails and published_at comes
+ * back null, same fail-open behavior as before this change. An in-range posting is saved
+ * immediately as part of that page's batch; an out-of-range one is discarded on the spot and
+ * never sent to saveLeads at all — there is no staging step.
  *
  * Pacing is two-layered: the existing per-page human-pace delay (MIN/MAX_TAB_DELAY_MS, same as
  * the legacy flow) between every page navigation, PLUS a longer cooldown pause
@@ -420,7 +425,14 @@ export async function runWellfoundAutoPagination(
         break;
       }
 
+      // 08.09 follow-up: prefer the precise published_at (extractLiveStartAt, set at parse time
+      // in parsers/wellfound.ts) over the relative-text approximation whenever it's present —
+      // only falls back to parseWellfoundRelativePosted when published_at is null (extraction
+      // failed for that lead), same fail-open null-means-include behavior as before.
       const inRange = leads.filter((lead) => {
+        if (lead.published_at) {
+          return isWithinRange(formatKyivDate(lead.published_at), range.start, range.end);
+        }
         const postedRelative = (lead.snapshot as { posted_relative?: string } | undefined)?.posted_relative;
         const approx = parseWellfoundRelativePosted(postedRelative, todayIso);
         return approx === null || isWithinRange(approx, range.start, range.end);
