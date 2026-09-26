@@ -967,6 +967,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
      against real web_search results (see openai-classifier.service.ts). Muted, not --error red:
      this is a "we're not sure" note next to a real name/role, not a failure state. */
   .lpr-unverified { color: var(--text-secondary); font-style: italic; }
+  /* Generic version of the same "muted, informational, not an error" convention as
+     .lpr-unverified above, for use outside the LPR feature — e.g. the Website column's
+     Indeed-specific empty-state note (buildCompanyWebsiteTd) explaining why a field will never
+     fill in, as opposed to a plain '—' meaning "not yet enriched". */
+  .muted-note { color: var(--text-secondary); font-style: italic; }
   /* Sidebar's "LPR search reasoning" section (point 7) — secondary/collapsed provenance info,
      same visual weight as the old raw-response panel this replaces (see buildLprReasoningSection). */
   .lpr-reasoning-section { margin-top: 10px; }
@@ -2849,6 +2854,24 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return td;
   }
 
+  // Website column's cell, distinct from the generic buildLinkTd above: an Indeed lead's
+  // company_website is confirmed to NEVER populate (Indeed exposes no external company site
+  // anywhere, only its own internal /cmp/ profile page — see IndeedDeepening's scope), unlike
+  // every other source, where an empty company_website just means "not deepened yet" and is
+  // expected to resolve via Enrich. Rendering both as the same plain '—' would read as "not
+  // enriched yet" for an Indeed lead too, inviting a manager to keep re-clicking Enrich expecting
+  // a website to eventually show up. Only this one column's empty-state text changes for Indeed
+  // — the Company column (lead.company) and every other source's empty Website cell are
+  // unaffected, still the plain '—' buildLinkTd already produces.
+  function buildCompanyWebsiteTd(lead) {
+    if (!lead.company_website && lead.source_site === 'indeed') {
+      var td = document.createElement('td');
+      td.appendChild(el('span', { className: 'muted-note', text: '\\u2014 (not available on Indeed)' }));
+      return td;
+    }
+    return buildLinkTd(lead.company_website, lead.company_website);
+  }
+
   // Only one sidebar exists — opening a new lead just replaces its content, so there's
   // never more than one open at a time.
   //
@@ -3581,7 +3604,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       return td;
     },
     company: function (lead) { return el('td', { text: lead.company || '\\u2014' }); },
-    company_website: function (lead) { return buildLinkTd(lead.company_website, lead.company_website); },
+    company_website: function (lead) { return buildCompanyWebsiteTd(lead); },
     industry: function (lead) { return el('td', { text: industryDetailValue(lead) || '\\u2014' }); },
     location: function (lead) { return el('td', { text: lead.location || '\\u2014' }); },
     company_linkedin: function (lead) { return buildCompanyLinkedinTd(lead); },

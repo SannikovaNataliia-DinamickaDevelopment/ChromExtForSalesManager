@@ -17,6 +17,17 @@ export interface DeepenTarget {
 export interface DeepenProgress {
   current: number;
   total: number;
+  // 24.09 follow-up: running count of successful deepens so far this run — added so a caller
+  // can build a persistent completion summary ("N of M succeeded") the same way
+  // WellfoundDeepenProgress already carries `succeeded`, without needing its own separate
+  // tally. Purely additive to this interface; existing consumers that only read
+  // current/total (multipage.ts) are unaffected.
+  succeeded: number;
+}
+
+export interface DeepenResult {
+  processed: number;
+  succeeded: number;
 }
 
 // CLAUDE.md scope D (Wellfound): the DeepeningStrategy this whole module always used, now
@@ -38,12 +49,19 @@ export class FetchDeepening implements DeepeningStrategy {
  * stops if the panel is closed, which is an acceptable trade-off for this MVP.
  * A failure on one lead (network, parse, save) is swallowed so the run keeps going (NFR-12/13:
  * no crash, no silent total failure — surfaced via onProgress instead).
+ *
+ * 24.09 follow-up: now returns a DeepenResult (processed/succeeded counts) instead of void, and
+ * onProgress's payload carries a running `succeeded` tally — purely additive surfacing of an
+ * outcome this function already computed internally (whether `detail` came back truthy) and
+ * previously discarded. No change to the loop's own behavior: same targets, same pacing, same
+ * per-lead try/catch, same fetch/parse/save sequence.
  */
 export async function deepenLeads(
   targets: DeepenTarget[],
   onProgress: (progress: DeepenProgress) => void,
-): Promise<void> {
+): Promise<DeepenResult> {
   const strategy = new FetchDeepening();
+  let succeeded = 0;
 
   for (let i = 0; i < targets.length; i++) {
     const target = targets[i];
@@ -56,15 +74,18 @@ export async function deepenLeads(
           company_website: detail.company_website,
           ...(detail.published_at ? { published_at: detail.published_at } : {}),
         });
+        succeeded++;
       }
     } catch {
       // Swallow: one bad detail page must not abort the rest of the run.
     }
 
-    onProgress({ current: i + 1, total: targets.length });
+    onProgress({ current: i + 1, total: targets.length, succeeded });
 
     if (i < targets.length - 1) {
       await sleep(MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS));
     }
   }
+
+  return { processed: targets.length, succeeded };
 }

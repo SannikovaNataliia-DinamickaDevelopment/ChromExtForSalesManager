@@ -72,6 +72,13 @@ export default defineConfig({
         'https://wellfound.com/*',
         'https://www.devitjobs.nl/*',
         'https://devitjobs.nl/*',
+        // DI-2966: same Indeed hostname list as entrypoints/content.ts's PARSERS/matches (kept
+        // in sync manually — see that file's comment) — see there for why secure.indeed.com (the
+        // sign-in wall) and a `*.indeed.com` wildcard are both deliberately NOT used here.
+        'https://www.indeed.com/*',
+        'https://indeed.com/*',
+        'https://ca.indeed.com/*',
+        'https://ua.indeed.com/*',
       ],
       // Scoped to the backend's own origin ONLY (scheme+host+port — externally_connectable
       // match patterns don't consider path, so this covers every page served from there, not

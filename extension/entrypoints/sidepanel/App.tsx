@@ -32,6 +32,22 @@ import {
   type WellfoundPaginationProgress,
   type WellfoundPaginationResult,
 } from '../../lib/wellfound-pagination';
+import {
+  runIndeedAutoPagination,
+  INDEED_AUTO_BATCH_PAUSE_MAX_MS,
+  INDEED_AUTO_BATCH_PAUSE_MIN_MS,
+  INDEED_AUTO_BATCH_PAGES,
+  INDEED_CIRCUIT_BREAKER_THRESHOLD,
+  INDEED_AUTO_PAGINATION_MAX_PAGES,
+  type IndeedAutoPaginationProgress,
+} from '../../lib/indeed-pagination';
+import {
+  deepenIndeedLeads,
+  runIndeedAutoDeepenWaves,
+  INDEED_DEEPEN_RUN_CAP,
+  type IndeedAutoDeepenWaveProgress,
+  type IndeedDeepenProgress,
+} from '../../lib/indeed-deepen';
 import DateRangePicker, { type DateRange } from './DateRangePicker';
 import type { JobLeadRecord } from '../../lib/types';
 
@@ -42,6 +58,17 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 // Separate, dedicated Wellfound-only list-pagination flow (see wellfound-pagination.ts) — not
 // the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
 const WELLFOUND_HOSTNAME = 'wellfound.com';
+
+// DI-2966, Priority #1 (11.09 call): Indeed's own dedicated pagination flow (see
+// indeed-pagination.ts) — a third, separate block from the two above, not a variant of either.
+// A list, not a single hostname (unlike WELLFOUND_HOSTNAME above) — Indeed runs a separate
+// subdomain per country/locale. Kept in sync manually with lib/backend.ts's SUPPORTED_HOSTS and
+// entrypoints/content.ts's PARSERS/matches (see that file's comment on why this isn't a
+// wildcard). 23.09 follow-up: ua.indeed.com added after Nataliia's actual test site turned out
+// to be missing here too — the single-page "Parse current list page" button would have started
+// working from the SUPPORTED_HOSTS fix alone, but this auto-pagination block would have stayed
+// invisible on ua.indeed.com without this list also being fixed.
+const INDEED_HOSTNAMES = ['www.indeed.com', 'indeed.com', 'ca.indeed.com', 'ua.indeed.com'];
 
 // 19.08 call: the fixed-5-page-batch "Parse from here"/"Continue" flow below is replaced for
 // normal use by the automated all-pages flow (handleWellfoundAutoParse) — a significant enough
@@ -71,7 +98,23 @@ const QUICK_LAUNCH_SITES = [
   { label: 'ITjobs.ca', url: 'https://www.itjobs.ca/jobs?workplace=REMOTE&q=Software+engineer' },
   { label: 'DevITjobs', url: 'https://devitjobs.nl' },
   { label: 'Wellfound', url: 'https://wellfound.com/role/r/software-engineer?page=1' },
+  { label: 'Indeed', url: 'https://www.indeed.com/jobs?q=software+engineer' },
 ];
+
+// Indeed deepen targets: leads still missing a description, ONE entry per lead id. 25.09 fix:
+// runIndeedAutoPagination's savedLeads carries one save result per save call, so a lead saved on
+// several pages showed up once per save — a 21-unique-lead run queued 805 deepen visits. Every
+// entry for a repeated lead also carries the pre-deepen snapshot (no description yet), so the
+// description filter alone never catches the repeats.
+function uniqueIndeedDeepenTargets(results: unknown): { id: string; source_url: string }[] {
+  const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
+  const byId = new Map<string, { id: string; source_url: string }>();
+  for (const r of items) {
+    if (!r?.lead || r.lead.description || r.lead.enrichment_error) continue;
+    byId.set(r.lead.id, { id: r.lead.id, source_url: r.lead.source_url });
+  }
+  return [...byId.values()];
+}
 
 function currentPageFromTabUrl(url: string): number {
   try {
@@ -131,6 +174,14 @@ export default function App() {
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deepening, setDeepening] = useState<DeepenProgress | null>(null);
+  // 24.09 follow-up: persistent completion message for the generic runDeepen path (shared by
+  // Techjobs/ITjobs/Indeed), mirroring wellfoundDeepenSummary's pattern below — the `deepening`
+  // hint above is transient (cleared the instant the run ends via runDeepen's own
+  // .finally(() => setDeepening(null))), so without this there was no way to tell after the fact
+  // whether a deepen run happened, succeeded, or had nothing to do. Set once at the end of
+  // runDeepen (never mid-run — deepening's own live count covers that), cleared at the start of
+  // the next run, same lifecycle as wellfoundDeepenSummary.
+  const [deepenSummary, setDeepenSummary] = useState<string | null>(null);
   const [classifying, setClassifying] = useState<ClassifyProgress | null>(null);
   const [classifySummary, setClassifySummary] = useState<string | null>(null);
   const [targetDate, setTargetDate] = useState('');
@@ -174,6 +225,33 @@ export default function App() {
   // it in separate state avoids one flow's summary overwriting the other's mid-run.
   const [wellfoundAutoDeepenProgress, setWellfoundAutoDeepenProgress] = useState<WellfoundAutoDeepenWaveProgress | null>(null);
   const [wellfoundAutoDeepenSummary, setWellfoundAutoDeepenSummary] = useState<string | null>(null);
+  // DI-2966: Indeed's own auto-pagination state, parallel to the Wellfound block above.
+  // 24.09 follow-up: now has a date range too (indeedAutoRange), same picked-range-before-saving
+  // filter as Wellfound's wellfoundAutoRange — see runIndeedAutoPagination's doc comment for why
+  // it's a simpler single direct comparison rather than Wellfound's precise-or-approximate
+  // fallback chain.
+  const [indeedListTabUrl, setIndeedListTabUrl] = useState<string | null>(null);
+  const [indeedAutoRange, setIndeedAutoRange] = useState<DateRange | null>(null);
+  const indeedAutoRunningRef = useRef(false);
+  const [indeedAutoRunning, setIndeedAutoRunning] = useState(false);
+  const [indeedAutoProgress, setIndeedAutoProgress] = useState<IndeedAutoPaginationProgress | null>(null);
+  const [indeedAutoSummary, setIndeedAutoSummary] = useState<string | null>(null);
+  // 24.09 follow-up (deepening architecture fix): Indeed's own dedicated deepening state, same
+  // shape/reasoning as wellfoundDeepening/wellfoundDeepenSummary above — no longer shares the
+  // generic `deepening`/`deepenSummary` state with Techjobs/ITjobs (see runIndeedDeepen's own
+  // comment for why: the plain FetchDeepening it used to share was confirmed 403'd by Indeed's
+  // anti-bot for every request, so Indeed now needs the same real-background-tab architecture as
+  // Wellfound, which has its own circuit-breaker/window-closed states the simpler generic
+  // runDeepen/deepenLeads shape has no room for).
+  const [indeedDeepening, setIndeedDeepening] = useState<IndeedDeepenProgress | null>(null);
+  const [indeedDeepenSummary, setIndeedDeepenSummary] = useState<string | null>(null);
+  // Wave-based counterpart, parallel to wellfoundAutoDeepenProgress/wellfoundAutoDeepenSummary —
+  // handleIndeedAutoParse's auto-pagination can surface far more leads in one run than
+  // INDEED_DEEPEN_RUN_CAP handles alone, so its deepening runs in waves
+  // (runIndeedAutoDeepenWaves) with its own progress shape; kept separate so it can't overwrite
+  // the single-lead-batch summary above mid-run.
+  const [indeedAutoDeepenProgress, setIndeedAutoDeepenProgress] = useState<IndeedAutoDeepenWaveProgress | null>(null);
+  const [indeedAutoDeepenSummary, setIndeedAutoDeepenSummary] = useState<string | null>(null);
   // Default is dark, matching the dashboard's current (only) look, until/unless the user's
   // stored choice loads from chrome.storage.local (see lib/theme.ts).
   const [theme, setTheme] = useState<Theme>('dark');
@@ -271,10 +349,15 @@ export default function App() {
       if (!tab?.url || hostname !== WELLFOUND_HOSTNAME) {
         setWellfoundListTabUrl(null);
         setWellfoundBookmark(null);
-        return;
+      } else {
+        setWellfoundListTabUrl(tab.url);
+        getBookmark(stripPageParam(tab.url)).then(setWellfoundBookmark);
       }
-      setWellfoundListTabUrl(tab.url);
-      getBookmark(stripPageParam(tab.url)).then(setWellfoundBookmark);
+
+      // DI-2966: no bookmark concept for Indeed (runIndeedAutoPagination always walks from
+      // page 1 — see that function's doc comment), so this just tracks whether the block
+      // should render at all, same as wellfoundListTabUrl's role above.
+      setIndeedListTabUrl(tab?.url && INDEED_HOSTNAMES.includes(hostname) ? tab.url : null);
     });
   };
 
@@ -362,17 +445,35 @@ export default function App() {
   // deepening only leads with no description yet (skips already-deepened/pre-existing ones).
   // Also skips any lead already carrying enrichment_error — an automatic queue never retries a
   // flagged lead on its own; only an explicit manual retry (dashboard's Enrich button) does.
+  //
+  // Shared by Techjobs/ITjobs (handleParse's generic branch) and Indeed (handleParse's isIndeed
+  // branch) — both parse-then-deepen through this exact same function, so the persistent
+  // completion summary added below (24.09 follow-up, mirroring wellfoundDeepenSummary's
+  // pattern) applies to all three alike. Purely additive: a confirmation message where there
+  // was none before, not a behavior change to targets-filtering, pacing, or deepenLeads itself.
   const runDeepen = (results: unknown): Promise<void> => {
     const items = Array.isArray(results) ? (results as LeadSaveResult[]) : [];
     const targets = items
       .filter((r) => r?.lead && !r.lead.description && !r.lead.enrichment_error)
       .map((r) => ({ id: r.lead.id, source_url: r.lead.source_url }));
-    if (targets.length === 0) return Promise.resolve();
+    setDeepenSummary(null);
+    if (targets.length === 0) {
+      // Distinguishable from "ran and succeeded" — e.g. every lead in this batch was already
+      // deepened earlier (a previous parse, or the dashboard's manual Enrich button), so there
+      // was genuinely nothing to do. Previously this case set no state at all, indistinguishable
+      // from the run never having started.
+      setDeepenSummary('Nothing to deepen — all leads already had descriptions.');
+      return Promise.resolve();
+    }
 
-    setDeepening({ current: 0, total: targets.length });
+    setDeepening({ current: 0, total: targets.length, succeeded: 0 });
     return deepenLeads(targets, (progress) => {
       setDeepening(progress);
-    }).finally(() => setDeepening(null));
+    })
+      .then((result) => {
+        setDeepenSummary(`Deepening done — ${result.succeeded} of ${result.processed} lead(s) succeeded.`);
+      })
+      .finally(() => setDeepening(null));
   };
 
   // CLAUDE.md scope D (Wellfound): TabDeepening instead of the plain-fetch strategy above —
@@ -412,6 +513,40 @@ export default function App() {
       .finally(() => setWellfoundDeepening(null));
   };
 
+  // 24.09 follow-up (deepening architecture fix): Indeed's equivalent of runWellfoundDeepen
+  // above — uses deepenIndeedLeads (indeed-deepen.ts's real-background-tab strategy) instead of
+  // the plain-fetch runDeepen/deepenLeads this used to call, now that FetchDeepening is confirmed
+  // 403'd by Indeed's anti-bot for every request. Same targets-filtering as every other deepen
+  // wrapper in this file; the only thing that changed is what actually fetches the description
+  // underneath.
+  const runIndeedDeepen = (results: unknown): Promise<void> => {
+    const targets = uniqueIndeedDeepenTargets(results);
+    if (targets.length === 0) return Promise.resolve();
+
+    setIndeedDeepenSummary(null);
+    setIndeedDeepening({ current: 0, total: targets.length, succeeded: 0, stoppedEarly: false });
+    return deepenIndeedLeads(targets, (progress) => {
+      setIndeedDeepening(progress);
+    })
+      .then((result) => {
+        if (result.interrupted) {
+          setIndeedDeepenSummary(
+            `Indeed deepening was interrupted — the background window was closed. ` +
+              `${result.succeeded} of ${result.processed} attempted lead(s) completed before that; already-saved leads were kept. ` +
+              'The rest are still missing a description — re-run "Parse current list page", or use the dashboard\'s Enrich button, to retry them.',
+          );
+        } else if (result.stoppedEarly) {
+          setIndeedDeepenSummary(
+            `Indeed deepening stopped after ${INDEED_CIRCUIT_BREAKER_THRESHOLD} consecutive failures — ` +
+              `possible bot-detection block. ${result.succeeded} of ${result.processed} attempted lead(s) succeeded.`,
+          );
+        } else {
+          setIndeedDeepenSummary(`Indeed deepening done — ${result.succeeded} of ${result.processed} lead(s) succeeded.`);
+        }
+      })
+      .finally(() => setIndeedDeepening(null));
+  };
+
   const handleParse = async () => {
     setParsing(true);
     setError(null);
@@ -427,8 +562,21 @@ export default function App() {
       } else {
         const results = Array.isArray(res.results) ? (res.results as LeadSaveResult[]) : [];
         const isWellfound = results.some((r) => r?.lead?.source_site === 'wellfound');
+        // 24.09 follow-up (deepening architecture fix): Indeed leads auto-deepen via
+        // runIndeedDeepen — indeed-deepen.ts's real-background-tab strategy — NOT the generic
+        // runDeepen/FetchDeepening below. Confirmed live that FetchDeepening was 403'd by
+        // Indeed's anti-bot for every request; the earlier assumption that it "worked" (based on
+        // the dashboard's manual Enrich button appearing to succeed) turned out to be unreliable/
+        // coincidental. Kept as its own branch (not folded into the generic else below) since it
+        // needs an entirely different underlying strategy, not just a different Gemini choice.
+        const isIndeed = results.some((r) => r?.lead?.source_site === 'indeed');
         if (isWellfound) {
           runWellfoundDeepen(results);
+        } else if (isIndeed) {
+          // Not awaited (fire-and-forget, same as the other two branches) — but WITH a .catch,
+          // same as before: a rejected promise here would otherwise vanish as an unhandled
+          // rejection with zero UI feedback.
+          runIndeedDeepen(results).catch((err) => setError(err instanceof Error ? err.message : String(err)));
         } else {
           runDeepen(res.results).then(runClassify);
         }
@@ -744,6 +892,144 @@ export default function App() {
     }
   };
 
+  // 24.09 follow-up (deepening architecture fix): Indeed's equivalent of runWellfoundAutoDeepen
+  // above — wraps indeed-deepen.ts's runIndeedAutoDeepenWaves (INDEED_DEEPEN_RUN_CAP-sized waves
+  // with an anti-bot cooldown between them) instead of the plain runDeepen/deepenLeads this used
+  // to call, now that FetchDeepening is confirmed 403'd by Indeed's anti-bot for every request.
+  // No "missing published date" caveat the way Wellfound's version has: Indeed's published_at
+  // already comes from the reliable list-parse createDate (parsers/indeed.ts), never backfilled
+  // during deepening, so there's nothing for a deepen failure to leave missing on that front.
+  const runIndeedAutoDeepen = (results: unknown): Promise<void> => {
+    const targets = uniqueIndeedDeepenTargets(results);
+    if (targets.length === 0) return Promise.resolve();
+
+    setIndeedAutoDeepenSummary(null);
+    setIndeedAutoDeepenProgress({
+      waveIndex: 1,
+      waveCount: Math.ceil(targets.length / INDEED_DEEPEN_RUN_CAP),
+      current: 0,
+      total: Math.min(targets.length, INDEED_DEEPEN_RUN_CAP),
+      overallProcessed: 0,
+      overallTotal: targets.length,
+      succeeded: 0,
+    });
+    return runIndeedAutoDeepenWaves(targets, (progress) => {
+      setIndeedAutoDeepenProgress(progress);
+    })
+      .then((result) => {
+        if (result.interrupted) {
+          setIndeedAutoDeepenSummary(
+            `Indeed deepening was interrupted — the background window was closed. ` +
+              `${result.succeeded} of ${result.processed} attempted lead(s) completed before that across ${result.waves} wave(s); ` +
+              'already-saved leads were kept. Re-run "Parse", or use the dashboard\'s Enrich button, to retry the rest.',
+          );
+        } else if (result.stoppedEarly) {
+          setIndeedAutoDeepenSummary(
+            `Indeed deepening stopped after ${INDEED_CIRCUIT_BREAKER_THRESHOLD} consecutive failures (wave ${result.waves}) — ` +
+              `possible bot-detection block. ${result.succeeded} of ${result.processed} attempted lead(s) succeeded.`,
+          );
+        } else {
+          setIndeedAutoDeepenSummary(
+            `Indeed deepening done — ${result.succeeded} of ${result.processed} lead(s) succeeded across ${result.waves} wave(s).`,
+          );
+        }
+      })
+      .finally(() => setIndeedAutoDeepenProgress(null));
+  };
+
+  // DI-2966: Indeed's own automated multi-page parse — one click, date range picked upfront
+  // (24.09 follow-up — see runIndeedAutoPagination's doc comment for why it's simpler than
+  // Wellfound's own range filter). Auto-deepens afterward via runIndeedAutoDeepen — a
+  // Wellfound-style dedicated background-window wave orchestrator (indeed-deepen.ts's
+  // runIndeedAutoDeepenWaves), NOT the plain FetchDeepening path Techjobs/ITjobs use: confirmed
+  // live (24.09 follow-up) that FetchDeepening is 403'd by Indeed's anti-bot for every request,
+  // so Indeed needs the same real-tab architecture as Wellfound. Re-derives the active tab fresh
+  // at click time, same reason as handleWellfoundAutoParse above.
+  const handleIndeedAutoParse = async () => {
+    if (indeedAutoRunningRef.current) return;
+    if (!indeedAutoRange) {
+      setError('Pick a date range first.');
+      return;
+    }
+    indeedAutoRunningRef.current = true;
+    setIndeedAutoRunning(true);
+    setError(null);
+    setIndeedAutoSummary(null);
+    setIndeedAutoProgress(null);
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      let hostname = '';
+      try {
+        hostname = tab?.url ? new URL(tab.url).hostname : '';
+      } catch {
+        // leave hostname empty; falls through to the "not an Indeed tab" error below
+      }
+      if (!tab?.url || !INDEED_HOSTNAMES.includes(hostname)) {
+        setError('Open an Indeed list page in this tab first.');
+        return;
+      }
+
+      const result = await runIndeedAutoPagination(tab.url, indeedAutoRange, (progress) => {
+        setIndeedAutoProgress(progress);
+      });
+
+      // scanned = new + already in DB + out of range (unique postings — see runIndeedAutoPagination).
+      const counts =
+        `${result.postingsSaved} new, ${result.postingsAlreadyKnown} already in DB, ` +
+        `${result.postingsSkippedOutOfRange} out of range`;
+      if (result.stopReason === 'auth_error') {
+        setUser(null);
+        setError('Please sign in again.');
+      } else if (result.stopReason === 'indeed_signin_required') {
+        setIndeedAutoSummary(
+          `Stopped — Indeed asked to sign in before showing more results. Scanned ${result.postingsScanned} posting(s) across ` +
+            `${result.pagesProcessed} page(s) before that: ${counts}. ` +
+            'Sign into Indeed in this Chrome profile (the background window shares your normal cookies), then re-run "Parse" to continue further pages.',
+        );
+      } else if (result.stopReason === 'circuit_breaker') {
+        setIndeedAutoSummary(
+          `Stopped after ${INDEED_CIRCUIT_BREAKER_THRESHOLD} consecutive page failures — possible bot-detection block. ` +
+            `Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) before that: ${counts}. ` +
+            'Already-saved leads were kept — re-run "Parse" later to continue.',
+        );
+      } else if (result.stopReason === 'window_closed') {
+        setIndeedAutoSummary(
+          `Interrupted — the background window was closed. Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) ` +
+            `before that: ${counts}. Already-saved leads were kept.`,
+        );
+      } else if (result.stopReason === 'max_pages') {
+        setIndeedAutoSummary(
+          `Hit the ${INDEED_AUTO_PAGINATION_MAX_PAGES}-page safety cap (not the normal stop condition). ${result.postingsScanned} ` +
+            `posting(s) scanned: ${counts}.`,
+        );
+      } else {
+        setIndeedAutoSummary(
+          `Done — reached the last results page after ${result.pagesProcessed} page(s). ${result.postingsScanned} posting(s) scanned: ${counts}.`,
+        );
+      }
+      // 24.09 follow-up (deepening architecture fix): auto-deepen the newly-saved leads via
+      // runIndeedAutoDeepen — indeed-deepen.ts's real-background-tab wave orchestrator, mirroring
+      // Wellfound's runWellfoundAutoDeepenWaves. NOT the plain runDeepen/deepenLeads
+      // (FetchDeepening) path Techjobs/ITjobs use: confirmed live that FetchDeepening is 403'd by
+      // Indeed's anti-bot for every request. Not awaited — same fire-and-forget pattern as
+      // handleWellfoundAutoParse above: the pagination UI state clears normally while deepening
+      // continues independently, showing its own "don't close this window" overlay (the same
+      // IndeedBackgroundWindow mechanism indeed-pagination.ts already uses, distinct
+      // 'indeed-deepening' label — see content.ts).
+      //
+      // Deliberately does NOT chain runClassify afterward — Gemini classification for Indeed
+      // leads is a separate decision this task does not make; only auto-deepening was asked for.
+      runIndeedAutoDeepen(result.savedLeads);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      indeedAutoRunningRef.current = false;
+      setIndeedAutoRunning(false);
+      setIndeedAutoProgress(null);
+    }
+  };
+
   if (!authChecked) {
     return (
       <div>
@@ -800,7 +1086,7 @@ export default function App() {
           {parsing ? 'Parsing…' : 'Parse current list page'}
         </button>
       ) : (
-        <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, or DevITjobs job list page to enable parsing.</div>
+        <div className="hint">Open a Techjobs.ca, ITjobs.ca, Wellfound, Indeed, or DevITjobs job list page to enable parsing.</div>
       )}
       {parsing && (
         <div className="parsing-banner" role="status" aria-live="polite">
@@ -811,6 +1097,7 @@ export default function App() {
       {deepening && (
         <div className="hint">Deepening {deepening.current}/{deepening.total}…</div>
       )}
+      {deepenSummary && <div className="hint">{deepenSummary}</div>}
       {classifying && (
         <div className="hint">Classifying {classifying.current}/{classifying.total}…</div>
       )}
@@ -821,6 +1108,12 @@ export default function App() {
         </div>
       )}
       {wellfoundDeepenSummary && <div className="hint">{wellfoundDeepenSummary}</div>}
+      {indeedDeepening && (
+        <div className="hint">
+          Indeed deepening {indeedDeepening.current}/{indeedDeepening.total} (background tab)…
+        </div>
+      )}
+      {indeedDeepenSummary && <div className="hint">{indeedDeepenSummary}</div>}
 
       {isTechjobsHost && (
         <div className="multipage-block">
@@ -889,6 +1182,49 @@ export default function App() {
             </div>
           )}
           {wellfoundAutoDeepenSummary && <div className="hint">{wellfoundAutoDeepenSummary}</div>}
+        </div>
+      )}
+
+      {indeedListTabUrl && (
+        <div className="multipage-block">
+          <label>Parse Indeed pages (auto, all pages)</label>
+          <DateRangePicker value={indeedAutoRange} onChange={setIndeedAutoRange} disabled={indeedAutoRunning} />
+          <button
+            className="parse-button"
+            style={{ marginTop: 8 }}
+            onClick={handleIndeedAutoParse}
+            disabled={!indeedAutoRange || indeedAutoRunning || parsing}
+          >
+            {indeedAutoRunning ? 'Parsing…' : 'Parse'}
+          </button>
+          <div className="hint">
+            Indeed only. Walks every page of the current search via &amp;start=N in a background tab, saving only postings whose
+            published date falls in the picked range — everything else is skipped immediately, never saved. Pauses ~
+            {INDEED_AUTO_BATCH_PAUSE_MIN_MS / 1000}-{INDEED_AUTO_BATCH_PAUSE_MAX_MS / 1000}s every ~{INDEED_AUTO_BATCH_PAGES} pages to
+            avoid anti-bot detection (untested starting pace — see the code comments). Stops on its own if Indeed asks to sign in
+            (page 2+ needs a signed-in session in this Chrome profile) — sign in normally in this browser, then re-run. Automatically
+            deepens whatever it saved afterward in the same background tab (a real navigation, not a fetch — Indeed blocks plain
+            fetches to its job pages). No Gemini here.
+          </div>
+          {indeedAutoProgress && (
+            <div className="hint">
+              {indeedAutoProgress.phase === 'batch_pause'
+                ? `Batch pause (anti-bot cooldown) — resuming automatically. ${indeedAutoProgress.postingsScanned} scanned, ` +
+                  `${indeedAutoProgress.postingsSaved} new, ${indeedAutoProgress.postingsAlreadyKnown} already in DB, ` +
+                  `${indeedAutoProgress.postingsSkippedOutOfRange} out of range so far.`
+                : `Page ${indeedAutoProgress.page} · ${indeedAutoProgress.postingsScanned} scanned, ${indeedAutoProgress.postingsSaved} new, ` +
+                  `${indeedAutoProgress.postingsAlreadyKnown} already in DB, ${indeedAutoProgress.postingsSkippedOutOfRange} out of range`}
+            </div>
+          )}
+          {indeedAutoSummary && <div className="hint">{indeedAutoSummary}</div>}
+          {indeedAutoDeepenProgress && (
+            <div className="hint">
+              Deepening wave {indeedAutoDeepenProgress.waveIndex}/{indeedAutoDeepenProgress.waveCount} —{' '}
+              {indeedAutoDeepenProgress.overallProcessed}/{indeedAutoDeepenProgress.overallTotal} lead(s) overall,{' '}
+              {indeedAutoDeepenProgress.succeeded} succeeded
+            </div>
+          )}
+          {indeedAutoDeepenSummary && <div className="hint">{indeedAutoDeepenSummary}</div>}
         </div>
       )}
 
