@@ -55,6 +55,13 @@ export const INDEED_AUTO_PAGINATION_MAX_PAGES = 500;
 // not a claim that Indeed's actual tolerance matches Wellfound's.
 export const INDEED_CIRCUIT_BREAKER_THRESHOLD = 3;
 
+// Anti-loop guard (02.10): Indeed doesn't return an empty page past the end — it re-serves the
+// last page, possibly with a rotating sponsored posting or two mixed in. A page that adds at most
+// this many postings not seen earlier in the run counts as "nothing new"; this many such pages in
+// a row ends the run. Complements the exact "zero unseen" check and the missing-next-link check.
+const INDEED_LOW_NOVELTY_MAX_UNSEEN = 2;
+const INDEED_LOW_NOVELTY_PAGES_TO_STOP = 2;
+
 // After chrome.tabs.onUpdated reports the navigation "complete", give the content script's own
 // onMessage listener a moment to actually attach before messaging it (same race
 // wellfound-background-window.ts's showOverlayWithRetry documents, and the reason
@@ -71,10 +78,59 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Per-view/click-tracking params Indeed adds to the address bar that must NOT be carried into
+// paginated list URLs. Confirmed live 01.10 (page log): with `vjk=<jobkey>` (the job selected in
+// the right-hand preview pane) present, every `&start=N>0` request redirected to that job's own
+// /viewjob page instead of results page N — no #mosaic-data there, so pages 2+ all failed and the
+// run tripped the circuit breaker. `advn`/`tk` are the same kind of per-view tracking state.
+const INDEED_EPHEMERAL_PARAMS = ['vjk', 'advn', 'tk'];
+
+function stripEphemeralParams(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  for (const param of INDEED_EPHEMERAL_PARAMS) url.searchParams.delete(param);
+  return url.toString();
+}
+
+// Fallback page URL (`&start=N`) — used for page 1 and only when the previous page rendered no
+// "next page" link of Indeed's own (see findIndeedNextPageUrl, parsers/indeed.ts).
 function buildPageUrl(baseUrl: string, start: number): string {
-  const url = new URL(baseUrl);
+  const url = new URL(stripEphemeralParams(baseUrl));
   url.searchParams.set('start', String(start));
   return url.toString();
+}
+
+// Indeed's own "Date posted" filter (`fromage` = max age in days) only accepts these buckets.
+const INDEED_FROMAGE_BUCKETS = [1, 3, 7, 14];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Confirmed live 01.10 (page log): `sort=date` does NOT give a chronological list — pages mixed
+// "30+ days ago" / "10 days ago" / "7 days ago" postings throughout (sponsored/relevance-ranked
+// results interleaved), so a narrow date range would only be reached after walking a large part
+// of the whole result set. Instead, narrow the search server-side with `fromage`: the smallest
+// bucket that still covers range.start (+1 day slack for the Kyiv vs. the region's own timezone
+// difference); the exact range check (isWithinRange) still applies on top. A range older than
+// the largest bucket can't be expressed — `fromage` is removed then (including one the manager
+// set manually, which would otherwise silently cut the range short), and the run walks the full
+// result set as before.
+function applyDateRangeFilter(baseUrl: string, rangeStart: string): string {
+  const url = new URL(baseUrl);
+  const todayKyiv = formatKyivDate(new Date().toISOString());
+  const daysBack = Math.round((Date.parse(todayKyiv) - Date.parse(rangeStart)) / DAY_MS) + 1;
+  const bucket = INDEED_FROMAGE_BUCKETS.find((b) => b >= daysBack);
+  if (bucket) url.searchParams.set('fromage', String(bucket));
+  else url.searchParams.delete('fromage');
+  return url.toString();
+}
+
+// A results page lives under /jobs (or Indeed's SEO /q-...-jobs.html form); landing on /viewjob
+// means Indeed redirected away from the results list (see INDEED_EPHEMERAL_PARAMS).
+function isIndeedJobDetailUrl(url: string | null): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).pathname.startsWith('/viewjob');
+  } catch {
+    return false;
+  }
 }
 
 // Confirmed live (11.09 context): Indeed's sign-in wall on page 2+ redirects the tab to
@@ -95,6 +151,8 @@ function isIndeedSignInWall(url: string | null): boolean {
 interface ParseListResponse {
   ok: boolean;
   leads?: unknown;
+  nextPageUrl?: unknown;
+  totalJobCount?: unknown;
   error?: string;
 }
 
@@ -102,6 +160,10 @@ interface LoadPageResult {
   signInRequired: boolean;
   leads: JobLead[];
   finalUrl: string | null;
+  // Indeed's own "next page" link on this page, if one was found (see findIndeedNextPageUrl).
+  nextPageUrl: string | null;
+  // Total results Indeed reports for this search (see findIndeedTotalJobCount), null if not found.
+  totalJobCount: number | null;
 }
 
 // Thin wrapper around IndeedBackgroundWindow, mirroring wellfound-pagination.ts's
@@ -122,7 +184,10 @@ class IndeedBackgroundListTab {
 
     const finalUrl = await this.win.getTabUrl();
     if (isIndeedSignInWall(finalUrl)) {
-      return { signInRequired: true, leads: [], finalUrl };
+      return { signInRequired: true, leads: [], finalUrl, nextPageUrl: null, totalJobCount: null };
+    }
+    if (isIndeedJobDetailUrl(finalUrl)) {
+      throw new Error('Indeed redirected to a single job page instead of the results list.');
     }
 
     const res = await this.win.sendMessage<ParseListResponse>({ type: 'PARSE_LIST' });
@@ -130,11 +195,18 @@ class IndeedBackgroundListTab {
       throw new Error(res?.error ?? 'Could not parse this page.');
     }
 
-    return { signInRequired: false, leads: res.leads as JobLead[], finalUrl };
+    const nextPageUrl = typeof res.nextPageUrl === 'string' && res.nextPageUrl ? stripEphemeralParams(res.nextPageUrl) : null;
+    const totalJobCount = typeof res.totalJobCount === 'number' ? res.totalJobCount : null;
+    return { signInRequired: false, leads: res.leads as JobLead[], finalUrl, nextPageUrl, totalJobCount };
   }
 
   get wasClosedByUser(): boolean {
     return this.win.wasClosedByUser;
+  }
+
+  // For the diagnostic page log when loadPage itself threw (no LoadPageResult to read finalUrl from).
+  getTabUrl(): Promise<string | null> {
+    return this.win.getTabUrl();
   }
 
   pacedDelay(minMs: number, maxMs: number): Promise<boolean> {
@@ -177,6 +249,84 @@ export type IndeedAutoPaginationStopReason =
   | 'indeed_signin_required'
   | 'max_pages';
 
+// Diagnostic per-page record (01.10 follow-up): a live ca.indeed.com run stopped right after
+// page 1 with no way to tell why — pagination only kept aggregate counters, so the stop cause
+// (sign-in wall, a re-served/duplicate page, an empty page, a parse error) had to be guessed from
+// DB timestamps. One entry per page attempt, logged to the side panel's console as it happens and
+// returned with the result so the panel can show it too.
+export interface IndeedPageLogEntry {
+  page: number;
+  start: number;
+  requestedUrl: string;
+  // How requestedUrl was obtained: page 1's own URL, the previous page's "next page" link, or the
+  // `&start=N` fallback (previous page had no link, or failed). 'start_fallback' after page 1
+  // means the next-link selectors didn't match — see findIndeedNextPageUrl.
+  urlSource: 'first' | 'next_link' | 'start_fallback';
+  // This page's own "next page" link (null = none rendered/found).
+  nextPageUrl: string | null;
+  // Tab URL after navigation settled — differs from requestedUrl on any redirect (sign-in wall,
+  // Indeed dropping/rewriting `start`, a challenge page).
+  finalUrl: string | null;
+  outcome: 'parsed' | 'signin_wall' | 'error';
+  error?: string;
+  // Raw postings on the page, then how many weren't seen earlier in this run, then the in/out
+  // of date-range split of those unseen ones. Zero for non-'parsed' outcomes.
+  postings: number;
+  unseen: number;
+  inRange: number;
+  outOfRange: number;
+  // Of the in-range ones: newly inserted vs. already in the DB (dedup update).
+  saved: number;
+  alreadyKnown: number;
+  // Kyiv-date span (YYYY-MM-DD) of every posting on the page — shows at a glance whether a
+  // sort=date page is newer/older than the picked range, or identical to the previous page.
+  newestDate: string | null;
+  oldestDate: string | null;
+  // First few postings as Indeed itself describes them — the visible relative time next to both
+  // date fields of the model — to check which field actually matches what the page shows/sorts
+  // by (01.10: a sort=date run had every createDate months/years old, see parsers/indeed.ts).
+  sample: string[];
+  // Set only on the entry that ended the run (or on the last entry, for loop-exit stops).
+  stopReason?: IndeedAutoPaginationStopReason;
+}
+
+const PAGE_LOG_SAMPLE_SIZE = 3;
+
+function postingSample(leads: JobLead[]): string[] {
+  return leads.slice(0, PAGE_LOG_SAMPLE_SIZE).map((l) => {
+    const snap = (l.snapshot ?? {}) as { formattedRelativeTime?: unknown; createDate?: unknown; pubDate?: unknown };
+    const rel = typeof snap.formattedRelativeTime === 'string' ? snap.formattedRelativeTime : '?';
+    const raw = (v: unknown) => (typeof v === 'string' ? formatKyivDate(v) : '') || '-';
+    return (
+      `"${(l.job_title ?? '').slice(0, 30)}" shown "${rel}" → used ${formatKyivDate(l.published_at) || '-'} ` +
+      `(createDate ${raw(snap.createDate)}, pubDate ${raw(snap.pubDate)})`
+    );
+  });
+}
+
+function kyivDateSpan(leads: JobLead[]): { newestDate: string | null; oldestDate: string | null } {
+  const dates = leads.map((l) => formatKyivDate(l.published_at)).filter(Boolean).sort();
+  return { newestDate: dates[dates.length - 1] ?? null, oldestDate: dates[0] ?? null };
+}
+
+export function formatIndeedPageLogEntry(e: IndeedPageLogEntry): string {
+  // Page 1 also shows the exact URL requested, so the search params actually used (q, l, sort,
+  // fromage…) are visible in the log without opening the console.
+  const via = e.urlSource === 'next_link' ? 'via next link' : e.urlSource === 'start_fallback' ? `via start=${e.start}` : 'first';
+  const head = e.page === 1 ? `p1 (${e.requestedUrl})` : `p${e.page} (${via})`;
+  const next = e.outcome === 'parsed' ? (e.nextPageUrl ? ', next link: yes' : ', next link: NONE') : '';
+  const redirect = e.finalUrl && e.finalUrl !== e.requestedUrl ? ` → ${e.finalUrl}` : '';
+  const stop = e.stopReason ? ` ■ STOP: ${e.stopReason}` : '';
+  if (e.outcome === 'signin_wall') return `${head}: sign-in wall${redirect}${stop}`;
+  if (e.outcome === 'error') return `${head}: ERROR ${e.error ?? ''}${redirect}${stop}`;
+  const span = e.newestDate ? ` [${e.oldestDate}…${e.newestDate}]` : '';
+  const sample = e.sample.length ? ` | top: ${e.sample.join('; ')}` : '';
+  return (
+    `${head}: ${e.postings} on page${span}, ${e.unseen} unseen, ${e.inRange} in range / ${e.outOfRange} out, ` +
+    `${e.saved} new + ${e.alreadyKnown} already in DB${next}${redirect}${stop}${sample}`
+  );
+}
+
 export interface IndeedAutoPaginationResult {
   pagesProcessed: number;
   postingsScanned: number;
@@ -191,6 +341,10 @@ export interface IndeedAutoPaginationResult {
   savedLeads: LeadSaveResult[];
   stopReason: IndeedAutoPaginationStopReason;
   errorMessage?: string;
+  pageLog: IndeedPageLogEntry[];
+  // Total results Indeed reported for the search (first page that carried it), null if never
+  // found — compare with postingsScanned to confirm the run covered the whole result set.
+  indeedTotalJobCount: number | null;
 }
 
 /**
@@ -248,6 +402,15 @@ export async function runIndeedAutoPagination(
 
   let start = 0;
   let page = 1;
+  // Next page's URL from the previous page's own "next page" link; null = use `&start=N`.
+  let nextLinkUrl: string | null = null;
+  // Once any page has rendered a next link, a later page WITHOUT one is Indeed saying it's the
+  // last page — a cleaner end signal than the re-served-page check below.
+  let sawNextLink = false;
+  // Every page URL requested this run — a next link pointing back to one of them is a cycle.
+  const visitedUrls = new Set<string>();
+  let lowNoveltyPages = 0;
+  let indeedTotalJobCount: number | null = null;
   let pagesProcessed = 0;
   let postingsScanned = 0;
   let postingsSaved = 0;
@@ -264,30 +427,51 @@ export async function runIndeedAutoPagination(
   let stopReason: IndeedAutoPaginationStopReason = 'no_more_pages';
   let errorMessage: string | undefined;
   const savedLeads: LeadSaveResult[] = [];
+  const pageLog: IndeedPageLogEntry[] = [];
 
   const isClosedError = (err: unknown) => err instanceof IndeedBackgroundWindowClosedError || tab.wasClosedByUser;
   const emitProgress = (phase: IndeedAutoPaginationProgress['phase']) =>
     onProgress({ page, postingsScanned, postingsSaved, postingsAlreadyKnown, postingsSkippedOutOfRange, phase });
+  const logPage = (entry: IndeedPageLogEntry) => {
+    pageLog.push(entry);
+    console.log(`[Indeed pagination] ${formatIndeedPageLogEntry(entry)}`, entry);
+  };
+  const emptyCounts = { postings: 0, unseen: 0, inRange: 0, outOfRange: 0, saved: 0, alreadyKnown: 0, newestDate: null, oldestDate: null, sample: [] };
+
+  baseUrl = applyDateRangeFilter(baseUrl, range.start);
+  console.log(`[Indeed pagination] run started — base ${baseUrl}, range ${range.start}…${range.end} (Kyiv dates)`);
 
   try {
     while (page <= INDEED_AUTO_PAGINATION_MAX_PAGES) {
-      const pageUrl = buildPageUrl(baseUrl, start);
+      const urlSource: IndeedPageLogEntry['urlSource'] = page === 1 ? 'first' : nextLinkUrl ? 'next_link' : 'start_fallback';
+      const pageUrl = nextLinkUrl ?? buildPageUrl(baseUrl, start);
+      nextLinkUrl = null;
+      visitedUrls.add(pageUrl);
 
       let signInRequired: boolean;
       let leads: JobLead[];
+      let finalUrl: string | null;
+      let nextPageUrl: string | null;
+      let totalJobCount: number | null;
       try {
-        ({ signInRequired, leads } = await tab.loadPage(pageUrl));
+        ({ signInRequired, leads, finalUrl, nextPageUrl, totalJobCount } = await tab.loadPage(pageUrl));
       } catch (err) {
         if (isClosedError(err)) {
           stopReason = 'window_closed';
+          logPage({ page, start, requestedUrl: pageUrl, urlSource, nextPageUrl: null, finalUrl: null, outcome: 'error', error: 'background window closed', ...emptyCounts, stopReason });
           break;
         }
         errorMessage = err instanceof Error ? err.message : String(err);
         consecutiveFailures++;
+        const entry: IndeedPageLogEntry = {
+          page, start, requestedUrl: pageUrl, urlSource, nextPageUrl: null, finalUrl: await tab.getTabUrl(), outcome: 'error', error: errorMessage, ...emptyCounts,
+        };
         if (consecutiveFailures >= INDEED_CIRCUIT_BREAKER_THRESHOLD) {
           stopReason = 'circuit_breaker';
+          logPage({ ...entry, stopReason });
           break;
         }
+        logPage(entry);
         emitProgress('scanning');
         if (await tab.pacedDelay(MIN_INDEED_TAB_DELAY_MS, MAX_INDEED_TAB_DELAY_MS)) {
           stopReason = 'window_closed';
@@ -302,8 +486,19 @@ export async function runIndeedAutoPagination(
       // session, not a failure. Deliberately does not touch consecutiveFailures.
       if (signInRequired) {
         stopReason = 'indeed_signin_required';
+        logPage({ page, start, requestedUrl: pageUrl, urlSource, nextPageUrl, finalUrl, outcome: 'signin_wall', ...emptyCounts, stopReason });
         break;
       }
+
+      if (indeedTotalJobCount === null && totalJobCount !== null) {
+        indeedTotalJobCount = totalJobCount;
+        console.log(`[Indeed pagination] Indeed reports ${totalJobCount} result(s) for this search`);
+      }
+
+      const pageEntry: IndeedPageLogEntry = {
+        page, start, requestedUrl: pageUrl, urlSource, nextPageUrl, finalUrl, outcome: 'parsed', ...emptyCounts,
+        postings: leads.length, ...kyivDateSpan(leads), sample: postingSample(leads),
+      };
 
       // Primary "no more pages" signal — see this function's doc comment for why an empty
       // array (from a page that parsed successfully, i.e. didn't throw) is trusted here rather
@@ -312,6 +507,7 @@ export async function runIndeedAutoPagination(
       // mistaken for the end of the results.
       if (leads.length === 0) {
         stopReason = 'no_more_pages';
+        logPage({ ...pageEntry, stopReason });
         break;
       }
 
@@ -320,8 +516,10 @@ export async function runIndeedAutoPagination(
       // re-saved or re-counted. Also checked before date filtering, for the same reason as the
       // empty check above.
       const newLeads = leads.filter((lead) => !seenJobKeys.has(lead.external_job_id));
+      pageEntry.unseen = newLeads.length;
       if (newLeads.length === 0) {
         stopReason = 'no_more_pages';
+        logPage({ ...pageEntry, stopReason });
         break;
       }
       for (const lead of newLeads) seenJobKeys.add(lead.external_job_id);
@@ -333,6 +531,8 @@ export async function runIndeedAutoPagination(
         return isWithinRange(formatKyivDate(lead.published_at), range.start, range.end);
       });
       const outOfRangeCount = newLeads.length - inRange.length;
+      pageEntry.inRange = inRange.length;
+      pageEntry.outOfRange = outOfRangeCount;
 
       let saveResults: LeadSaveResult[] = [];
       if (inRange.length > 0) {
@@ -342,14 +542,18 @@ export async function runIndeedAutoPagination(
           if (err instanceof AuthError) {
             stopReason = 'auth_error';
             errorMessage = err.message;
+            logPage({ ...pageEntry, outcome: 'error', error: `backend save: ${err.message}`, stopReason });
             break;
           }
           errorMessage = err instanceof Error ? err.message : String(err);
           consecutiveFailures++;
+          const errorEntry: IndeedPageLogEntry = { ...pageEntry, outcome: 'error', error: `backend save: ${errorMessage}` };
           if (consecutiveFailures >= INDEED_CIRCUIT_BREAKER_THRESHOLD) {
             stopReason = 'circuit_breaker';
+            logPage({ ...errorEntry, stopReason });
             break;
           }
+          logPage(errorEntry);
           emitProgress('scanning');
           if (await tab.pacedDelay(MIN_INDEED_TAB_DELAY_MS, MAX_INDEED_TAB_DELAY_MS)) {
             stopReason = 'window_closed';
@@ -371,6 +575,33 @@ export async function runIndeedAutoPagination(
       postingsAlreadyKnown += alreadyKnownThisPage;
       savedLeads.push(...saveResults);
       pagesSinceLastPause++;
+      // End-of-results signals, any one of which stops the run (Indeed never says "no more pages"):
+      //  - it rendered a next link on an earlier page but none here;
+      //  - the next link points back at a page already requested this run (a cycle);
+      //  - INDEED_LOW_NOVELTY_PAGES_TO_STOP pages in a row added almost nothing new (a re-served
+      //    last page with rotating sponsored postings — the exact "zero unseen" case is caught
+      //    earlier, before saving).
+      lowNoveltyPages = newLeads.length <= INDEED_LOW_NOVELTY_MAX_UNSEEN ? lowNoveltyPages + 1 : 0;
+      //  - every result Indeed reported for the search has now been seen (avoids even one extra
+      //    request for a page Indeed would only re-serve).
+      const isLastPage =
+        (indeedTotalJobCount !== null && seenJobKeys.size >= indeedTotalJobCount) ||
+        (sawNextLink && !nextPageUrl) ||
+        (!!nextPageUrl && visitedUrls.has(nextPageUrl)) ||
+        lowNoveltyPages >= INDEED_LOW_NOVELTY_PAGES_TO_STOP;
+      if (nextPageUrl) sawNextLink = true;
+      nextLinkUrl = nextPageUrl;
+      logPage({
+        ...pageEntry,
+        saved: savedThisPage,
+        alreadyKnown: alreadyKnownThisPage,
+        ...(isLastPage ? { stopReason: 'no_more_pages' as const } : {}),
+      });
+      if (isLastPage) {
+        stopReason = 'no_more_pages';
+        emitProgress('scanning');
+        break;
+      }
 
       tab.setProgress(
         `Page ${page} scanned — ${postingsScanned} posting(s) seen, ${postingsSaved} new, ${postingsAlreadyKnown} already in DB, ` +
@@ -405,6 +636,17 @@ export async function runIndeedAutoPagination(
     await tab.close();
   }
 
+  // Stops that happen outside a page attempt (window closed during a pause, the max-pages cap)
+  // haven't marked any entry yet — attach the reason to the last one so the log always ends on it.
+  const lastEntry = pageLog[pageLog.length - 1];
+  if (lastEntry && !lastEntry.stopReason) lastEntry.stopReason = stopReason;
+  console.log(
+    `[Indeed pagination] run finished — stop: ${stopReason}, ${pagesProcessed} page(s) processed, ${postingsScanned} unique posting(s) ` +
+      `scanned of ${indeedTotalJobCount ?? '?'} reported by Indeed (${postingsSaved} new, ${postingsAlreadyKnown} already in DB, ` +
+      `${postingsSkippedOutOfRange} out of range)` +
+      (errorMessage ? `, last error: ${errorMessage}` : ''),
+  );
+
   return {
     pagesProcessed,
     postingsScanned,
@@ -414,5 +656,7 @@ export async function runIndeedAutoPagination(
     savedLeads,
     stopReason,
     errorMessage,
+    pageLog,
+    indeedTotalJobCount,
   };
 }

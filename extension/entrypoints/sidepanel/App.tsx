@@ -39,6 +39,7 @@ import {
   INDEED_AUTO_BATCH_PAGES,
   INDEED_CIRCUIT_BREAKER_THRESHOLD,
   INDEED_AUTO_PAGINATION_MAX_PAGES,
+  formatIndeedPageLogEntry,
   type IndeedAutoPaginationProgress,
 } from '../../lib/indeed-pagination';
 import {
@@ -236,6 +237,9 @@ export default function App() {
   const [indeedAutoRunning, setIndeedAutoRunning] = useState(false);
   const [indeedAutoProgress, setIndeedAutoProgress] = useState<IndeedAutoPaginationProgress | null>(null);
   const [indeedAutoSummary, setIndeedAutoSummary] = useState<string | null>(null);
+  // Diagnostic per-page log of the last Indeed auto-pagination run (formatIndeedPageLogEntry
+  // lines) — kept until the next run starts, same lifecycle as indeedAutoSummary.
+  const [indeedPageLog, setIndeedPageLog] = useState<string[] | null>(null);
   // 24.09 follow-up (deepening architecture fix): Indeed's own dedicated deepening state, same
   // shape/reasoning as wellfoundDeepening/wellfoundDeepenSummary above — no longer shares the
   // generic `deepening`/`deepenSummary` state with Techjobs/ITjobs (see runIndeedDeepen's own
@@ -955,6 +959,7 @@ export default function App() {
     setIndeedAutoRunning(true);
     setError(null);
     setIndeedAutoSummary(null);
+    setIndeedPageLog(null);
     setIndeedAutoProgress(null);
 
     try {
@@ -973,11 +978,13 @@ export default function App() {
       const result = await runIndeedAutoPagination(tab.url, indeedAutoRange, (progress) => {
         setIndeedAutoProgress(progress);
       });
+      setIndeedPageLog(result.pageLog.map(formatIndeedPageLogEntry));
 
       // scanned = new + already in DB + out of range (unique postings — see runIndeedAutoPagination).
       const counts =
         `${result.postingsSaved} new, ${result.postingsAlreadyKnown} already in DB, ` +
-        `${result.postingsSkippedOutOfRange} out of range`;
+        `${result.postingsSkippedOutOfRange} out of range` +
+        (result.indeedTotalJobCount !== null ? ` (Indeed reports ${result.indeedTotalJobCount} for this search)` : '');
       if (result.stopReason === 'auth_error') {
         setUser(null);
         setError('Please sign in again.');
@@ -1217,6 +1224,16 @@ export default function App() {
             </div>
           )}
           {indeedAutoSummary && <div className="hint">{indeedAutoSummary}</div>}
+          {indeedPageLog && indeedPageLog.length > 0 && (
+            <details className="hint page-log" open>
+              <summary>Page log ({indeedPageLog.length})</summary>
+              <ol>
+                {indeedPageLog.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ol>
+            </details>
+          )}
           {indeedAutoDeepenProgress && (
             <div className="hint">
               Deepening wave {indeedAutoDeepenProgress.waveIndex}/{indeedAutoDeepenProgress.waveCount} —{' '}

@@ -429,3 +429,15 @@ h1 {
   color: var(--on-accent);
 }
 
+
+/* Indeed auto-pagination diagnostic page log (one line per page attempt). */
+.page-log ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+.page-log summary {
+  cursor: pointer;
+}

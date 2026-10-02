@@ -155,17 +155,60 @@ function toIsoOrNull(epochMs: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+// Latest of the model's two date fields — the posting's most recent (re)publication. See
+// IndeedListParser's doc comment for why neither field alone can be trusted.
+function latestIsoOrNull(...epochs: unknown[]): string | null {
+  const valid = epochs.filter((e): e is number => typeof e === 'number' && Number.isFinite(e));
+  return valid.length ? toIsoOrNull(Math.max(...valid)) : null;
+}
+
+// Indeed's own "next page" link on a results page. Confirmed live 02.10: with the "Date posted"
+// filter (`fromage`) applied, a hand-built `&start=10` URL re-served page 1 while the site's own
+// page 2 showed different postings — so pagination follows the link Indeed itself renders
+// instead of constructing the URL. UNVERIFIED selectors (no pagination markup in the spike):
+// several candidates, first match wins; indeed-pagination.ts logs whether a link was found or
+// it fell back to `start=N`, so a miss is visible in the page log rather than silent.
+const NEXT_PAGE_SELECTORS = [
+  'a[data-testid="pagination-page-next"]',
+  'nav[aria-label="pagination" i] a[aria-label="Next Page" i]',
+  'nav[aria-label="pagination" i] a[aria-label="Next" i]',
+  'a[aria-label="Next Page" i]',
+];
+
+// Total result count Indeed itself reports for the current search (`"totalJobCount":N` inside
+// #mosaic-data — confirmed live 02.10: 14 for a fromage=7 search whose pagination nav was empty).
+// Lets a pagination run check "scanned M of N" instead of inferring the end from page contents.
+export function findIndeedTotalJobCount(document: Document): number | null {
+  const text = document.getElementById(MOSAIC_DATA_SCRIPT_ID)?.textContent ?? '';
+  const match = text.match(/"totalJobCount"\s*:\s*(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+export function findIndeedNextPageUrl(document: Document): string | null {
+  for (const selector of NEXT_PAGE_SELECTORS) {
+    const href = document.querySelector<HTMLAnchorElement>(selector)?.getAttribute('href');
+    if (!href) continue;
+    try {
+      return new URL(href, document.location?.origin || INDEED_BASE_URL).toString();
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 /**
  * List parser for Indeed (indeed.com) — DI-2966, Priority #1 job source after Wellfound
  * (11.09 team call). See this file's header comment for why this reads the `mosaic-data` JSON
  * model instead of the DOM.
  *
- * `published_at` uses the model's `createDate` field, NOT `pubDate` — confirmed live in the
- * 14.09 spike that the two disagree, sometimes wildly (one job's `pubDate` was ~3.8 years stale
- * while `createDate`/the visible relative-time text both agreed on "30+ days ago", i.e. a
- * recent repost). `createDate` tracked the visible relative-time bucket correctly across the
- * whole sample; `pubDate` did not. `pubDate` is still kept in `snapshot` for visibility/
- * debugging, just never used as `published_at`.
+ * `published_at` is the LATER of the model's `createDate` and `pubDate` — the posting's most
+ * recent (re)publication, which is what the manager treats as "actual" (02.10 decision: a repost
+ * means the company is still hiring). Neither field alone is reliable: in the 14.09 spike one
+ * job's `pubDate` was ~3.8 years stale while `createDate` matched the visible "30+ days ago"; in
+ * a 01.10 live ca.indeed.com sort=date run the opposite held — every `createDate` on page 1 was
+ * months/years old (2024-11…2026-07) while Indeed itself sorted those postings as newest, so the
+ * date-range filter rejected all of them. Both raw values stay in `snapshot` for debugging.
  *
  * `external_job_id`/dedup key is the model's `jobkey` (same 16-char hex value as the DOM's
  * `data-jk` attribute, confirmed live). `source_url` is built as the canonical
@@ -219,13 +262,14 @@ export class IndeedListParser implements SiteParser {
         location: typeof r.formattedLocation === 'string' ? r.formattedLocation : '',
         salary: formatSalary(r.extractedSalary),
         scraped_at,
-        published_at: toIsoOrNull(r.createDate),
+        published_at: latestIsoOrNull(r.createDate, r.pubDate),
         snapshot: {
           jobTypes: Array.isArray(r.jobTypes) ? r.jobTypes : [],
           expired: r.expired === true,
           remoteWorkModel: r.remoteWorkModel ?? null,
           formattedRelativeTime: typeof r.formattedRelativeTime === 'string' ? r.formattedRelativeTime : undefined,
-          // NOT used as published_at — see this class's doc comment. Kept only for debugging.
+          // Raw inputs to published_at (the later of the two) — see this class's doc comment.
+          createDate: toIsoOrNull(r.createDate),
           pubDate: toIsoOrNull(r.pubDate),
         },
       });

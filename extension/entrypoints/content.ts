@@ -1,7 +1,7 @@
 import { TechjobsListParser } from '../lib/parsers/techjobs';
 import { DevitjobsListParser } from '../lib/parsers/devitjobs';
 import { WellfoundListParser } from '../lib/parsers/wellfound';
-import { IndeedListParser } from '../lib/parsers/indeed';
+import { findIndeedNextPageUrl, findIndeedTotalJobCount, IndeedListParser } from '../lib/parsers/indeed';
 import { extractIndeedJobDescription } from '../lib/indeed-detail-extract';
 import { extractWellfoundJobPosting } from '../lib/wellfound-detail-extract';
 import type { SiteParser } from '../lib/types';
@@ -296,7 +296,12 @@ export default defineContentScript({
 
         try {
           const leads = parser.parseList(document);
-          sendResponse({ ok: true, leads });
+          // Indeed pagination follows the site's own "next page" link — see findIndeedNextPageUrl.
+          const extra =
+            parser === indeedParser
+              ? { nextPageUrl: findIndeedNextPageUrl(document), totalJobCount: findIndeedTotalJobCount(document) }
+              : {};
+          sendResponse({ ok: true, leads, ...extra });
         } catch (err) {
           sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
         }
