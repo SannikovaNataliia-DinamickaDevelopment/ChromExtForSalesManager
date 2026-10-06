@@ -311,6 +311,14 @@ export class LeadsService {
     return { lead: updated, destination: destinationStatus };
   }
 
+  async findOne(id: string) {
+    const [lead] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!lead) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    return lead;
+  }
+
   // One-off pass over leads that already have a description but no website (saved before the
   // description guess existed): same guessCompanyWebsite as deepen() above, same flag. DB writes
   // only — no destination push (Sheets sync is off by default and this is a bulk backfill).
@@ -330,6 +338,51 @@ export class LeadsService {
       found++;
     }
     return { checked: rows.length, found };
+  }
+
+  // Dashboard "Find company in Apollo" → the manager picked one of Apollo's candidates for this
+  // lead's company name (ApolloCompanySearchService). Saves the candidate's website as CONFIRMED
+  // (a manager's own choice — no "!" flag, no Apollo confirmation prompt) and caches its Apollo
+  // organization id, which the DM search then filters by directly (see
+  // apollo-classifier.service.ts's organization_id cache). With applyToSameCompany, every other
+  // lead of the same company name that has no website or only a description guess gets the same
+  // match; leads whose website came from the posting itself or was already confirmed are left alone.
+  async applyCompanyMatch(
+    id: string,
+    match: { organizationId: string; website: string; applyToSameCompany?: boolean },
+  ): Promise<{ updated: number }> {
+    const [lead] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
+    if (!lead) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
+    }
+    let website: string;
+    try {
+      const url = new URL(match.website.includes('://') ? match.website : `https://${match.website}`);
+      website = `https://${url.hostname.replace(/^www\./, '')}`;
+    } catch {
+      throw new AppError(HttpStatus.BAD_REQUEST, 'INVALID_WEBSITE', `Not a valid website: ${match.website}`);
+    }
+
+    const values = {
+      company_website: website,
+      company_website_source: 'confirmed' as const,
+      apollo_organization_id: match.organizationId,
+      apollo_organization_resolved_at: new Date(),
+      updated_at: new Date(),
+    };
+    const sameCompany = match.applyToSameCompany && lead.company
+      ? and(
+          isNull(job_leads.deleted_at),
+          sql`lower(trim(${job_leads.company})) = lower(trim(${lead.company}))`,
+          or(isNull(job_leads.company_website), eq(job_leads.company_website_source, 'description_guess')),
+        )
+      : undefined;
+    const updated = await this.db
+      .update(job_leads)
+      .set(values)
+      .where(sameCompany ? or(eq(job_leads.id, id), sameCompany) : eq(job_leads.id, id))
+      .returning({ id: job_leads.id });
+    return { updated: updated.length };
   }
 
   // Dashboard "Confirm website": the manager checked a description-guessed website and it is

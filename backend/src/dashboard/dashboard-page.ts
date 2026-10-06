@@ -980,6 +980,53 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     cursor: help; vertical-align: middle;
   }
   .unverified-note { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+  /* "Find company in Apollo" (company lookup by name) — sidebar block + modal. */
+  .company-match-block { margin: 10px 0 14px; }
+  .company-match-btn {
+    background: var(--panel-alt); color: var(--text); border: 1px solid var(--accent);
+    border-radius: 8px; padding: 6px 12px; font-family: inherit; font-size: 13px; cursor: pointer;
+  }
+  .company-match-btn:hover { border-color: var(--pink); }
+  .company-match-hint { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+  .company-match-modal { width: min(580px, 94vw); max-height: min(740px, 90vh); }
+  .cm-lead { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+  .cm-search-row { display: flex; gap: 8px; }
+  .cm-search-row input {
+    flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-family: inherit; font-size: 13px;
+  }
+  .cm-cost { margin: 6px 0 10px; font-size: 11px; color: var(--text-secondary); }
+  .cm-status { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
+  .cm-status.error { color: var(--error); }
+  .cm-mock {
+    margin: 8px 0; padding: 8px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    background: var(--error-bg); color: var(--error); border: 1px dashed var(--error);
+  }
+  .cm-apply-all { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: 12px; color: var(--text); cursor: pointer; }
+  .cm-list { display: flex; flex-direction: column; gap: 8px; }
+  .cm-card {
+    display: flex; gap: 10px; align-items: flex-start; padding: 10px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--panel-alt);
+  }
+  .cm-card.match { border-color: var(--pink); }
+  .cm-logo { width: 36px; height: 36px; border-radius: 8px; object-fit: contain; background: var(--bg); flex: 0 0 auto; }
+  .cm-logo-empty {
+    width: 36px; height: 36px; border-radius: 8px; flex: 0 0 auto; display: flex; align-items: center;
+    justify-content: center; background: var(--bg); color: var(--text-secondary); font-weight: 700;
+  }
+  .cm-info { flex: 1; min-width: 0; }
+  .cm-name { font-size: 14px; font-weight: 600; color: var(--text); }
+  .cm-links { font-size: 12px; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .cm-meta { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+  .cm-badge {
+    display: inline-block; margin-top: 4px; padding: 1px 6px; border-radius: 6px; font-size: 11px;
+    background: var(--chip-bg-accent, rgba(201, 127, 176, 0.22)); color: var(--text);
+  }
+  .cm-select {
+    flex: 0 0 auto; background: var(--pink); color: #1A1420; border: none; border-radius: 8px;
+    padding: 6px 12px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .cm-select:disabled { opacity: 0.5; cursor: not-allowed; }
   .confirm-website-btn {
     margin-left: 8px; padding: 2px 8px; font-size: 12px; border-radius: 6px; cursor: pointer;
     background: transparent; color: var(--text); border: 1px solid var(--border);
@@ -1268,6 +1315,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   <div class="export-modal-footer">
     <button type="button" class="export-modal-cancel" id="export-modal-cancel">Cancel</button>
     <button type="button" class="export-modal-submit" id="export-columns-submit">Export</button>
+  </div>
+</div>
+<div class="export-modal-backdrop" id="company-match-backdrop"></div>
+<div class="export-modal company-match-modal" id="company-match-modal" role="dialog" aria-modal="true" aria-labelledby="company-match-title" aria-hidden="true">
+  <div class="export-modal-title" id="company-match-title">Find company in Apollo</div>
+  <div class="export-modal-body" id="company-match-body"></div>
+  <div class="export-modal-footer">
+    <button type="button" class="export-modal-cancel" id="company-match-close">Close</button>
   </div>
 </div>
 <script>
@@ -2938,6 +2993,248 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  // --- "Find company in Apollo" (06.10 call, point 5) ------------------------------------------
+  // Indeed gives a company NAME but no website; the DM search needs a website/Apollo organization.
+  // The manager searches Apollo by name (GET /leads/:id/apollo-company-candidates — 1 Apollo
+  // credit per new search, so it only runs on an explicit "Search" click, never on open) and
+  // picks the right company; POST /leads/:id/company-match saves its website as confirmed plus its
+  // Apollo organization id, optionally for every lead of the same company name.
+  var companyMatch = { lead: null, query: '', loading: false, saving: false, result: null, error: '', notice: '', applyAll: true };
+
+  function normalizeCompanyName(name) {
+    return (name || '').trim().toLowerCase();
+  }
+
+  // Other leads of the same company that a match would also fill (no website yet, or only an
+  // unverified description guess) — mirrors LeadsService.applyCompanyMatch's own filter.
+  function sameCompanyOthers(lead) {
+    var key = normalizeCompanyName(lead.company);
+    if (!key) return [];
+    return state.leads.filter(function (l) {
+      return l.id !== lead.id && normalizeCompanyName(l.company) === key && (!l.company_website || isWebsiteUnverified(l));
+    });
+  }
+
+  function websiteDomain(url) {
+    try {
+      return new URL(url).hostname.toLowerCase().replace(/^www\\./, '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // Sidebar entry point: shown when the lead has a company name and no verified website.
+  function buildCompanyMatchBlock(lead) {
+    var wrap = el('div', { className: 'company-match-block' });
+    var btn = el('button', { className: 'company-match-btn', type: 'button', text: '\\uD83D\\uDD0D Find company in Apollo' });
+    btn.addEventListener('click', function () { openCompanyMatchModal(lead); });
+    wrap.appendChild(btn);
+    wrap.appendChild(el('div', {
+      className: 'company-match-hint',
+      text: lead.company_website
+        ? 'Check the guessed website against Apollo\\u2019s company records and pick the right one.'
+        : 'No website for this company yet \\u2014 look it up by name and pick the right one.',
+    }));
+    return wrap;
+  }
+
+  function setCompanyMatchOpen(open) {
+    document.getElementById('company-match-modal').classList.toggle('open', open);
+    document.getElementById('company-match-backdrop').classList.toggle('open', open);
+    document.getElementById('company-match-modal').setAttribute('aria-hidden', open ? 'false' : 'true');
+  }
+
+  function openCompanyMatchModal(lead) {
+    companyMatch = { lead: lead, query: lead.company || '', loading: false, saving: false, result: null, error: '', notice: '', applyAll: true };
+    renderCompanyMatchModal();
+    setCompanyMatchOpen(true);
+    var input = document.getElementById('company-match-query');
+    if (input) input.focus();
+  }
+
+  function closeCompanyMatchModal() {
+    setCompanyMatchOpen(false);
+    companyMatch.lead = null;
+  }
+
+  function runCompanyMatchSearch() {
+    var lead = companyMatch.lead;
+    if (!lead || companyMatch.loading) return;
+    var q = companyMatch.query.trim();
+    if (!q) {
+      companyMatch.error = 'Enter a company name.';
+      renderCompanyMatchModal();
+      return;
+    }
+    companyMatch.loading = true;
+    companyMatch.error = '';
+    companyMatch.notice = '';
+    renderCompanyMatchModal();
+    apiFetch('/leads/' + lead.id + '/apollo-company-candidates?q=' + encodeURIComponent(q))
+      .then(function (result) {
+        if (companyMatch.lead !== lead) return;
+        companyMatch.result = result;
+      })
+      .catch(function (err) {
+        if (companyMatch.lead !== lead) return;
+        companyMatch.result = null;
+        companyMatch.error = err.message;
+      })
+      .finally(function () {
+        if (companyMatch.lead !== lead) return;
+        companyMatch.loading = false;
+        renderCompanyMatchModal();
+      });
+  }
+
+  function selectCompanyCandidate(candidate) {
+    var lead = companyMatch.lead;
+    if (!lead || companyMatch.saving || !candidate.website) return;
+    var others = companyMatch.applyAll ? sameCompanyOthers(lead).length : 0;
+    // Sample data never reaches the DB: a dry run that only shows what WOULD be saved.
+    if (companyMatch.result && companyMatch.result.source === 'mock') {
+      companyMatch.notice =
+        'Sample data \\u2014 nothing saved. A real pick would save ' + candidate.website + ' (Apollo org ' + candidate.id + ') to this lead' +
+        (others ? ' and ' + others + ' other lead(s) of the same company' : '') + ', as a confirmed website.';
+      renderCompanyMatchModal();
+      return;
+    }
+    companyMatch.saving = true;
+    companyMatch.error = '';
+    renderCompanyMatchModal();
+    apiFetch('/leads/' + lead.id + '/company-match', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: candidate.id,
+        name: candidate.name,
+        website: candidate.website,
+        applyToSameCompany: companyMatch.applyAll && others > 0,
+      }),
+    })
+      .then(function (res) {
+        closeCompanyMatchModal();
+        return loadLeads().then(function () {
+          if (currentSidebarLeadId !== lead.id) return;
+          var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
+          if (updated) openSidebar(updated);
+          if (res && res.updated > 1) window.alert('Saved ' + candidate.website + ' for ' + res.updated + ' leads of this company.');
+        });
+      })
+      .catch(function (err) {
+        companyMatch.saving = false;
+        companyMatch.error = 'Could not save: ' + err.message;
+        renderCompanyMatchModal();
+      });
+  }
+
+  function buildCompanyCandidateCard(candidate, guessedDomain) {
+    var isMatch = !!guessedDomain && candidate.domain === guessedDomain;
+    var card = el('div', { className: 'cm-card' + (isMatch ? ' match' : '') });
+    if (candidate.logoUrl && isSafeUrl(candidate.logoUrl)) {
+      card.appendChild(el('img', { className: 'cm-logo', src: candidate.logoUrl, alt: '' }));
+    } else {
+      card.appendChild(el('div', { className: 'cm-logo-empty', text: (candidate.name || '?').charAt(0).toUpperCase() }));
+    }
+    var info = el('div', { className: 'cm-info' });
+    info.appendChild(el('div', { className: 'cm-name', text: candidate.name }));
+    var links = el('div', { className: 'cm-links' });
+    if (candidate.website && isSafeUrl(candidate.website)) {
+      links.appendChild(el('a', { className: 'website-link', href: candidate.website, target: '_blank', rel: 'noreferrer', text: candidate.domain || candidate.website }));
+    } else {
+      links.appendChild(el('span', { className: 'muted-note', text: 'no website in Apollo' }));
+    }
+    if (candidate.linkedinUrl && isSafeUrl(candidate.linkedinUrl)) {
+      links.appendChild(el('a', { className: 'website-link', href: candidate.linkedinUrl, target: '_blank', rel: 'noreferrer', text: 'LinkedIn' }));
+    }
+    info.appendChild(links);
+    var meta = [
+      candidate.location,
+      candidate.employees ? candidate.employees + ' employees' : null,
+      candidate.industry,
+      candidate.foundedYear ? 'founded ' + candidate.foundedYear : null,
+    ].filter(Boolean).join(' \\u00B7 ');
+    if (meta) info.appendChild(el('div', { className: 'cm-meta', text: meta }));
+    if (isMatch) info.appendChild(el('span', { className: 'cm-badge', text: 'Same website as found in the job description' }));
+    card.appendChild(info);
+    var selectBtn = el('button', { className: 'cm-select', type: 'button', text: companyMatch.saving ? 'Saving\\u2026' : 'Select' });
+    selectBtn.disabled = companyMatch.saving || !candidate.website;
+    if (!candidate.website) selectBtn.title = 'Apollo has no website for this company \\u2014 nothing to save.';
+    selectBtn.addEventListener('click', function () { selectCompanyCandidate(candidate); });
+    card.appendChild(selectBtn);
+    return card;
+  }
+
+  function renderCompanyMatchModal() {
+    var body = document.getElementById('company-match-body');
+    var lead = companyMatch.lead;
+    body.innerHTML = '';
+    if (!lead) return;
+
+    body.appendChild(el('div', {
+      className: 'cm-lead',
+      text: 'Lead: ' + (lead.job_title || '(no title)') + ' \\u2014 ' + (lead.company || '(no company)') +
+        (isWebsiteUnverified(lead) ? ' \\u00B7 website from description: ' + lead.company_website + ' (not verified)' : ''),
+    }));
+
+    var row = el('div', { className: 'cm-search-row' });
+    var input = el('input', { id: 'company-match-query', type: 'text', placeholder: 'Company name' });
+    input.value = companyMatch.query;
+    input.disabled = companyMatch.loading;
+    input.addEventListener('input', function () { companyMatch.query = input.value; });
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') runCompanyMatchSearch(); });
+    var searchBtn = el('button', { className: 'export-modal-submit', type: 'button', text: companyMatch.loading ? 'Searching\\u2026' : 'Search' });
+    searchBtn.disabled = companyMatch.loading;
+    searchBtn.addEventListener('click', runCompanyMatchSearch);
+    row.appendChild(input);
+    row.appendChild(searchBtn);
+    body.appendChild(row);
+    body.appendChild(el('div', {
+      className: 'cm-cost',
+      text: 'Each new search uses 1 Apollo credit (repeating the same name within 24 h is free). Edit the name if Apollo might list the company differently.',
+    }));
+
+    if (companyMatch.error) body.appendChild(el('div', { className: 'cm-status error', text: companyMatch.error }));
+    if (companyMatch.notice) body.appendChild(el('div', { className: 'cm-status', text: companyMatch.notice }));
+
+    var result = companyMatch.result;
+    if (!result) return;
+
+    if (result.source === 'mock') {
+      body.appendChild(el('div', {
+        className: 'cm-mock',
+        text: 'SAMPLE DATA \\u2014 Apollo is not connected (APOLLO_COMPANY_SEARCH_MOCK=true). These companies are made up; selecting one only shows what would be saved.',
+      }));
+    }
+    body.appendChild(el('div', {
+      className: 'cm-status',
+      text: result.candidates.length + ' candidate(s) for \\u201C' + result.query + '\\u201D' +
+        (result.totalEntries && result.totalEntries > result.candidates.length ? ' (Apollo has ' + result.totalEntries + ' in total \\u2014 refine the name to narrow it)' : '') +
+        (result.cached ? ' \\u00B7 from cache, no credit used' : ''),
+    }));
+
+    var others = sameCompanyOthers(lead);
+    if (others.length > 0) {
+      var applyLabel = el('label', { className: 'cm-apply-all' });
+      var applyBox = el('input', { type: 'checkbox' });
+      applyBox.checked = companyMatch.applyAll;
+      applyBox.addEventListener('change', function () { companyMatch.applyAll = applyBox.checked; });
+      applyLabel.appendChild(applyBox);
+      applyLabel.appendChild(document.createTextNode(
+        'Also apply to ' + others.length + ' other lead(s) of \\u201C' + lead.company + '\\u201D without a verified website',
+      ));
+      body.appendChild(applyLabel);
+    }
+
+    var guessedDomain = isWebsiteUnverified(lead) ? websiteDomain(lead.company_website) : '';
+    var list = el('div', { className: 'cm-list' });
+    result.candidates.forEach(function (c) { list.appendChild(buildCompanyCandidateCard(c, guessedDomain)); });
+    if (result.candidates.length === 0) {
+      list.appendChild(el('div', { className: 'cm-status', text: 'Apollo found no company with this name. Try a shorter or different spelling.' }));
+    }
+    body.appendChild(list);
+  }
+
   // Sidebar Website row: the link, plus the "!" flag, an explanation and a Confirm button when
   // the website is an unverified description guess.
   function buildWebsiteDetailRow(lead) {
@@ -3374,6 +3671,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
     content.appendChild(buildDetailRow('Company', lead.company));
     content.appendChild(buildWebsiteDetailRow(lead));
+    if (lead.company && (!lead.company_website || isWebsiteUnverified(lead))) {
+      content.appendChild(buildCompanyMatchBlock(lead));
+    }
     content.appendChild(buildDetailRow('Industry', industryDetailValue(lead)));
     content.appendChild(buildDetailRow('Job link', lead.source_url, true));
     content.appendChild(buildDetailRow('Location', lead.location));
@@ -4611,8 +4911,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
 
   document.getElementById('backdrop').addEventListener('click', closeSidebar);
   document.getElementById('sidebar-close').addEventListener('click', closeSidebar);
+  document.getElementById('company-match-backdrop').addEventListener('click', closeCompanyMatchModal);
+  document.getElementById('company-match-close').addEventListener('click', closeCompanyMatchModal);
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    // The company-match modal sits on top of the sidebar — Escape closes only the modal.
+    if (document.getElementById('company-match-modal').classList.contains('open')) {
+      closeCompanyMatchModal();
+      return;
+    }
     closeSidebar();
     if (document.getElementById('export-modal').classList.contains('open')) setExportModalOpen(false);
   });

@@ -7,12 +7,14 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
 import { ApolloBulkSearchService } from './apollo-bulk-search.service';
+import { ApolloCompanySearchService } from './apollo-company-search.service';
 import { CompanyLinkedinService } from './company-linkedin.service';
 import { BackfillCompanyLinkedinDto } from './dto/backfill-company-linkedin.dto';
 import { BulkApolloSearchDto } from './dto/bulk-apollo-search.dto';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
 import { BulkPurgeLeadsDto } from './dto/bulk-purge-leads.dto';
 import { BulkRestoreLeadsDto } from './dto/bulk-restore-leads.dto';
+import { CompanyMatchDto } from './dto/company-match.dto';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { DeepenLeadDto } from './dto/deepen-lead.dto';
 import { ExportLeadsDto } from './dto/export-leads.dto';
@@ -28,6 +30,7 @@ export class LeadsController {
     private readonly leadsService: LeadsService,
     private readonly companyLinkedinService: CompanyLinkedinService,
     private readonly apolloBulkSearchService: ApolloBulkSearchService,
+    private readonly apolloCompanySearch: ApolloCompanySearchService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead.
@@ -284,6 +287,26 @@ export class LeadsController {
     @Query('confirmUnverifiedWebsite') confirmUnverifiedWebsite?: string,
   ) {
     return this.leadsService.lprSearch(id, provider, { confirmUnverifiedWebsite: confirmUnverifiedWebsite === '1' });
+  }
+
+  // Dashboard "Find company in Apollo": Apollo's candidate organizations for a company name
+  // (?q=, defaults to the lead's own company). Costs 1 Apollo credit per uncached search — only
+  // ever called on the manager's explicit click (see ApolloCompanySearchService).
+  @Get(':id/apollo-company-candidates')
+  async apolloCompanyCandidates(@Param('id') id: string, @Query('q') q?: string) {
+    const lead = await this.leadsService.findOne(id);
+    return this.apolloCompanySearch.searchByName(q ?? lead.company ?? '');
+  }
+
+  // The candidate the manager picked → saved as a confirmed website + Apollo organization id.
+  @Post(':id/company-match')
+  async companyMatch(@Param('id') id: string, @Body() body: unknown) {
+    const dto = plainToInstance(CompanyMatchDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR', 'organizationId, name and website are required');
+    }
+    return this.leadsService.applyCompanyMatch(id, dto);
   }
 
   // Dashboard "Confirm website" — clears the description-guess flag (LeadsService.confirmCompanyWebsite).
