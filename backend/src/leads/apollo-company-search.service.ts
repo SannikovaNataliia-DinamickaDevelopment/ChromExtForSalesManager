@@ -10,10 +10,13 @@ import { AppError } from '../common/app-error';
 // matches accepted). Per Apollo's docs it costs 1 credit PER PAGE of results, so: one page of
 // SEARCH_PER_PAGE, only on an explicit click, and an in-memory cache so repeating a name is free.
 //
-// UNVERIFIED against a live response (no credits to spare when this was written): field names
-// below follow Apollo's documented organization shape; the first real calls are logged in full
-// ([APOLLO DEBUG]) to confirm. APOLLO_COMPANY_SEARCH_MOCK=true serves clearly-marked sample
-// candidates instead, so the dashboard flow can be tried without a key or credits.
+// Confirmed against a live response (06.10, "EPAM Systems"): this search returns NO location,
+// employee count or industry (those need organizations/enrich — another credit per company);
+// what it does return and is shown to tell the real company from namesakes/subsidiaries:
+// website/primary_domain, linkedin_url, logo_url, founded_year, organization_revenue_printed,
+// publicly_traded_symbol/exchange, owned_by_organization_id. location/employees/industry are
+// still mapped in case an account-type result carries them. APOLLO_COMPANY_SEARCH_MOCK=true
+// serves clearly-marked sample candidates instead, so the flow can be tried without credits.
 
 const API_BASE = 'https://api.apollo.io/api/v1';
 const ORG_SEARCH_PATH = '/mixed_companies/search';
@@ -31,6 +34,12 @@ export interface ApolloCompanyCandidate {
   employees: number | null;
   industry: string | null;
   foundedYear: number | null;
+  // e.g. "5.5B" — Apollo's own formatted annual revenue.
+  revenue: string | null;
+  // e.g. "NASDAQ: EPAM" for a publicly traded company.
+  publicListing: string | null;
+  // Apollo records this organization as owned by another one (a subsidiary / acquired brand).
+  isSubsidiary: boolean;
 }
 
 export interface ApolloCompanySearchResult {
@@ -70,6 +79,8 @@ function toCandidate(raw: unknown): ApolloCompanyCandidate | null {
   const website = str(o.website_url);
   const domain = domainOf(website, str(o.primary_domain));
   const location = [str(o.city), str(o.state), str(o.country)].filter(Boolean).join(', ') || str(o.raw_address);
+  const symbol = str(o.publicly_traded_symbol);
+  const exchange = str(o.publicly_traded_exchange);
   return {
     id,
     name,
@@ -81,6 +92,10 @@ function toCandidate(raw: unknown): ApolloCompanyCandidate | null {
     employees: num(o.estimated_num_employees),
     industry: str(o.industry),
     foundedYear: num(o.founded_year),
+    revenue: str(o.organization_revenue_printed),
+    // exchange alone is not enough — Apollo filled "nasdaq" with no symbol on a namesake (live).
+    publicListing: symbol ? `${exchange ? exchange.toUpperCase() + ': ' : ''}${symbol}` : null,
+    isSubsidiary: !!str(o.owned_by_organization_id),
   };
 }
 
@@ -97,19 +112,23 @@ function mockCandidates(query: string): ApolloCompanyCandidate[] {
       id: `mock-${s}-1`, name: query, website: `https://${s}.com`, domain: `${s}.com`,
       linkedinUrl: `https://www.linkedin.com/company/${s}`, logoUrl: null, location: 'Austin, Texas, United States',
       employees: 1200, industry: 'information technology & services', foundedYear: 2004,
+      revenue: '120M', publicListing: null, isSubsidiary: false,
     },
     {
       id: `mock-${s}-2`, name: `${query} Group`, website: `https://${s}group.com`, domain: `${s}group.com`,
       linkedinUrl: null, logoUrl: null, location: 'London, England, United Kingdom',
       employees: 85, industry: 'management consulting', foundedYear: 2016,
+      revenue: '8M', publicListing: null, isSubsidiary: true,
     },
     {
       id: `mock-${s}-3`, name: `${query} Bakery`, website: `https://${s}bakery.co`, domain: `${s}bakery.co`,
       linkedinUrl: null, logoUrl: null, location: 'Lyon, France', employees: 12, industry: 'food production', foundedYear: 1998,
+      revenue: null, publicListing: null, isSubsidiary: false,
     },
     {
       id: `mock-${s}-4`, name: `${query} Holdings`, website: null, domain: null,
       linkedinUrl: null, logoUrl: null, location: null, employees: null, industry: null, foundedYear: null,
+      revenue: null, publicListing: null, isSubsidiary: false,
     },
   ];
 }

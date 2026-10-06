@@ -3005,6 +3005,35 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     return (name || '').trim().toLowerCase();
   }
 
+  // Search text for Apollo: the company name without its legal form. Apollo matches names
+  // partially, so a trailing ", Inc." only matched entries that literally contain it — live
+  // 06.10: "EPAM Systems, Inc." returned just "NAYA Technologies (part of EPAM Systems, Inc.)",
+  // not EPAM itself. Still editable in the modal.
+  var LEGAL_FORM_RE = /[,.]?\\s*\\b(inc|incorporated|llc|l\\.l\\.c|ltd|limited|corp|corporation|co|company|gmbh|ag|plc|pty|pvt|private|llp|lp|s\\.?\\s*de\\s*r\\.?\\s*l\\.?(\\s*de\\s*c\\.?v\\.?)?|s\\.?a\\.?(\\s*de\\s*c\\.?v\\.?)?|s\\.?a\\.?s|s\\.?r\\.?l|s\\.?l|b\\.?v|n\\.?v|spa|s\\.?p\\.?a)\\b\\.?\\s*$/i;
+
+  function cleanCompanyQuery(name) {
+    var q = (name || '').trim();
+    for (var i = 0; i < 3; i++) {
+      var next = q.replace(LEGAL_FORM_RE, '').replace(/[\\s,.\\-]+$/, '').trim();
+      if (next === q || !next) break;
+      q = next;
+    }
+    return q;
+  }
+
+  // Loose "is this candidate plausibly the lead's company" check (word overlap after removing
+  // legal forms) — only used to ask before applying a pick to many leads at once.
+  function companyNamesLookAlike(a, b) {
+    // Parenthesized parts are ignored: "NAYA Technologies (part of EPAM Systems, Inc.)" is NOT EPAM.
+    var words = function (s) {
+      return cleanCompanyQuery((s || '').replace(/\\([^)]*\\)/g, ' ')).toLowerCase().split(/[^a-z0-9]+/).filter(function (w) { return w.length >= 3; });
+    };
+    var wa = words(a);
+    var wb = words(b);
+    if (wa.length === 0 || wb.length === 0) return false;
+    return wa.every(function (w) { return wb.indexOf(w) !== -1; }) || wb.every(function (w) { return wa.indexOf(w) !== -1; });
+  }
+
   // Other leads of the same company that a match would also fill (no website yet, or only an
   // unverified description guess) — mirrors LeadsService.applyCompanyMatch's own filter.
   function sameCompanyOthers(lead) {
@@ -3045,7 +3074,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   }
 
   function openCompanyMatchModal(lead) {
-    companyMatch = { lead: lead, query: lead.company || '', loading: false, saving: false, result: null, error: '', notice: '', applyAll: true };
+    companyMatch = { lead: lead, query: cleanCompanyQuery(lead.company), loading: false, saving: false, result: null, error: '', notice: '', applyAll: true };
     renderCompanyMatchModal();
     setCompanyMatchOpen(true);
     var input = document.getElementById('company-match-query');
@@ -3099,6 +3128,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       renderCompanyMatchModal();
       return;
     }
+    // A pick applied to many leads at once must be the right company: ask when its Apollo name
+    // doesn't look like the lead's (e.g. a subsidiary "NAYA Technologies (part of EPAM…)").
+    if (others > 0 && !companyNamesLookAlike(lead.company, candidate.name)) {
+      var ok = window.confirm(
+        '\\u201C' + candidate.name + '\\u201D doesn\\u2019t look like \\u201C' + lead.company + '\\u201D.\\n\\n' +
+          'Save ' + candidate.website + ' for this lead AND ' + others + ' other lead(s) of \\u201C' + lead.company + '\\u201D?',
+      );
+      if (!ok) return;
+    }
     companyMatch.saving = true;
     companyMatch.error = '';
     renderCompanyMatchModal();
@@ -3148,13 +3186,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       links.appendChild(el('a', { className: 'website-link', href: candidate.linkedinUrl, target: '_blank', rel: 'noreferrer', text: 'LinkedIn' }));
     }
     info.appendChild(links);
+    // Apollo's name search returns no location/size/industry (live 06.10) — revenue, a stock
+    // listing and the subsidiary flag are what tell the real company from namesakes.
     var meta = [
+      candidate.publicListing,
+      candidate.revenue ? 'revenue ' + candidate.revenue : null,
       candidate.location,
       candidate.employees ? candidate.employees + ' employees' : null,
       candidate.industry,
       candidate.foundedYear ? 'founded ' + candidate.foundedYear : null,
     ].filter(Boolean).join(' \\u00B7 ');
     if (meta) info.appendChild(el('div', { className: 'cm-meta', text: meta }));
+    if (candidate.isSubsidiary) info.appendChild(el('span', { className: 'cm-badge', text: 'Part of another company in Apollo' }));
     if (isMatch) info.appendChild(el('span', { className: 'cm-badge', text: 'Same website as found in the job description' }));
     card.appendChild(info);
     var selectBtn = el('button', { className: 'cm-select', type: 'button', text: companyMatch.saving ? 'Saving\\u2026' : 'Select' });
