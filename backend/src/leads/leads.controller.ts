@@ -104,7 +104,7 @@ export class LeadsController {
         'leadIds must be a non-empty array of lead id strings',
       );
     }
-    return this.apolloBulkSearchService.startBatch(dto.leadIds);
+    return this.apolloBulkSearchService.startBatch(dto.leadIds, dto.confirmUnverifiedWebsites === true);
   }
 
   @Get('apollo-bulk-search/status')
@@ -275,9 +275,21 @@ export class LeadsController {
   // comment. POST (not PATCH/GET) since it triggers a real, non-idempotent OpenAI/Gemini/Claude
   // call (?provider=openai default, or gemini/claude) — writes this lead's four lpr_* fields on
   // success, nothing else; never pushed to the Google Sheet (no LPR columns there).
+  // ?confirmUnverifiedWebsite=1: the manager confirmed sending a description-guessed website to
+  // Apollo (see LeadsService.lprSearch).
   @Post(':id/lpr-search')
-  async lprSearch(@Param('id') id: string, @Query('provider') provider?: string) {
-    return this.leadsService.lprSearch(id, provider);
+  async lprSearch(
+    @Param('id') id: string,
+    @Query('provider') provider?: string,
+    @Query('confirmUnverifiedWebsite') confirmUnverifiedWebsite?: string,
+  ) {
+    return this.leadsService.lprSearch(id, provider, { confirmUnverifiedWebsite: confirmUnverifiedWebsite === '1' });
+  }
+
+  // Dashboard "Confirm website" — clears the description-guess flag (LeadsService.confirmCompanyWebsite).
+  @Patch(':id/company-website/confirm')
+  async confirmCompanyWebsite(@Param('id') id: string) {
+    return this.leadsService.confirmCompanyWebsite(id);
   }
 
   // Industry classification (24.08 follow-up) — LLM call removed (01.09 follow-up, see

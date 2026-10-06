@@ -10,7 +10,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "resync-sheet": "node dist/src/scripts/resync-sheet.js"
+    "resync-sheet": "node dist/src/scripts/resync-sheet.js",
+    "backfill-website": "node dist/src/scripts/backfill-website-from-description.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

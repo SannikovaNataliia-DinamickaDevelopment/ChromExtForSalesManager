@@ -972,6 +972,18 @@ export function renderDashboardPage(opts: { authError?: string }): string {
      Indeed-specific empty-state note (buildCompanyWebsiteTd) explaining why a field will never
      fill in, as opposed to a plain '—' meaning "not yet enriched". */
   .muted-note { color: var(--text-secondary); font-style: italic; }
+  /* Description-guessed company website (company_website_source = 'description_guess'). */
+  .unverified-flag {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; margin-left: 6px; border-radius: 50%;
+    background: var(--error-bg); color: var(--error); font-size: 11px; font-weight: 700;
+    cursor: help; vertical-align: middle;
+  }
+  .unverified-note { margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+  .confirm-website-btn {
+    margin-left: 8px; padding: 2px 8px; font-size: 12px; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--text); border: 1px solid var(--border);
+  }
   /* Sidebar's "LPR search reasoning" section (point 7) — secondary/collapsed provenance info,
      same visual weight as the old raw-response panel this replaces (see buildLprReasoningSection). */
   .lpr-reasoning-section { margin-top: 10px; }
@@ -2869,7 +2881,77 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       td.appendChild(el('span', { className: 'muted-note', text: '\\u2014 (not available on Indeed)' }));
       return td;
     }
-    return buildLinkTd(lead.company_website, lead.company_website);
+    var cell = buildLinkTd(lead.company_website, lead.company_website);
+    if (isWebsiteUnverified(lead)) cell.appendChild(buildUnverifiedFlag());
+    return cell;
+  }
+
+  // Website guessed from the job description (06.10 call) — plausible but unverified (could be an
+  // agency, a client, a parent company). Shown with a "!" mark everywhere it appears, and never
+  // sent to Apollo without an explicit confirmation (see confirmUnverifiedForApollo).
+  function isWebsiteUnverified(lead) {
+    return lead.company_website_source === 'description_guess' && !!lead.company_website;
+  }
+
+  var UNVERIFIED_WEBSITE_TEXT =
+    'Found in the job description, not verified \\u2014 it may belong to a recruiting agency, a client or a parent ' +
+    'company. Check it before an Apollo search; Apollo will ask for confirmation.';
+
+  function buildUnverifiedFlag() {
+    var flag = el('span', { className: 'unverified-flag', text: '!' });
+    flag.title = UNVERIFIED_WEBSITE_TEXT;
+    flag.setAttribute('aria-label', UNVERIFIED_WEBSITE_TEXT);
+    return flag;
+  }
+
+  // Asks before sending leads with an unverified website to Apollo. Returns true when there are
+  // none, or the manager confirmed.
+  function confirmUnverifiedForApollo(leads) {
+    var flagged = leads.filter(isWebsiteUnverified);
+    if (flagged.length === 0) return true;
+    var list = flagged.slice(0, 15).map(function (l) {
+      return '\\u2022 ' + (l.company || '(no company)') + ' \\u2014 ' + l.company_website;
+    }).join('\\n');
+    if (flagged.length > 15) list += '\\n\\u2026 and ' + (flagged.length - 15) + ' more';
+    return window.confirm(
+      (flagged.length === 1 ? 'This lead has a website' : flagged.length + ' leads have a website') +
+        ' guessed from the job description, NOT verified:\\n\\n' + list +
+        '\\n\\nApollo searches by this website \\u2014 a wrong guess spends credits on the wrong company. Send anyway?',
+    );
+  }
+
+  function confirmCompanyWebsite(lead, button) {
+    button.disabled = true;
+    button.textContent = 'Saving\\u2026';
+    apiFetch('/leads/' + lead.id + '/company-website/confirm', { method: 'PATCH' })
+      .then(function () {
+        return loadLeads().then(function () {
+          if (currentSidebarLeadId !== lead.id) return;
+          var updated = state.leads.filter(function (l) { return l.id === lead.id; })[0];
+          if (updated) openSidebar(updated);
+        });
+      })
+      .catch(function (err) {
+        button.disabled = false;
+        button.textContent = 'Confirm website';
+        window.alert('Could not confirm: ' + err.message);
+      });
+  }
+
+  // Sidebar Website row: the link, plus the "!" flag, an explanation and a Confirm button when
+  // the website is an unverified description guess.
+  function buildWebsiteDetailRow(lead) {
+    var row = buildDetailRow('Website', lead.company_website, true);
+    if (!isWebsiteUnverified(lead)) return row;
+    row.appendChild(buildUnverifiedFlag());
+    var confirmBtn = el('button', { className: 'confirm-website-btn', type: 'button', text: 'Confirm website' });
+    confirmBtn.title = 'I checked it \\u2014 this is the company\\u2019s own website';
+    confirmBtn.addEventListener('click', function () { confirmCompanyWebsite(lead, confirmBtn); });
+    row.appendChild(confirmBtn);
+    var wrap = document.createElement('div');
+    wrap.appendChild(row);
+    wrap.appendChild(el('div', { className: 'unverified-note', text: UNVERIFIED_WEBSITE_TEXT }));
+    return wrap;
   }
 
   // Only one sidebar exists — opening a new lead just replaces its content, so there's
@@ -3080,7 +3162,19 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     statusEl.textContent = 'Searching \\u2014 grounded search can take a while\\u2026';
 
     var provider = providerSelect.value;
-    apiFetch('/leads/' + lead.id + '/lpr-search?provider=' + encodeURIComponent(provider), { method: 'POST' })
+    var confirmParam = '';
+    if (provider === 'apollo' && isWebsiteUnverified(lead)) {
+      if (!confirmUnverifiedForApollo([lead])) {
+        delete lprSearchInFlight[lead.id];
+        button.disabled = false;
+        button.textContent = 'DM Search';
+        providerSelect.disabled = false;
+        statusEl.textContent = 'Cancelled \\u2014 website not confirmed.';
+        return;
+      }
+      confirmParam = '&confirmUnverifiedWebsite=1';
+    }
+    apiFetch('/leads/' + lead.id + '/lpr-search?provider=' + encodeURIComponent(provider) + confirmParam, { method: 'POST' })
       .then(function (result) {
         if (!result || !result.ok) {
           var providerLabel = LPR_PROVIDER_LABELS[result && result.provider] || 'Search';
@@ -3279,7 +3373,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     }
 
     content.appendChild(buildDetailRow('Company', lead.company));
-    content.appendChild(buildDetailRow('Website', lead.company_website, true));
+    content.appendChild(buildWebsiteDetailRow(lead));
     content.appendChild(buildDetailRow('Industry', industryDetailValue(lead)));
     content.appendChild(buildDetailRow('Job link', lead.source_url, true));
     content.appendChild(buildDetailRow('Location', lead.location));
@@ -4324,8 +4418,11 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function startBulkApolloSearch() {
     if (bulkState.inFlight) return;
 
-    var targets = getSelectedNeedsApolloSearch().map(function (l) { return l.id; });
+    var targetLeads = getSelectedNeedsApolloSearch();
+    var targets = targetLeads.map(function (l) { return l.id; });
     if (targets.length === 0) return;
+    var hasUnverified = targetLeads.some(isWebsiteUnverified);
+    if (hasUnverified && !confirmUnverifiedForApollo(targetLeads)) return;
 
     var confirmed = window.confirm(
       'Run Apollo DM Search + Industry lookup for ' + targets.length + ' lead' + (targets.length === 1 ? '' : 's') + '? ' +
@@ -4345,7 +4442,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     apiFetch('/leads/apollo-bulk-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ leadIds: targets }),
+      body: JSON.stringify({ leadIds: targets, confirmUnverifiedWebsites: hasUnverified }),
     })
       .then(function (result) {
         if (!result.started) {

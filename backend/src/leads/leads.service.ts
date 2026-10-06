@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import * as ExcelJS from 'exceljs';
 import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { AppError } from '../common/app-error';
+import { guessCompanyWebsite } from './company-website-from-description';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
@@ -253,7 +254,20 @@ export class LeadsService {
     const update: Partial<typeof job_leads.$inferInsert> = { updated_at: new Date() };
     if (patch.description !== undefined) update.description = patch.description;
     if (patch.company !== undefined) update.company = patch.company;
-    if (patch.company_website !== undefined) update.company_website = patch.company_website;
+    if (patch.company_website !== undefined) {
+      update.company_website = patch.company_website;
+      update.company_website_source = patch.company_website ? 'job_posting' : null;
+    }
+    // No website from the posting's structured data (always the case for Indeed): try the
+    // description text — stored FLAGGED as a guess (see schema.ts's companyWebsiteSourceEnum).
+    // Never overrides a website the lead already has.
+    if (!existing.company_website && !patch.company_website && patch.description) {
+      const guess = guessCompanyWebsite(patch.description, patch.company || existing.company);
+      if (guess) {
+        update.company_website = guess.website;
+        update.company_website_source = 'description_guess';
+      }
+    }
     // Truthy check (not just !== undefined): IsOptional() skips IsISO8601() validation for
     // `null` too, so patch.published_at could reach here as null — new Date(null) would
     // silently produce the Unix epoch, a wrong date that's worse than leaving it empty.
@@ -295,6 +309,41 @@ export class LeadsService {
     }
 
     return { lead: updated, destination: destinationStatus };
+  }
+
+  // One-off pass over leads that already have a description but no website (saved before the
+  // description guess existed): same guessCompanyWebsite as deepen() above, same flag. DB writes
+  // only — no destination push (Sheets sync is off by default and this is a bulk backfill).
+  async backfillWebsiteFromDescription(): Promise<{ checked: number; found: number }> {
+    const rows = await this.db
+      .select({ id: job_leads.id, company: job_leads.company, description: job_leads.description })
+      .from(job_leads)
+      .where(and(isNull(job_leads.deleted_at), isNull(job_leads.company_website), isNotNull(job_leads.description)));
+    let found = 0;
+    for (const row of rows) {
+      const guess = guessCompanyWebsite(row.description, row.company);
+      if (!guess) continue;
+      await this.db
+        .update(job_leads)
+        .set({ company_website: guess.website, company_website_source: 'description_guess', updated_at: new Date() })
+        .where(eq(job_leads.id, row.id));
+      found++;
+    }
+    return { checked: rows.length, found };
+  }
+
+  // Dashboard "Confirm website": the manager checked a description-guessed website and it is
+  // right — clears the flag so it no longer needs confirmation before Apollo.
+  async confirmCompanyWebsite(id: string) {
+    const [updated] = await this.db
+      .update(job_leads)
+      .set({ company_website_source: 'confirmed', updated_at: new Date() })
+      .where(and(eq(job_leads.id, id), isNotNull(job_leads.company_website)))
+      .returning();
+    if (!updated) {
+      throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found or has no website` });
+    }
+    return updated;
   }
 
   // Wellfound "Hiring contact" tracking — deliberately a separate endpoint from deepen() above,
@@ -421,7 +470,7 @@ export class LeadsService {
   // back to their own `raw` text (for Claude in particular, `raw` is exactly where that
   // narrative-before-JSON text already lives); Apollo DOES populate `result.reasoning` itself
   // (a short candidate/match-count summary, not model narrative — see its own searchLeadership).
-  async lprSearch(id: string, provider?: string) {
+  async lprSearch(id: string, provider?: string, options: { confirmUnverifiedWebsite?: boolean } = {}) {
     const [existing] = await this.db.select().from(job_leads).where(eq(job_leads.id, id)).limit(1);
     if (!existing) {
       throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found` });
@@ -432,6 +481,21 @@ export class LeadsService {
 
     const resolvedProvider: 'openai' | 'gemini' | 'claude' | 'apollo' =
       provider === 'gemini' || provider === 'claude' || provider === 'apollo' ? provider : 'openai';
+
+    // A description-guessed website must never reach Apollo unnoticed (06.10 call): Apollo
+    // searches by that domain, so a wrong guess spends credits on the wrong company. Refused
+    // unless the caller explicitly confirms (the dashboard asks the manager first).
+    if (
+      resolvedProvider === 'apollo' &&
+      existing.company_website_source === 'description_guess' &&
+      !options.confirmUnverifiedWebsite
+    ) {
+      throw new AppError(
+        HttpStatus.CONFLICT,
+        'UNVERIFIED_COMPANY_WEBSITE',
+        `The website for ${existing.company} (${existing.company_website}) was guessed from the job description and is not verified — confirm it before an Apollo search.`,
+      );
+    }
     const classifier =
       resolvedProvider === 'gemini'
         ? this.geminiClassifier

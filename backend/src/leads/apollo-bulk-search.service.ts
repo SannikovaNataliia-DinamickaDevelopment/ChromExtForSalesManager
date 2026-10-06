@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { AppError } from '../common/app-error';
 import { and, inArray, isNull } from 'drizzle-orm';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
@@ -85,6 +86,7 @@ export class ApolloBulkSearchService {
 
   async startBatch(
     leadIds: string[],
+    confirmUnverifiedWebsites = false,
   ): Promise<{ started: boolean; total: number; skippedIneligible: number; reason?: string; alreadyRunning?: boolean }> {
     if (this.state.running) {
       return {
@@ -97,7 +99,13 @@ export class ApolloBulkSearchService {
     }
 
     const rows = await this.db
-      .select({ id: job_leads.id, lpr_results: job_leads.lpr_results })
+      .select({
+        id: job_leads.id,
+        lpr_results: job_leads.lpr_results,
+        company: job_leads.company,
+        company_website: job_leads.company_website,
+        company_website_source: job_leads.company_website_source,
+      })
       .from(job_leads)
       .where(and(isNull(job_leads.deleted_at), inArray(job_leads.id, leadIds)));
     const byId = new Map(rows.map((r) => [r.id, r]));
@@ -126,6 +134,21 @@ export class ApolloBulkSearchService {
       };
     }
 
+    // Description-guessed websites never go to Apollo unnoticed (06.10 call) — same rule as
+    // LeadsService.lprSearch, checked here up front so a batch isn't half-run before refusing.
+    const flagged = targets
+      .map((id) => byId.get(id))
+      .filter((row) => row?.company_website_source === 'description_guess');
+    if (flagged.length > 0 && !confirmUnverifiedWebsites) {
+      throw new AppError(
+        HttpStatus.CONFLICT,
+        'UNVERIFIED_COMPANY_WEBSITE',
+        `${flagged.length} selected lead(s) have a website guessed from the job description (not verified): ` +
+          flagged.map((row) => `${row?.company} (${row?.company_website})`).join(', ') +
+          '. Confirm before running the Apollo search.',
+      );
+    }
+
     this.state = {
       ...IDLE_STATUS,
       running: true,
@@ -134,17 +157,17 @@ export class ApolloBulkSearchService {
       startedAt: new Date().toISOString(),
     };
 
-    void this.run(targets);
+    void this.run(targets, confirmUnverifiedWebsites);
 
     return { started: true, total: targets.length, skippedIneligible };
   }
 
-  private async run(targets: string[]): Promise<void> {
+  private async run(targets: string[], confirmUnverifiedWebsites: boolean): Promise<void> {
     try {
       for (let i = 0; i < targets.length; i++) {
         const id = targets[i];
         try {
-          const result = await this.leadsService.lprSearch(id, 'apollo');
+          const result = await this.leadsService.lprSearch(id, 'apollo', { confirmUnverifiedWebsite: confirmUnverifiedWebsites });
           if (result.ok) {
             if (result.people && result.people.length > 0) this.state.found++;
             else this.state.noResults++;

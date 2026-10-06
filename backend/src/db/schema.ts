@@ -38,6 +38,16 @@ export const industryEnum = pgEnum('industry', [
   'Software Development', 'Professional Services & Consulting', 'Other',
 ]);
 
+// Where a lead's company_website came from (06.10, Indeed "website from description"). The flag
+// that matters is 'description_guess': a domain picked out of the free-text job description
+// (company-website-from-description.ts) — plausible but unverified (could be a recruiting agency,
+// a client, a parent company), so it must never reach Apollo unnoticed: the dashboard marks it
+// and asks for confirmation, and the Apollo endpoints refuse it without an explicit confirm flag.
+// 'job_posting' = structured data from the posting itself (JSON-LD sameAs etc.); 'confirmed' = a
+// manager verified it. Null on rows saved before this column existed — treated like
+// 'job_posting' (every website before this feature came from structured posting data).
+export const companyWebsiteSourceEnum = pgEnum('company_website_source', ['job_posting', 'description_guess', 'confirmed']);
+
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').notNull(),
@@ -79,6 +89,7 @@ export const job_leads = pgTable(
     // Filled by the deepen step (CLAUDE.md scope B): hiringOrganization.sameAs from the
     // detail page's JSON-LD JobPosting. Sometimes a reposting board, not the true employer.
     company_website: text('company_website'),
+    company_website_source: companyWebsiteSourceEnum('company_website_source'),
     job_title: text('job_title'),
     location: text('location'),
     description: text('description'),

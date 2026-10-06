@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsString } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
 
 // Dashboard bulk "DM Search + Industry selected" (task 4 of 4, 08.09 follow-up) — same shape as
 // BackfillCompanyLinkedinDto. The service filters this down to only leads that are actually
@@ -11,4 +11,10 @@ export class BulkApolloSearchDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   leadIds!: string[];
+
+  // The manager confirmed that selected leads with a description-guessed website may go to
+  // Apollo anyway (see ApolloBulkSearchService.startBatch).
+  @IsOptional()
+  @IsBoolean()
+  confirmUnverifiedWebsites?: boolean;
 }

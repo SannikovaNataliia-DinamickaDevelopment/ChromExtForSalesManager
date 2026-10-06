@@ -1,0 +1,2 @@
+CREATE TYPE "public"."company_website_source" AS ENUM('job_posting', 'description_guess', 'confirmed');--> statement-breakpoint
+ALTER TABLE "job_leads" ADD COLUMN "company_website_source" "company_website_source";
