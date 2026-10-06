@@ -33,15 +33,23 @@ import {
   type WellfoundPaginationResult,
 } from '../../lib/wellfound-pagination';
 import {
-  runIndeedAutoPagination,
   INDEED_AUTO_BATCH_PAUSE_MAX_MS,
   INDEED_AUTO_BATCH_PAUSE_MIN_MS,
   INDEED_AUTO_BATCH_PAGES,
   INDEED_CIRCUIT_BREAKER_THRESHOLD,
   INDEED_AUTO_PAGINATION_MAX_PAGES,
   formatIndeedPageLogEntry,
-  type IndeedAutoPaginationProgress,
+  type IndeedAutoPaginationResult,
 } from '../../lib/indeed-pagination';
+import {
+  INDEED_REGION_PAUSE_MAX_MS,
+  INDEED_REGION_PAUSE_MIN_MS,
+  formatIndeedRegionDone,
+  runIndeedMultiRegion,
+  type IndeedMultiRegionProgress,
+} from '../../lib/indeed-multi-region';
+import { findIndeedRegionByHost, INDEED_REGIONS, isIndeedHost } from '../../lib/indeed-regions';
+import { INDEED_HUMAN_CHECK_WAIT_MS, subscribeIndeedHumanCheck } from '../../lib/indeed-background-window';
 import {
   deepenIndeedLeads,
   runIndeedAutoDeepenWaves,
@@ -60,16 +68,6 @@ const MULTIPAGE_HOSTNAMES = ['www.techjobs.ca', 'www.itjobs.ca'];
 // the MULTIPAGE_HOSTNAMES block above, which stays Techjobs/ITjobs-only.
 const WELLFOUND_HOSTNAME = 'wellfound.com';
 
-// DI-2966, Priority #1 (11.09 call): Indeed's own dedicated pagination flow (see
-// indeed-pagination.ts) — a third, separate block from the two above, not a variant of either.
-// A list, not a single hostname (unlike WELLFOUND_HOSTNAME above) — Indeed runs a separate
-// subdomain per country/locale. Kept in sync manually with lib/backend.ts's SUPPORTED_HOSTS and
-// entrypoints/content.ts's PARSERS/matches (see that file's comment on why this isn't a
-// wildcard). 23.09 follow-up: ua.indeed.com added after Nataliia's actual test site turned out
-// to be missing here too — the single-page "Parse current list page" button would have started
-// working from the SUPPORTED_HOSTS fix alone, but this auto-pagination block would have stayed
-// invisible on ua.indeed.com without this list also being fixed.
-const INDEED_HOSTNAMES = ['www.indeed.com', 'indeed.com', 'ca.indeed.com', 'ua.indeed.com'];
 
 // 19.08 call: the fixed-5-page-batch "Parse from here"/"Continue" flow below is replaced for
 // normal use by the automated all-pages flow (handleWellfoundAutoParse) — a significant enough
@@ -115,6 +113,30 @@ function uniqueIndeedDeepenTargets(results: unknown): { id: string; source_url: 
     byId.set(r.lead.id, { id: r.lead.id, source_url: r.lead.source_url });
   }
   return [...byId.values()];
+}
+
+// One-line outcome of a single region's pagination run (multi-region summary).
+function summarizeIndeedRegion(result: IndeedAutoPaginationResult): string {
+  // Shown side by side, not as "X of N": a page's model can include extra postings beyond the
+  // search results, so scanned may legitimately exceed Indeed's own count.
+  const reported = result.indeedTotalJobCount !== null ? ` (Indeed reports ${result.indeedTotalJobCount} results)` : '';
+  const counts =
+    `${result.postingsScanned} scanned${reported} — ${result.postingsSaved} new, ` +
+    `${result.postingsAlreadyKnown} already in DB, ${result.postingsSkippedOutOfRange} out of range`;
+  switch (result.stopReason) {
+    case 'indeed_signin_required':
+      return `${counts}. STOPPED: Indeed asked to sign in — sign into this Indeed domain in this Chrome profile and re-run.`;
+    case 'circuit_breaker':
+      return `${counts}. STOPPED after ${INDEED_CIRCUIT_BREAKER_THRESHOLD} consecutive page failures (possible bot check)${result.errorMessage ? `: ${result.errorMessage}` : ''}.`;
+    case 'window_closed':
+      return `${counts}. Interrupted (window closed).`;
+    case 'auth_error':
+      return `${counts}. Stopped: backend session expired.`;
+    case 'max_pages':
+      return `${counts}. Hit the ${INDEED_AUTO_PAGINATION_MAX_PAGES}-page safety cap.`;
+    default:
+      return `${counts}. Done (${result.pagesProcessed} page(s)).`;
+  }
 }
 
 function currentPageFromTabUrl(url: string): number {
@@ -235,7 +257,11 @@ export default function App() {
   const [indeedAutoRange, setIndeedAutoRange] = useState<DateRange | null>(null);
   const indeedAutoRunningRef = useRef(false);
   const [indeedAutoRunning, setIndeedAutoRunning] = useState(false);
-  const [indeedAutoProgress, setIndeedAutoProgress] = useState<IndeedAutoPaginationProgress | null>(null);
+  const [indeedAutoProgress, setIndeedAutoProgress] = useState<IndeedMultiRegionProgress | null>(null);
+  // Regions the multi-region run walks (checkboxes, all on by default — 02.10 decision).
+  const [indeedSelectedRegionIds, setIndeedSelectedRegionIds] = useState<string[]>(() => INDEED_REGIONS.map((r) => r.id));
+  // One line per region from the last multi-region run.
+  const [indeedRegionSummaries, setIndeedRegionSummaries] = useState<string[] | null>(null);
   const [indeedAutoSummary, setIndeedAutoSummary] = useState<string | null>(null);
   // Diagnostic per-page log of the last Indeed auto-pagination run (formatIndeedPageLogEntry
   // lines) — kept until the next run starts, same lifecycle as indeedAutoSummary.
@@ -248,6 +274,19 @@ export default function App() {
   // Wellfound, which has its own circuit-breaker/window-closed states the simpler generic
   // runDeepen/deepenLeads shape has no room for).
   const [indeedDeepening, setIndeedDeepening] = useState<IndeedDeepenProgress | null>(null);
+  // True while an Indeed run is paused on a Cloudflare check the manager has to tick herself
+  // (indeed-background-window.ts's waitForHumanCheck).
+  const [indeedHumanCheck, setIndeedHumanCheck] = useState(false);
+  // 1s clock, only while an Indeed between-regions pause is running — drives its countdown.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const indeedRegionPausing = indeedAutoProgress?.phase === 'region_pause';
+  useEffect(() => {
+    if (!indeedRegionPausing) return;
+    setNowTick(Date.now());
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [indeedRegionPausing]);
+  useEffect(() => subscribeIndeedHumanCheck(setIndeedHumanCheck), []);
   const [indeedDeepenSummary, setIndeedDeepenSummary] = useState<string | null>(null);
   // Wave-based counterpart, parallel to wellfoundAutoDeepenProgress/wellfoundAutoDeepenSummary —
   // handleIndeedAutoParse's auto-pagination can surface far more leads in one run than
@@ -361,7 +400,7 @@ export default function App() {
       // DI-2966: no bookmark concept for Indeed (runIndeedAutoPagination always walks from
       // page 1 — see that function's doc comment), so this just tracks whether the block
       // should render at all, same as wellfoundListTabUrl's role above.
-      setIndeedListTabUrl(tab?.url && INDEED_HOSTNAMES.includes(hostname) ? tab.url : null);
+      setIndeedListTabUrl(tab?.url && isIndeedHost(hostname) ? tab.url : null);
     });
   };
 
@@ -941,24 +980,27 @@ export default function App() {
       .finally(() => setIndeedAutoDeepenProgress(null));
   };
 
-  // DI-2966: Indeed's own automated multi-page parse — one click, date range picked upfront
-  // (24.09 follow-up — see runIndeedAutoPagination's doc comment for why it's simpler than
-  // Wellfound's own range filter). Auto-deepens afterward via runIndeedAutoDeepen — a
-  // Wellfound-style dedicated background-window wave orchestrator (indeed-deepen.ts's
-  // runIndeedAutoDeepenWaves), NOT the plain FetchDeepening path Techjobs/ITjobs use: confirmed
-  // live (24.09 follow-up) that FetchDeepening is 403'd by Indeed's anti-bot for every request,
-  // so Indeed needs the same real-tab architecture as Wellfound. Re-derives the active tab fresh
-  // at click time, same reason as handleWellfoundAutoParse above.
+  // Indeed multi-region parse (02.10): from whichever Indeed domain is open, walks the same search
+  // on every selected region (indeed-regions.ts) one after another — runIndeedMultiRegion, which
+  // runs each region through the same runIndeedAutoPagination a single domain used (date-range
+  // narrowing, next-link pagination, end-of-results detection), in that region's own time zone.
+  // Auto-deepens everything saved afterward via runIndeedAutoDeepen — the real-background-tab wave
+  // orchestrator (indeed-deepen.ts); a plain fetch is 403'd by Indeed. No Gemini here.
   const handleIndeedAutoParse = async () => {
     if (indeedAutoRunningRef.current) return;
     if (!indeedAutoRange) {
       setError('Pick a date range first.');
       return;
     }
+    if (indeedSelectedRegionIds.length === 0) {
+      setError('Select at least one Indeed region.');
+      return;
+    }
     indeedAutoRunningRef.current = true;
     setIndeedAutoRunning(true);
     setError(null);
     setIndeedAutoSummary(null);
+    setIndeedRegionSummaries(null);
     setIndeedPageLog(null);
     setIndeedAutoProgress(null);
 
@@ -970,64 +1012,50 @@ export default function App() {
       } catch {
         // leave hostname empty; falls through to the "not an Indeed tab" error below
       }
-      if (!tab?.url || !INDEED_HOSTNAMES.includes(hostname)) {
+      if (!tab?.url || !isIndeedHost(hostname)) {
         setError('Open an Indeed list page in this tab first.');
         return;
       }
 
-      const result = await runIndeedAutoPagination(tab.url, indeedAutoRange, (progress) => {
-        setIndeedAutoProgress(progress);
-      });
-      setIndeedPageLog(result.pageLog.map(formatIndeedPageLogEntry));
+      // The open tab's own region first (its results show up soonest), then the rest in config order.
+      const currentRegionId = findIndeedRegionByHost(hostname)?.id;
+      const regions = INDEED_REGIONS.filter((r) => indeedSelectedRegionIds.includes(r.id)).sort(
+        (x, y) => Number(y.id === currentRegionId) - Number(x.id === currentRegionId),
+      );
 
-      // scanned = new + already in DB + out of range (unique postings — see runIndeedAutoPagination).
-      const counts =
-        `${result.postingsSaved} new, ${result.postingsAlreadyKnown} already in DB, ` +
-        `${result.postingsSkippedOutOfRange} out of range` +
-        (result.indeedTotalJobCount !== null ? ` (Indeed reports ${result.indeedTotalJobCount} for this search)` : '');
-      if (result.stopReason === 'auth_error') {
+      const run = await runIndeedMultiRegion(tab.url, regions, indeedAutoRange, setIndeedAutoProgress);
+
+      setIndeedRegionSummaries(run.regions.map((r) => `${r.region.label}: ${summarizeIndeedRegion(r.result)}`));
+      setIndeedPageLog(
+        run.regions.flatMap((r) => r.result.pageLog.map((entry) => `${r.region.label} · ${formatIndeedPageLogEntry(entry)}`)),
+      );
+
+      const totals = run.regions.reduce(
+        (acc, r) => ({
+          scanned: acc.scanned + r.result.postingsScanned,
+          saved: acc.saved + r.result.postingsSaved,
+          known: acc.known + r.result.postingsAlreadyKnown,
+          out: acc.out + r.result.postingsSkippedOutOfRange,
+        }),
+        { scanned: 0, saved: 0, known: 0, out: 0 },
+      );
+      const totalsText =
+        `${totals.scanned} posting(s) scanned across ${run.regions.length} region(s): ${totals.saved} new, ` +
+        `${totals.known} already in DB, ${totals.out} out of range.`;
+      const skippedText = run.skippedRegions.length ? ` Not started: ${run.skippedRegions.map((r) => r.label).join(', ')}.` : '';
+
+      if (run.stopReason === 'auth_error') {
         setUser(null);
         setError('Please sign in again.');
-      } else if (result.stopReason === 'indeed_signin_required') {
-        setIndeedAutoSummary(
-          `Stopped — Indeed asked to sign in before showing more results. Scanned ${result.postingsScanned} posting(s) across ` +
-            `${result.pagesProcessed} page(s) before that: ${counts}. ` +
-            'Sign into Indeed in this Chrome profile (the background window shares your normal cookies), then re-run "Parse" to continue further pages.',
-        );
-      } else if (result.stopReason === 'circuit_breaker') {
-        setIndeedAutoSummary(
-          `Stopped after ${INDEED_CIRCUIT_BREAKER_THRESHOLD} consecutive page failures — possible bot-detection block. ` +
-            `Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) before that: ${counts}. ` +
-            'Already-saved leads were kept — re-run "Parse" later to continue.',
-        );
-      } else if (result.stopReason === 'window_closed') {
-        setIndeedAutoSummary(
-          `Interrupted — the background window was closed. Scanned ${result.postingsScanned} posting(s) across ${result.pagesProcessed} page(s) ` +
-            `before that: ${counts}. Already-saved leads were kept.`,
-        );
-      } else if (result.stopReason === 'max_pages') {
-        setIndeedAutoSummary(
-          `Hit the ${INDEED_AUTO_PAGINATION_MAX_PAGES}-page safety cap (not the normal stop condition). ${result.postingsScanned} ` +
-            `posting(s) scanned: ${counts}.`,
-        );
+      } else if (run.stopReason === 'window_closed') {
+        setIndeedAutoSummary(`Interrupted — the background window was closed. ${totalsText}${skippedText} Already-saved leads were kept.`);
       } else {
-        setIndeedAutoSummary(
-          `Done — reached the last results page after ${result.pagesProcessed} page(s). ${result.postingsScanned} posting(s) scanned: ${counts}.`,
-        );
+        setIndeedAutoSummary(`Done — ${totalsText}`);
       }
-      // 24.09 follow-up (deepening architecture fix): auto-deepen the newly-saved leads via
-      // runIndeedAutoDeepen — indeed-deepen.ts's real-background-tab wave orchestrator, mirroring
-      // Wellfound's runWellfoundAutoDeepenWaves. NOT the plain runDeepen/deepenLeads
-      // (FetchDeepening) path Techjobs/ITjobs use: confirmed live that FetchDeepening is 403'd by
-      // Indeed's anti-bot for every request. Not awaited — same fire-and-forget pattern as
-      // handleWellfoundAutoParse above: the pagination UI state clears normally while deepening
-      // continues independently, showing its own "don't close this window" overlay (the same
-      // IndeedBackgroundWindow mechanism indeed-pagination.ts already uses, distinct
-      // 'indeed-deepening' label — see content.ts).
-      //
-      // Deliberately does NOT chain runClassify afterward — Gemini classification for Indeed
-      // leads is a separate decision this task does not make; only auto-deepening was asked for.
-      runIndeedAutoDeepen(result.savedLeads);
+
+      // Not awaited — same fire-and-forget pattern as handleWellfoundAutoParse: the pagination UI
+      // clears while deepening continues in its own background window.
+      runIndeedAutoDeepen(run.savedLeads);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1079,6 +1107,13 @@ export default function App() {
       </div>
 
       <h1>Sales Manager — Leads</h1>
+
+      {indeedHumanCheck && (
+        <div className="parsing-banner human-check-banner" role="alert">
+          ⚠ Indeed is showing a bot check (Cloudflare). Switch to the Indeed window and tick the checkbox — the run is paused
+          and continues on its own afterwards (waits up to {INDEED_HUMAN_CHECK_WAIT_MS / 60000} min).
+        </div>
+      )}
 
       <div className="site-links">
         {QUICK_LAUNCH_SITES.map((site) => (
@@ -1194,36 +1229,82 @@ export default function App() {
 
       {indeedListTabUrl && (
         <div className="multipage-block">
-          <label>Parse Indeed pages (auto, all pages)</label>
+          <label>Parse Indeed — all regions (auto, all pages)</label>
+          <div className="region-checks">
+            {INDEED_REGIONS.map((r) => (
+              <label key={r.id} className="region-check">
+                <input
+                  type="checkbox"
+                  checked={indeedSelectedRegionIds.includes(r.id)}
+                  disabled={indeedAutoRunning}
+                  onChange={(e) =>
+                    setIndeedSelectedRegionIds((ids) => (e.target.checked ? [...ids, r.id] : ids.filter((id) => id !== r.id)))
+                  }
+                />
+                {r.label}
+              </label>
+            ))}
+          </div>
           <DateRangePicker value={indeedAutoRange} onChange={setIndeedAutoRange} disabled={indeedAutoRunning} />
           <button
             className="parse-button"
             style={{ marginTop: 8 }}
             onClick={handleIndeedAutoParse}
-            disabled={!indeedAutoRange || indeedAutoRunning || parsing}
+            disabled={!indeedAutoRange || indeedSelectedRegionIds.length === 0 || indeedAutoRunning || parsing}
           >
             {indeedAutoRunning ? 'Parsing…' : 'Parse'}
           </button>
           <div className="hint">
-            Indeed only. Walks every page of the current search via &amp;start=N in a background tab, saving only postings whose
-            published date falls in the picked range — everything else is skipped immediately, never saved. Pauses ~
-            {INDEED_AUTO_BATCH_PAUSE_MIN_MS / 1000}-{INDEED_AUTO_BATCH_PAUSE_MAX_MS / 1000}s every ~{INDEED_AUTO_BATCH_PAGES} pages to
-            avoid anti-bot detection (untested starting pace — see the code comments). Stops on its own if Indeed asks to sign in
-            (page 2+ needs a signed-in session in this Chrome profile) — sign in normally in this browser, then re-run. Automatically
-            deepens whatever it saved afterward in the same background tab (a real navigation, not a fetch — Indeed blocks plain
-            fetches to its job pages). No Gemini here.
+            Runs the search query from this tab on every checked Indeed region, one after another, always with location
+            &quot;Remote&quot;. Saves only postings published in the picked range (judged in each region&apos;s own time zone);
+            ranges starting within the last 14 days use Indeed&apos;s &quot;Date posted&quot; filter to keep runs short. Pauses
+            between pages and ~{INDEED_REGION_PAUSE_MIN_MS / 60000}-{INDEED_REGION_PAUSE_MAX_MS / 60000} min between regions
+            (anti-bot). A region that hits a sign-in wall or bot check is skipped, the rest continue. Deepens everything saved
+            afterward in a background tab. No Gemini here.
           </div>
           {indeedAutoProgress && (
-            <div className="hint">
-              {indeedAutoProgress.phase === 'batch_pause'
-                ? `Batch pause (anti-bot cooldown) — resuming automatically. ${indeedAutoProgress.postingsScanned} scanned, ` +
-                  `${indeedAutoProgress.postingsSaved} new, ${indeedAutoProgress.postingsAlreadyKnown} already in DB, ` +
-                  `${indeedAutoProgress.postingsSkippedOutOfRange} out of range so far.`
-                : `Page ${indeedAutoProgress.page} · ${indeedAutoProgress.postingsScanned} scanned, ${indeedAutoProgress.postingsSaved} new, ` +
-                  `${indeedAutoProgress.postingsAlreadyKnown} already in DB, ${indeedAutoProgress.postingsSkippedOutOfRange} out of range`}
+            <div className="hint region-status">
+              {indeedAutoProgress.phase === 'region_pause' ? (
+                <div>
+                  <strong>Pause:</strong> next region {indeedAutoProgress.nextRegion?.label} in{' '}
+                  {Math.max(0, Math.ceil(((indeedAutoProgress.pauseUntil ?? nowTick) - nowTick) / 1000))}s (anti-bot cooldown)
+                </div>
+              ) : (
+                <div>
+                  <strong>Parsing:</strong> {indeedAutoProgress.region.label} ({indeedAutoProgress.regionIndex}/
+                  {indeedAutoProgress.regionCount})
+                </div>
+              )}
+              <div>
+                {indeedAutoProgress.phase === 'region_pause'
+                  ? null
+                  : indeedAutoProgress.pagination
+                    ? (indeedAutoProgress.phase === 'batch_pause' ? 'Batch pause · ' : '') +
+                      `Page ${indeedAutoProgress.pagination.page} · ${indeedAutoProgress.pagination.postingsScanned} scanned, ` +
+                      `${indeedAutoProgress.pagination.postingsSaved} new, ${indeedAutoProgress.pagination.postingsAlreadyKnown} already in DB, ` +
+                      `${indeedAutoProgress.pagination.postingsSkippedOutOfRange} out of range`
+                    : 'Starting…'}
+              </div>
+              {indeedAutoProgress.done.length > 0 && (
+                <div>
+                  <strong>Done:</strong> {indeedAutoProgress.done.map(formatIndeedRegionDone).join(', ')}
+                </div>
+              )}
+              {indeedAutoProgress.queued.length > 0 && (
+                <div>
+                  <strong>Queued:</strong> {indeedAutoProgress.queued.map((r) => r.label).join(', ')}
+                </div>
+              )}
             </div>
           )}
           {indeedAutoSummary && <div className="hint">{indeedAutoSummary}</div>}
+          {indeedRegionSummaries && indeedRegionSummaries.length > 0 && (
+            <ul className="hint region-summary">
+              {indeedRegionSummaries.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
           {indeedPageLog && indeedPageLog.length > 0 && (
             <details className="hint page-log" open>
               <summary>Page log ({indeedPageLog.length})</summary>

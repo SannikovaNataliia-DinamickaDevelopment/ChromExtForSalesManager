@@ -25,6 +25,80 @@
 // deliberate divergence is the popup's own visibility/focus state (see ensureTab()) — everything
 // else is naming/comments only.
 
+// --- Human bot-check handling (02.10) ---------------------------------------------------------
+// Cloudflare's "tick the checkbox" check shows up on some Indeed page loads. It is NEVER solved by
+// the extension: the run pauses, the window is brought to the front, and the manager ticks it
+// herself; the run resumes once the page no longer shows the check. Live evidence (02.10 deepen
+// console): 3 leads timed out while a check was up, and a 4th failed with "message channel closed"
+// — the page reloading right after the manager ticked the box mid-extraction.
+
+// How long to wait for the manager to complete a check before giving up on that page.
+export const INDEED_HUMAN_CHECK_WAIT_MS = 180_000;
+const HUMAN_CHECK_POLL_MS = 2_000;
+
+type HumanCheckListener = (waiting: boolean) => void;
+const humanCheckListeners = new Set<HumanCheckListener>();
+
+// The side panel subscribes once to show a prominent "tick the check in the Indeed window" notice
+// while any Indeed run (pagination or deepening) is waiting on one.
+export function subscribeIndeedHumanCheck(listener: HumanCheckListener): () => void {
+  humanCheckListeners.add(listener);
+  return () => humanCheckListeners.delete(listener);
+}
+
+function notifyHumanCheck(waiting: boolean): void {
+  for (const listener of humanCheckListeners) listener(waiting);
+}
+
+interface DetectChallengeResponse {
+  ok?: boolean;
+  challenge?: string | null;
+}
+
+// Is a bot check showing in the window right now? A messaging failure (page mid-reload, content
+// script not attached yet) answers "unknown" as null.
+async function probeChallenge(win: IndeedBackgroundWindow): Promise<string | null | undefined> {
+  try {
+    const res = await win.sendMessage<DetectChallengeResponse>({ type: 'DETECT_BOT_CHALLENGE' });
+    return res?.challenge ?? null;
+  } catch (err) {
+    if (err instanceof IndeedBackgroundWindowClosedError) throw err;
+    return undefined;
+  }
+}
+
+/**
+ * Called once a page is known (or suspected) to be showing a bot check. Brings the window to the
+ * front and polls until the check is gone — the manager ticked it and the page reloaded — or
+ * INDEED_HUMAN_CHECK_WAIT_MS passes. Returns true when the check cleared (caller re-reads the
+ * page), false on timeout. Throws IndeedBackgroundWindowClosedError if the window is closed.
+ */
+export async function waitForHumanCheck(win: IndeedBackgroundWindow): Promise<boolean> {
+  notifyHumanCheck(true);
+  await win.bringToFront();
+  const deadline = Date.now() + INDEED_HUMAN_CHECK_WAIT_MS;
+  try {
+    while (Date.now() < deadline) {
+      await win.delayOrThrowIfClosed(HUMAN_CHECK_POLL_MS);
+      const challenge = await probeChallenge(win);
+      // null = content script answered and sees no check; undefined = page still reloading.
+      if (challenge === null) return true;
+    }
+    return false;
+  } finally {
+    notifyHumanCheck(false);
+  }
+}
+
+// Convenience for callers that just loaded a page: if a check is up, wait for the manager.
+// Returns false only when a check was up and wasn't completed in time.
+export async function passHumanCheckIfShown(win: IndeedBackgroundWindow): Promise<boolean> {
+  const challenge = await probeChallenge(win);
+  if (!challenge) return true;
+  console.warn(`[Indeed] Bot check shown (${challenge}) — waiting for the manager to complete it.`);
+  return waitForHumanCheck(win);
+}
+
 export class IndeedBackgroundWindowClosedError extends Error {
   constructor() {
     super('The Indeed background window was closed before this run finished.');
@@ -154,6 +228,17 @@ export class IndeedBackgroundWindow {
     }
     // Best-effort even after exhausting retries — a failed overlay injection must never abort
     // real work. The overlay is a visual warning, not a safety mechanism.
+  }
+
+  // Raise the window and flash its taskbar entry so the manager notices a bot check waiting on
+  // her. Best-effort.
+  async bringToFront(): Promise<void> {
+    if (this.closed || this.windowId === null) return;
+    try {
+      await chrome.windows.update(this.windowId, { focused: true, drawAttention: true, state: 'normal' });
+    } catch {
+      // Window gone or not focusable — the side panel notice still shows.
+    }
   }
 
   // Re-sends the current overlay text to the tab's CURRENTLY loaded page, without navigating —

@@ -1,6 +1,11 @@
 import { AuthError, saveLeads, type LeadSaveResult } from './api';
-import { formatKyivDate } from './format-time';
-import { IndeedBackgroundWindow, IndeedBackgroundWindowClosedError, pacedDelay } from './indeed-background-window';
+import {
+  IndeedBackgroundWindow,
+  IndeedBackgroundWindowClosedError,
+  pacedDelay,
+  passHumanCheckIfShown,
+} from './indeed-background-window';
+import { formatDateInZone } from './indeed-regions';
 import { isWithinRange } from './wellfound-relative-date';
 import type { JobLead } from './types';
 
@@ -112,10 +117,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // the largest bucket can't be expressed — `fromage` is removed then (including one the manager
 // set manually, which would otherwise silently cut the range short), and the run walks the full
 // result set as before.
-function applyDateRangeFilter(baseUrl: string, rangeStart: string): string {
+function applyDateRangeFilter(baseUrl: string, rangeStart: string, timeZone: string): string {
   const url = new URL(baseUrl);
-  const todayKyiv = formatKyivDate(new Date().toISOString());
-  const daysBack = Math.round((Date.parse(todayKyiv) - Date.parse(rangeStart)) / DAY_MS) + 1;
+  const today = formatDateInZone(new Date().toISOString(), timeZone);
+  const daysBack = Math.round((Date.parse(today) - Date.parse(rangeStart)) / DAY_MS) + 1;
   const bucket = INDEED_FROMAGE_BUCKETS.find((b) => b >= daysBack);
   if (bucket) url.searchParams.set('fromage', String(bucket));
   else url.searchParams.delete('fromage');
@@ -168,8 +173,9 @@ interface LoadPageResult {
 
 // Thin wrapper around IndeedBackgroundWindow, mirroring wellfound-pagination.ts's
 // BackgroundListTab shape — keeps the "navigate, settle, check sign-in wall, PARSE_LIST" sequence
-// in one place.
-class IndeedBackgroundListTab {
+// in one place. Exported so a multi-region run (indeed-multi-region.ts) can reuse ONE window across
+// every region instead of opening a new focused popup per region.
+export class IndeedBackgroundListTab {
   private readonly win = new IndeedBackgroundWindow('indeed-pagination');
 
   // Navigates to the given list page URL. If the tab lands on the sign-in wall
@@ -188,6 +194,11 @@ class IndeedBackgroundListTab {
     }
     if (isIndeedJobDetailUrl(finalUrl)) {
       throw new Error('Indeed redirected to a single job page instead of the results list.');
+    }
+    // Cloudflare check instead of results: pause until the manager ticks it in the raised window
+    // (never solved automatically), then read the page it reloads into.
+    if (!(await passHumanCheckIfShown(this.win))) {
+      throw new Error('Bot check (Cloudflare) was not completed within 3 minutes.');
     }
 
     const res = await this.win.sendMessage<ParseListResponse>({ type: 'PARSE_LIST' });
@@ -278,7 +289,7 @@ export interface IndeedPageLogEntry {
   // Of the in-range ones: newly inserted vs. already in the DB (dedup update).
   saved: number;
   alreadyKnown: number;
-  // Kyiv-date span (YYYY-MM-DD) of every posting on the page — shows at a glance whether a
+  // Date span (YYYY-MM-DD, in the run's time zone) of every posting on the page — shows at a glance whether a
   // sort=date page is newer/older than the picked range, or identical to the previous page.
   newestDate: string | null;
   oldestDate: string | null;
@@ -292,20 +303,20 @@ export interface IndeedPageLogEntry {
 
 const PAGE_LOG_SAMPLE_SIZE = 3;
 
-function postingSample(leads: JobLead[]): string[] {
+function postingSample(leads: JobLead[], timeZone: string): string[] {
   return leads.slice(0, PAGE_LOG_SAMPLE_SIZE).map((l) => {
     const snap = (l.snapshot ?? {}) as { formattedRelativeTime?: unknown; createDate?: unknown; pubDate?: unknown };
     const rel = typeof snap.formattedRelativeTime === 'string' ? snap.formattedRelativeTime : '?';
-    const raw = (v: unknown) => (typeof v === 'string' ? formatKyivDate(v) : '') || '-';
+    const raw = (v: unknown) => (typeof v === 'string' ? formatDateInZone(v, timeZone) : '') || '-';
     return (
-      `"${(l.job_title ?? '').slice(0, 30)}" shown "${rel}" → used ${formatKyivDate(l.published_at) || '-'} ` +
+      `"${(l.job_title ?? '').slice(0, 30)}" shown "${rel}" → used ${formatDateInZone(l.published_at, timeZone) || '-'} ` +
       `(createDate ${raw(snap.createDate)}, pubDate ${raw(snap.pubDate)})`
     );
   });
 }
 
-function kyivDateSpan(leads: JobLead[]): { newestDate: string | null; oldestDate: string | null } {
-  const dates = leads.map((l) => formatKyivDate(l.published_at)).filter(Boolean).sort();
+function dateSpan(leads: JobLead[], timeZone: string): { newestDate: string | null; oldestDate: string | null } {
+  const dates = leads.map((l) => formatDateInZone(l.published_at, timeZone)).filter(Boolean).sort();
   return { newestDate: dates[dates.length - 1] ?? null, oldestDate: dates[0] ?? null };
 }
 
@@ -359,7 +370,7 @@ export interface IndeedAutoPaginationResult {
  * check because its list only exposes a relative-time approximation when the precise
  * __NEXT_DATA__ extraction fails. Indeed's `published_at` (parsers/indeed.ts's `createDate`
  * mapping) is confirmed reliable and present for essentially every posting (see that file), so
- * this only needs one direct comparison — `isWithinRange(formatKyivDate(lead.published_at),
+ * this only needs one direct comparison — `isWithinRange(formatDateInZone(lead.published_at, timeZone),
  * range.start, range.end)` — reusing the exact same generic comparator Wellfound's filter uses
  * (isWithinRange, wellfound-relative-date.ts — a plain date-range check despite the filename,
  * not Wellfound-specific logic). The one deliberate extra: a lead with a null `published_at`
@@ -393,12 +404,30 @@ export interface IndeedAutoPaginationResult {
  * but with Indeed-specific, untested-starting-guess constants — see this file's top for why
  * these are NOT copied from Wellfound's own tuned values.
  */
+export interface IndeedAutoPaginationOptions {
+  // IANA zone the picked range is evaluated in (the region's own — see indeed-regions.ts).
+  // Defaults to Kyiv, the original single-domain behaviour.
+  timeZone?: string;
+  // Reuse a caller-owned background window (multi-region run); this function then never closes it.
+  tab?: IndeedBackgroundListTab;
+  // Prefix for console log lines, e.g. the region label.
+  logLabel?: string;
+  // Text prepended to the background window's overlay progress (multi-region status: which
+  // region is running, which are done, which are queued).
+  overlayPrefix?: string;
+}
+
 export async function runIndeedAutoPagination(
   baseUrl: string,
   range: { start: string; end: string },
   onProgress: (progress: IndeedAutoPaginationProgress) => void,
+  options: IndeedAutoPaginationOptions = {},
 ): Promise<IndeedAutoPaginationResult> {
-  const tab = new IndeedBackgroundListTab();
+  const timeZone = options.timeZone ?? 'Europe/Kyiv';
+  const ownsTab = !options.tab;
+  const tab = options.tab ?? new IndeedBackgroundListTab();
+  const progressPrefix = options.overlayPrefix ?? (options.logLabel ? `${options.logLabel}: ` : '');
+  const logPrefix = options.logLabel ? `[Indeed pagination · ${options.logLabel}]` : '[Indeed pagination]';
 
   let start = 0;
   let page = 1;
@@ -434,12 +463,12 @@ export async function runIndeedAutoPagination(
     onProgress({ page, postingsScanned, postingsSaved, postingsAlreadyKnown, postingsSkippedOutOfRange, phase });
   const logPage = (entry: IndeedPageLogEntry) => {
     pageLog.push(entry);
-    console.log(`[Indeed pagination] ${formatIndeedPageLogEntry(entry)}`, entry);
+    console.log(`${logPrefix} ${formatIndeedPageLogEntry(entry)}`, entry);
   };
   const emptyCounts = { postings: 0, unseen: 0, inRange: 0, outOfRange: 0, saved: 0, alreadyKnown: 0, newestDate: null, oldestDate: null, sample: [] };
 
-  baseUrl = applyDateRangeFilter(baseUrl, range.start);
-  console.log(`[Indeed pagination] run started — base ${baseUrl}, range ${range.start}…${range.end} (Kyiv dates)`);
+  baseUrl = applyDateRangeFilter(baseUrl, range.start, timeZone);
+  console.log(`${logPrefix} run started — base ${baseUrl}, range ${range.start}…${range.end} (${timeZone} dates)`);
 
   try {
     while (page <= INDEED_AUTO_PAGINATION_MAX_PAGES) {
@@ -492,12 +521,12 @@ export async function runIndeedAutoPagination(
 
       if (indeedTotalJobCount === null && totalJobCount !== null) {
         indeedTotalJobCount = totalJobCount;
-        console.log(`[Indeed pagination] Indeed reports ${totalJobCount} result(s) for this search`);
+        console.log(`${logPrefix} Indeed reports ${totalJobCount} result(s) for this search`);
       }
 
       const pageEntry: IndeedPageLogEntry = {
         page, start, requestedUrl: pageUrl, urlSource, nextPageUrl, finalUrl, outcome: 'parsed', ...emptyCounts,
-        postings: leads.length, ...kyivDateSpan(leads), sample: postingSample(leads),
+        postings: leads.length, ...dateSpan(leads, timeZone), sample: postingSample(leads, timeZone),
       };
 
       // Primary "no more pages" signal — see this function's doc comment for why an empty
@@ -528,7 +557,7 @@ export async function runIndeedAutoPagination(
       // single direct comparison rather than Wellfound's precise-or-approximate fallback chain.
       const inRange = newLeads.filter((lead) => {
         if (!lead.published_at) return true; // no date to judge by — fail open, never silently drop a lead
-        return isWithinRange(formatKyivDate(lead.published_at), range.start, range.end);
+        return isWithinRange(formatDateInZone(lead.published_at, timeZone), range.start, range.end);
       });
       const outOfRangeCount = newLeads.length - inRange.length;
       pageEntry.inRange = inRange.length;
@@ -582,10 +611,11 @@ export async function runIndeedAutoPagination(
       //    last page with rotating sponsored postings — the exact "zero unseen" case is caught
       //    earlier, before saving).
       lowNoveltyPages = newLeads.length <= INDEED_LOW_NOVELTY_MAX_UNSEEN ? lowNoveltyPages + 1 : 0;
-      //  - every result Indeed reported for the search has now been seen (avoids even one extra
-      //    request for a page Indeed would only re-serve).
+      // NOT "seen >= totalJobCount": confirmed live 02.10 (www.indeed.com) that a page's model can
+      // carry extra postings beyond the search results themselves (35 on a 15-result page 1), so
+      // the seen count overtook Indeed's reported total (39) on page 2 while a next link still
+      // existed — that check ended the run early. totalJobCount stays informational only.
       const isLastPage =
-        (indeedTotalJobCount !== null && seenJobKeys.size >= indeedTotalJobCount) ||
         (sawNextLink && !nextPageUrl) ||
         (!!nextPageUrl && visitedUrls.has(nextPageUrl)) ||
         lowNoveltyPages >= INDEED_LOW_NOVELTY_PAGES_TO_STOP;
@@ -604,7 +634,7 @@ export async function runIndeedAutoPagination(
       }
 
       tab.setProgress(
-        `Page ${page} scanned — ${postingsScanned} posting(s) seen, ${postingsSaved} new, ${postingsAlreadyKnown} already in DB, ` +
+        `${progressPrefix}Page ${page} scanned — ${postingsScanned} posting(s) seen, ${postingsSaved} new, ${postingsAlreadyKnown} already in DB, ` +
           `${postingsSkippedOutOfRange} out of range so far`,
       );
       emitProgress('scanning');
@@ -614,7 +644,7 @@ export async function runIndeedAutoPagination(
       if (pagesSinceLastPause >= INDEED_AUTO_BATCH_PAGES) {
         pagesSinceLastPause = 0;
         tab.setProgress(
-          `Batch pause (anti-bot cooldown) — resuming automatically. ${postingsScanned} posting(s) scanned so far, ${postingsSaved} new, ` +
+          `${progressPrefix}Batch pause (anti-bot cooldown) — resuming automatically. ${postingsScanned} posting(s) scanned so far, ${postingsSaved} new, ` +
             `${postingsAlreadyKnown} already in DB, ${postingsSkippedOutOfRange} out of range.`,
         );
         await tab.refreshOverlay();
@@ -633,7 +663,7 @@ export async function runIndeedAutoPagination(
       stopReason = 'max_pages';
     }
   } finally {
-    await tab.close();
+    if (ownsTab) await tab.close();
   }
 
   // Stops that happen outside a page attempt (window closed during a pause, the max-pages cap)
@@ -641,7 +671,7 @@ export async function runIndeedAutoPagination(
   const lastEntry = pageLog[pageLog.length - 1];
   if (lastEntry && !lastEntry.stopReason) lastEntry.stopReason = stopReason;
   console.log(
-    `[Indeed pagination] run finished — stop: ${stopReason}, ${pagesProcessed} page(s) processed, ${postingsScanned} unique posting(s) ` +
+    `${logPrefix} run finished — stop: ${stopReason}, ${pagesProcessed} page(s) processed, ${postingsScanned} unique posting(s) ` +
       `scanned of ${indeedTotalJobCount ?? '?'} reported by Indeed (${postingsSaved} new, ${postingsAlreadyKnown} already in DB, ` +
       `${postingsSkippedOutOfRange} out of range)` +
       (errorMessage ? `, last error: ${errorMessage}` : ''),

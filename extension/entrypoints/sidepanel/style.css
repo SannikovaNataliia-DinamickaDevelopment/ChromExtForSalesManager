@@ -441,3 +441,29 @@ h1 {
 .page-log summary {
   cursor: pointer;
 }
+
+/* Indeed multi-region: region checkboxes and per-region outcome lines. */
+.region-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 8px;
+}
+.region-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.region-summary {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+/* Indeed run paused on a Cloudflare check the manager must tick herself. */
+.human-check-banner {
+  border-width: 2px;
+  font-size: 13px;
+  font-weight: 600;
+}

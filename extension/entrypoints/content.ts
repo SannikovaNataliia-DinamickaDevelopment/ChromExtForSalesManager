@@ -4,6 +4,7 @@ import { WellfoundListParser } from '../lib/parsers/wellfound';
 import { findIndeedNextPageUrl, findIndeedTotalJobCount, IndeedListParser } from '../lib/parsers/indeed';
 import { extractIndeedJobDescription } from '../lib/indeed-detail-extract';
 import { extractWellfoundJobPosting } from '../lib/wellfound-detail-extract';
+import { isIndeedHost } from '../lib/indeed-regions';
 import type { SiteParser } from '../lib/types';
 
 // NFR-14: parser adapters are isolated — the coordinator below only ever picks
@@ -11,22 +12,8 @@ import type { SiteParser } from '../lib/types';
 // itjobs.ca is the same template as techjobs.ca (confirmed against spikes/itjobs_list.html
 // and spikes/itjobs_detail.html — identical card markup and JSON-LD JobPosting shape), so it
 // reuses TechjobsListParser with its own source_site/base_url instead of a new parser class.
-// DI-2966, Priority #1 (11.09 call). Indeed runs a separate subdomain per country/locale
-// (ua.indeed.com, ca.indeed.com, ... dozens more) — the 14.09 spike only confirmed
-// www.indeed.com, which is why testing on ua.indeed.com (23.09 follow-up: Nataliia's actual
-// test site) initially found no parsing support at all: neither PARSERS below nor matches/
-// host_permissions/SUPPORTED_HOSTS had any entry for it. Fixed by explicitly listing the
-// hostnames actually needed so far, same "one entry per real hostname" convention as
-// devitjobs.nl/www.devitjobs.nl below — NOT a wildcard match pattern, since PARSERS is a plain
-// dictionary keyed by exact location.hostname; a `*.indeed.com` match pattern in matches/
-// host_permissions alone would get the content script injected but this lookup would still fail
-// with "No parser registered for ..." on any hostname not listed here. This list is NOT
-// exhaustive — hitting a different Indeed locale needs its hostname added here AND to
-// content_scripts' matches below AND to wxt.config.ts's host_permissions AND to
-// lib/backend.ts's SUPPORTED_HOSTS (all four must stay in sync; this file's dispatcher can't
-// parse a hostname the manifest never injected the content script into in the first place). One
-// shared instance across every hostname — IndeedListParser is stateless/hostname-agnostic
-// (unlike TechjobsListParser above, it takes no per-deployment constructor args).
+// DI-2966: one shared IndeedListParser for every Indeed domain (stateless, hostname-agnostic) —
+// picked by isIndeedHost (indeed-regions.ts) rather than listed per hostname in PARSERS below.
 const indeedParser = new IndeedListParser();
 
 const PARSERS: Record<string, SiteParser> = {
@@ -35,11 +22,11 @@ const PARSERS: Record<string, SiteParser> = {
   'www.devitjobs.nl': new DevitjobsListParser(),
   'devitjobs.nl': new DevitjobsListParser(),
   'wellfound.com': new WellfoundListParser(),
-  'www.indeed.com': indeedParser,
-  'indeed.com': indeedParser,
-  'ca.indeed.com': indeedParser,
-  'ua.indeed.com': indeedParser,
 };
+
+function parserForHost(hostname: string): SiteParser | undefined {
+  return PARSERS[hostname] ?? (isIndeedHost(hostname) ? indeedParser : undefined);
+}
 
 // CLAUDE.md scope D (Wellfound deepening): how long to poll a detail page's DOM for the
 // JSON-LD JobPosting before giving up. Not just tabs.onUpdated 'complete' — Next.js hydration
@@ -94,16 +81,40 @@ async function pollForWellfoundDetail() {
 const INDEED_POLL_INTERVAL_MS = 400;
 const INDEED_POLL_TIMEOUT_MS = 15000;
 
+// Bot check shown instead of the real page (02.10: the manager saw Cloudflare's "tick the
+// checkbox" check on some Indeed detail pages during deepening — those leads then timed out empty).
+// Never solved automatically: callers pause the run and wait for the manager to tick it herself
+// (see indeed-background-window.ts's waitForHumanCheck). UNVERIFIED markers — no captured copy of
+// Indeed's challenge page yet; a broad set of Cloudflare's standard signals. The page title is
+// included in timeout errors below so a miss here is diagnosable from the console.
+function detectBotChallenge(): string | null {
+  const title = document.title || '';
+  if (/just a moment|attention required|security check|verification required|verify you are human/i.test(title)) {
+    return `page title "${title}"`;
+  }
+  const widget = document.querySelector(
+    'iframe[src*="challenges.cloudflare.com"], .cf-turnstile, #challenge-form, #cf-challenge-running, input[name="cf-turnstile-response"]',
+  );
+  return widget ? 'Cloudflare check widget on the page' : null;
+}
+
 async function pollForIndeedDetail() {
   const start = Date.now();
   while (Date.now() - start < INDEED_POLL_TIMEOUT_MS) {
     const detail = extractIndeedJobDescription(document);
     if (detail) return { ok: true as const, detail };
+    const challenge = detectBotChallenge();
+    if (challenge) {
+      hideBackgroundOverlay();
+      return { ok: false as const, challenge, error: `Bot check shown (${challenge}).` };
+    }
     await sleep(INDEED_POLL_INTERVAL_MS);
   }
   return {
     ok: false as const,
-    error: 'Timed out waiting for job description data (15s) — possibly a bot-detection challenge page, a removed posting, or a page-structure change.',
+    error:
+      `Timed out waiting for job description data (15s) on page "${document.title}" — possibly a bot-detection ` +
+      'challenge page, a removed posting, or a page-structure change.',
   };
 }
 
@@ -188,7 +199,7 @@ function createFullPageOverlay(hostId: string, message: string, blocksClicks: bo
         font-weight: 500;
         line-height: 1.4;
         text-align: center;
-        max-width: 320px;
+        max-width: 440px;
         box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
       }
       .spinner {
@@ -257,7 +268,20 @@ const BACKGROUND_OVERLAY_LABELS: Record<string, string> = {
   'indeed-deepening': 'Indeed deepening',
 };
 
+function hideBackgroundOverlay(): void {
+  document.getElementById(BACKGROUND_OVERLAY_HOST_ID)?.remove();
+}
+
 function showBackgroundOverlay(label: string, progress: string): void {
+  // Never over a bot check: the backdrop/card would sit on top of the checkbox the manager has
+  // to tick (see detectBotChallenge).
+  if (detectBotChallenge()) {
+    hideBackgroundOverlay();
+    return;
+  }
+  // Replace rather than keep: createFullPageOverlay is a no-op when the host already exists, so a
+  // mid-page refresh (refreshOverlay during a pause) would otherwise keep the stale progress text.
+  hideBackgroundOverlay();
   const what = BACKGROUND_OVERLAY_LABELS[label] ?? 'Background parsing';
   const progressSuffix = progress ? ` (${progress})` : '';
   createFullPageOverlay(
@@ -274,21 +298,16 @@ export default defineContentScript({
     'https://www.devitjobs.nl/*',
     'https://devitjobs.nl/*',
     'https://wellfound.com/*',
-    // DI-2966: every Indeed hostname registered in PARSERS above, same list, kept in sync
-    // manually (see that const's comment). Deliberately NOT secure.indeed.com (the sign-in wall
-    // hostname, see indeed-pagination.ts's isIndeedSignInWall) or a `*.indeed.com` wildcard —
-    // secure.indeed.com must stay unmatched so landing there is unambiguous instead of racing an
-    // injected-but-irrelevant content script, and a wildcard would inject on locales PARSERS
-    // above doesn't actually recognize (see that const's comment for why that alone isn't enough).
-    'https://www.indeed.com/*',
-    'https://indeed.com/*',
-    'https://ca.indeed.com/*',
-    'https://ua.indeed.com/*',
+    // Every Indeed domain (02.10 multi-region) — parserForHost handles any of them.
+    'https://*.indeed.com/*',
   ],
+  // The sign-in wall host stays unmatched, so landing there is unambiguous (no content script to
+  // answer PARSE_LIST) — see indeed-pagination.ts's isIndeedSignInWall.
+  excludeMatches: ['https://secure.indeed.com/*'],
   main() {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'PARSE_LIST') {
-        const parser = PARSERS[location.hostname];
+        const parser = parserForHost(location.hostname);
         if (!parser) {
           sendResponse({ ok: false, error: `No parser registered for ${location.hostname}.` });
           return;
@@ -327,6 +346,13 @@ export default defineContentScript({
       if (message?.type === 'HIDE_PARSE_OVERLAY') {
         hideParseOverlay();
         sendResponse({ ok: true });
+        return;
+      }
+
+      if (message?.type === 'DETECT_BOT_CHALLENGE') {
+        const challenge = detectBotChallenge();
+        if (challenge) hideBackgroundOverlay();
+        sendResponse({ ok: true, challenge });
         return;
       }
 

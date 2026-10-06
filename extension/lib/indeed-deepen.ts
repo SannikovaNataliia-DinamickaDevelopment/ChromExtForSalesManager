@@ -1,6 +1,12 @@
 import { deepenLead } from './api';
 import type { DeepenedFields, DeepeningStrategy, DeepeningTarget } from './deepening-strategy';
-import { IndeedBackgroundWindow, IndeedBackgroundWindowClosedError, pacedDelay } from './indeed-background-window';
+import {
+  IndeedBackgroundWindow,
+  IndeedBackgroundWindowClosedError,
+  pacedDelay,
+  passHumanCheckIfShown,
+  waitForHumanCheck,
+} from './indeed-background-window';
 import {
   INDEED_AUTO_BATCH_PAUSE_MAX_MS,
   INDEED_AUTO_BATCH_PAUSE_MIN_MS,
@@ -62,7 +68,18 @@ function sleep(ms: number): Promise<void> {
 interface ExtractResponse {
   ok: boolean;
   detail?: DeepenedFields;
+  // Set by content.ts when a bot check is showing instead of the job page.
+  challenge?: string;
   error?: string;
+}
+
+// After a bot check clears, how many times one lead re-reads its page before giving up.
+const MAX_EXTRACT_ATTEMPTS = 3;
+
+// The extension-messaging errors seen when the page navigates/reloads while extraction is
+// mid-poll — live 02.10: right after the manager ticked a Cloudflare check.
+function isPageReloadError(message: string): boolean {
+  return /message channel closed|Receiving end does not exist|back\/forward cache/i.test(message);
 }
 
 /**
@@ -80,23 +97,52 @@ export class IndeedTabDeepening implements DeepeningStrategy {
   // lastNotFound is (Indeed's removed-posting behavior is unconfirmed).
   private lastFailureReason: string | null = null;
 
+  // A Cloudflare bot check on the page pauses here until the manager ticks it in the (raised)
+  // window — see waitForHumanCheck — then the page is re-read; never solved automatically.
   async deepenOne(target: DeepeningTarget): Promise<DeepenedFields | null> {
     this.lastFailureReason = null;
     await this.win.navigate(target.source_url);
     await sleep(CONTENT_SCRIPT_SETTLE_MS);
 
-    const res = await Promise.race<ExtractResponse>([
-      this.win.sendMessage<ExtractResponse>({ type: 'EXTRACT_INDEED_DETAIL' }),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Extraction timed out.')), EXTRACT_TIMEOUT_MS);
-      }),
-    ]);
+    for (let attempt = 1; attempt <= MAX_EXTRACT_ATTEMPTS; attempt++) {
+      let res: ExtractResponse;
+      let reloaded = false;
+      try {
+        res = await Promise.race<ExtractResponse>([
+          this.win.sendMessage<ExtractResponse>({ type: 'EXTRACT_INDEED_DETAIL' }),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Extraction timed out.')), EXTRACT_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (err) {
+        if (err instanceof IndeedBackgroundWindowClosedError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        if (!isPageReloadError(message)) throw err;
+        res = { ok: false, error: message };
+        reloaded = true;
+      }
 
-    if (!res?.ok) {
+      if (res?.ok && res.detail) return res.detail;
+
+      if (res?.challenge || reloaded) {
+        // A check is up (wait for the manager), or the page just reloaded — likely right after
+        // she ticked one; passHumanCheckIfShown waits only if a check is (still) showing.
+        if (reloaded) await sleep(CONTENT_SCRIPT_SETTLE_MS);
+        const cleared = res?.challenge ? await waitForHumanCheck(this.win) : await passHumanCheckIfShown(this.win);
+        if (!cleared) {
+          this.lastFailureReason = 'Bot check (Cloudflare) was not completed within 3 minutes.';
+          return null;
+        }
+        await sleep(CONTENT_SCRIPT_SETTLE_MS);
+        continue;
+      }
+
       this.lastFailureReason = res?.error ?? 'Extraction failed for an unknown reason.';
+      return null;
     }
 
-    return res?.ok && res.detail ? res.detail : null;
+    this.lastFailureReason = `Page still unreadable after ${MAX_EXTRACT_ATTEMPTS} attempts (bot checks / reloads).`;
+    return null;
   }
 
   get wasClosedByUser(): boolean {
