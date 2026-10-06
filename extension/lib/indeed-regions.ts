@@ -36,9 +36,10 @@ export const INDEED_REGION_GROUPS: IndeedRegionGroup[] = ['Americas', 'Europe', 
 // not my.indeed.com.
 //
 // Survey 06.10 (q=software engineer, l=Remote, last 7 days) confirmed the usual list model on
-// ar, au, at, bh, be, br, ca, cl, cn, co, cr, cz, dk, ec, eg, fi, de, gr, hk, hu, jp, us.
-// fr.indeed.com rendered WITHOUT #mosaic-data (different page structure — not parseable yet).
-// The survey stopped at a Cloudflare check on in/id/ie/il/it; the rest are unverified.
+// ar, au, at, bh, be, br, ca, cl, cn, co, cr, cz, dk, ec, eg, fi, fr, de, gr, hk, hu, jp, us (fr
+// was first misread as "no #mosaic-data" — the page hadn't finished loading during a fast survey;
+// rechecked the same day: normal model, 9 results). The survey stopped at a Cloudflare check on
+// in/id/ie/il/it; live runs since confirmed br, cl, it, mx, nz, no, om, ae, be, au, uk, de.
 export const INDEED_REGIONS: IndeedRegion[] = [
   { id: 'us', host: 'www.indeed.com', label: 'United States', group: 'Americas', timeZone: 'America/New_York', remoteLocation: 'Remote' },
   { id: 'ca', host: 'ca.indeed.com', label: 'Canada', group: 'Americas', timeZone: 'America/Toronto', remoteLocation: 'Remote' },
