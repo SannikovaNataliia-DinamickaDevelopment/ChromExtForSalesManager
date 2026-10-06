@@ -32,8 +32,10 @@
 // console): 3 leads timed out while a check was up, and a 4th failed with "message channel closed"
 // — the page reloading right after the manager ticked the box mid-extraction.
 
-// How long to wait for the manager to complete a check before giving up on that page.
-export const INDEED_HUMAN_CHECK_WAIT_MS = 180_000;
+// How long to wait for the manager to complete a check before giving up on that page. Raised
+// 06.10 from 3 to 10 min: with 3 min, a check missed while she was away failed three leads in a
+// row and the circuit breaker ended a Chile deepening run with 21 leads untouched.
+export const INDEED_HUMAN_CHECK_WAIT_MS = 600_000;
 const HUMAN_CHECK_POLL_MS = 2_000;
 
 type HumanCheckListener = (waiting: boolean) => void;
@@ -48,6 +50,47 @@ export function subscribeIndeedHumanCheck(listener: HumanCheckListener): () => v
 
 function notifyHumanCheck(waiting: boolean): void {
   for (const listener of humanCheckListeners) listener(waiting);
+}
+
+// Out-of-panel alerts while a check is waiting (06.10): a system notification (stays until
+// dismissed; clicking it raises the Indeed window) and a red "!" badge on the toolbar icon. All
+// best-effort — the side panel banner (subscribeIndeedHumanCheck) is still the primary signal.
+const HUMAN_CHECK_NOTIFICATION_ID = 'indeed-human-check';
+
+function showHumanCheckAlert(): void {
+  try {
+    void chrome.action?.setBadgeBackgroundColor({ color: '#F2555A' });
+    void chrome.action?.setBadgeText({ text: '!' });
+  } catch {
+    // no toolbar action — notification + panel banner still show
+  }
+  try {
+    chrome.notifications?.create(HUMAN_CHECK_NOTIFICATION_ID, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icon/alert-128.png'),
+      title: 'Indeed: a bot check is waiting for you',
+      message:
+        `Tick the Cloudflare checkbox in the Indeed window — the run is paused and continues on its own ` +
+        `(waits up to ${INDEED_HUMAN_CHECK_WAIT_MS / 60_000} min). Click here to open that window.`,
+      requireInteraction: true,
+      priority: 2,
+    });
+  } catch {
+    // notifications unavailable — badge + panel banner still show
+  }
+}
+
+function clearHumanCheckAlert(): void {
+  try {
+    void chrome.action?.setBadgeText({ text: '' });
+  } catch {
+    // ignore
+  }
+  try {
+    chrome.notifications?.clear(HUMAN_CHECK_NOTIFICATION_ID);
+  } catch {
+    // ignore
+  }
 }
 
 interface DetectChallengeResponse {
@@ -75,6 +118,11 @@ async function probeChallenge(win: IndeedBackgroundWindow): Promise<string | nul
  */
 export async function waitForHumanCheck(win: IndeedBackgroundWindow): Promise<boolean> {
   notifyHumanCheck(true);
+  showHumanCheckAlert();
+  const onNotificationClick = (id: string) => {
+    if (id === HUMAN_CHECK_NOTIFICATION_ID) void win.bringToFront();
+  };
+  chrome.notifications?.onClicked.addListener(onNotificationClick);
   await win.bringToFront();
   const deadline = Date.now() + INDEED_HUMAN_CHECK_WAIT_MS;
   try {
@@ -86,6 +134,8 @@ export async function waitForHumanCheck(win: IndeedBackgroundWindow): Promise<bo
     }
     return false;
   } finally {
+    chrome.notifications?.onClicked.removeListener(onNotificationClick);
+    clearHumanCheckAlert();
     notifyHumanCheck(false);
   }
 }

@@ -4,6 +4,7 @@ import {
   IndeedBackgroundWindow,
   IndeedBackgroundWindowClosedError,
   pacedDelay,
+  INDEED_HUMAN_CHECK_WAIT_MS,
   passHumanCheckIfShown,
   waitForHumanCheck,
 } from './indeed-background-window';
@@ -130,7 +131,7 @@ export class IndeedTabDeepening implements DeepeningStrategy {
         if (reloaded) await sleep(CONTENT_SCRIPT_SETTLE_MS);
         const cleared = res?.challenge ? await waitForHumanCheck(this.win) : await passHumanCheckIfShown(this.win);
         if (!cleared) {
-          this.lastFailureReason = 'Bot check (Cloudflare) was not completed within 3 minutes.';
+          this.lastFailureReason = `Bot check (Cloudflare) was not completed within ${INDEED_HUMAN_CHECK_WAIT_MS / 60_000} minutes.`;
           return null;
         }
         await sleep(CONTENT_SCRIPT_SETTLE_MS);

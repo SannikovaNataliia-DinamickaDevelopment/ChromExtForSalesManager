@@ -64,7 +64,16 @@ export default defineConfig({
       // via the matches below.
       // "storage" holds the backend session token (chrome.storage.local) per CLAUDE.md
       // NFR-9: chrome.storage is cache/token only, the backend stays the source of truth.
-      permissions: ['sidePanel', 'storage'],
+      // "notifications" (06.10): a Windows/system notification when an Indeed run is paused on a
+      // Cloudflare check the manager has to tick (indeed-background-window.ts) — the side panel
+      // banner alone was easy to miss while working in another window.
+      permissions: ['sidePanel', 'storage', 'notifications'],
+      // Toolbar button (06.10): needed for chrome.action's badge — a red "!" while an Indeed run
+      // waits on a bot check. Clicking it still opens the side panel (background.ts's
+      // setPanelBehavior openPanelOnActionClick).
+      action: {
+        default_title: isProd ? 'Sales Manager Lead Collector' : 'Sales Manager Lead Collector (Dev)',
+      },
       host_permissions: [
         `${backendUrl}/*`,
         'https://www.techjobs.ca/*',

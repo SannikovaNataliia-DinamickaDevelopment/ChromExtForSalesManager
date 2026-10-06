@@ -2,6 +2,7 @@ import { AuthError, saveLeads, type LeadSaveResult } from './api';
 import {
   IndeedBackgroundWindow,
   IndeedBackgroundWindowClosedError,
+  INDEED_HUMAN_CHECK_WAIT_MS,
   pacedDelay,
   passHumanCheckIfShown,
 } from './indeed-background-window';
@@ -211,7 +212,7 @@ export class IndeedBackgroundListTab {
     // Cloudflare check instead of results: pause until the manager ticks it in the raised window
     // (never solved automatically), then read the page it reloads into.
     if (!(await passHumanCheckIfShown(this.win))) {
-      throw new Error('Bot check (Cloudflare) was not completed within 3 minutes.');
+      throw new Error(`Bot check (Cloudflare) was not completed within ${INDEED_HUMAN_CHECK_WAIT_MS / 60_000} minutes.`);
     }
 
     let res: ParseListResponse | undefined;
