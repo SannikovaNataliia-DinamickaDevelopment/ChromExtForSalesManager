@@ -82,9 +82,10 @@ export function extractBalancedJson(text: string, startIndex: number): string | 
   return null;
 }
 
-// Throws (never returns null) on any structural extraction failure — a missing script tag, a
-// missing marker, unbalanced braces, or invalid JSON all mean "this page's structure isn't what
-// we expect," which must NOT be confused with "this page legitimately has zero job results."
+// Throws (never returns null) on any structural extraction failure — a missing script tag,
+// unbalanced braces, or invalid JSON all mean "this page's structure isn't what we expect," which
+// must NOT be confused with "this page legitimately has zero job results." (A missing job-cards
+// marker inside an otherwise present #mosaic-data is the one exception — see below.)
 // That distinction matters a lot to callers doing multi-page pagination (indeed-pagination.ts):
 // a genuinely empty `results` array is the normal "no more pages" signal, but a parsing failure
 // must instead be treated as a real error (counts toward a circuit breaker, gets surfaced to the
@@ -98,7 +99,11 @@ function extractMosaicJobcardsResults(document: Document): unknown[] {
 
   const markerIndex = scriptText.indexOf(MODEL_KEY_MARKER);
   if (markerIndex === -1) {
-    throw new Error('Indeed list page: "mosaicProviderJobCardsModel" not found in mosaic-data — page structure may have changed.');
+    // #mosaic-data present but with no job-cards model at all: a results page with nothing to
+    // list (live 06.10, om.indeed.com in a multi-region run). Treated as zero results rather than
+    // a structure error — content.ts flags it (hasIndeedJobList) so the page log shows it, which
+    // keeps a real site-wide structure change visible without failing every empty country.
+    return [];
   }
 
   const colonIndex = scriptText.indexOf(':', markerIndex + MODEL_KEY_MARKER.length);
@@ -182,6 +187,11 @@ export function findIndeedTotalJobCount(document: Document): number | null {
   const text = document.getElementById(MOSAIC_DATA_SCRIPT_ID)?.textContent ?? '';
   const match = text.match(/"totalJobCount"\s*:\s*(\d+)/);
   return match ? Number(match[1]) : null;
+}
+
+// False when the page's #mosaic-data has no job-cards model (see extractMosaicJobcardsResults).
+export function hasIndeedJobList(document: Document): boolean {
+  return (document.getElementById(MOSAIC_DATA_SCRIPT_ID)?.textContent ?? '').includes(MODEL_KEY_MARKER);
 }
 
 export function findIndeedNextPageUrl(document: Document): string | null {

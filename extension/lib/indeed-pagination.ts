@@ -158,7 +158,18 @@ interface ParseListResponse {
   leads?: unknown;
   nextPageUrl?: unknown;
   totalJobCount?: unknown;
+  noJobList?: unknown;
   error?: string;
+}
+
+// PARSE_LIST can reach a freshly loaded page before its content script has attached (live 06.10:
+// "Could not establish connection. Receiving end does not exist." on Mexico's page 1 — the run
+// moved on to page 2 and those postings were never read). Retried on the SAME page instead.
+const PARSE_LIST_MAX_ATTEMPTS = 5;
+const PARSE_LIST_RETRY_DELAY_MS = 1000;
+
+function isNoReceiverError(err: unknown): boolean {
+  return /Receiving end does not exist|Could not establish connection/i.test(err instanceof Error ? err.message : String(err));
 }
 
 interface LoadPageResult {
@@ -169,6 +180,8 @@ interface LoadPageResult {
   nextPageUrl: string | null;
   // Total results Indeed reports for this search (see findIndeedTotalJobCount), null if not found.
   totalJobCount: number | null;
+  // The page had no job-cards model at all — zero results (see parsers/indeed.ts).
+  noJobList: boolean;
 }
 
 // Thin wrapper around IndeedBackgroundWindow, mirroring wellfound-pagination.ts's
@@ -190,7 +203,7 @@ export class IndeedBackgroundListTab {
 
     const finalUrl = await this.win.getTabUrl();
     if (isIndeedSignInWall(finalUrl)) {
-      return { signInRequired: true, leads: [], finalUrl, nextPageUrl: null, totalJobCount: null };
+      return { signInRequired: true, leads: [], finalUrl, nextPageUrl: null, totalJobCount: null, noJobList: false };
     }
     if (isIndeedJobDetailUrl(finalUrl)) {
       throw new Error('Indeed redirected to a single job page instead of the results list.');
@@ -201,14 +214,23 @@ export class IndeedBackgroundListTab {
       throw new Error('Bot check (Cloudflare) was not completed within 3 minutes.');
     }
 
-    const res = await this.win.sendMessage<ParseListResponse>({ type: 'PARSE_LIST' });
+    let res: ParseListResponse | undefined;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        res = await this.win.sendMessage<ParseListResponse>({ type: 'PARSE_LIST' });
+        break;
+      } catch (err) {
+        if (attempt >= PARSE_LIST_MAX_ATTEMPTS || !isNoReceiverError(err)) throw err;
+        await sleep(PARSE_LIST_RETRY_DELAY_MS);
+      }
+    }
     if (!res?.ok || !Array.isArray(res.leads)) {
       throw new Error(res?.error ?? 'Could not parse this page.');
     }
 
     const nextPageUrl = typeof res.nextPageUrl === 'string' && res.nextPageUrl ? stripEphemeralParams(res.nextPageUrl) : null;
     const totalJobCount = typeof res.totalJobCount === 'number' ? res.totalJobCount : null;
-    return { signInRequired: false, leads: res.leads as JobLead[], finalUrl, nextPageUrl, totalJobCount };
+    return { signInRequired: false, leads: res.leads as JobLead[], finalUrl, nextPageUrl, totalJobCount, noJobList: res.noJobList === true };
   }
 
   get wasClosedByUser(): boolean {
@@ -297,6 +319,8 @@ export interface IndeedPageLogEntry {
   // date fields of the model — to check which field actually matches what the page shows/sorts
   // by (01.10: a sort=date run had every createDate months/years old, see parsers/indeed.ts).
   sample: string[];
+  // Free-form remark about this page (e.g. "no job list on page — treated as 0 results").
+  note?: string;
   // Set only on the entry that ended the run (or on the last entry, for loop-exit stops).
   stopReason?: IndeedAutoPaginationStopReason;
 }
@@ -332,9 +356,10 @@ export function formatIndeedPageLogEntry(e: IndeedPageLogEntry): string {
   if (e.outcome === 'error') return `${head}: ERROR ${e.error ?? ''}${redirect}${stop}`;
   const span = e.newestDate ? ` [${e.oldestDate}…${e.newestDate}]` : '';
   const sample = e.sample.length ? ` | top: ${e.sample.join('; ')}` : '';
+  const note = e.note ? ` (${e.note})` : '';
   return (
     `${head}: ${e.postings} on page${span}, ${e.unseen} unseen, ${e.inRange} in range / ${e.outOfRange} out, ` +
-    `${e.saved} new + ${e.alreadyKnown} already in DB${next}${redirect}${stop}${sample}`
+    `${e.saved} new + ${e.alreadyKnown} already in DB${next}${note}${redirect}${stop}${sample}`
   );
 }
 
@@ -433,9 +458,6 @@ export async function runIndeedAutoPagination(
   let page = 1;
   // Next page's URL from the previous page's own "next page" link; null = use `&start=N`.
   let nextLinkUrl: string | null = null;
-  // Once any page has rendered a next link, a later page WITHOUT one is Indeed saying it's the
-  // last page — a cleaner end signal than the re-served-page check below.
-  let sawNextLink = false;
   // Every page URL requested this run — a next link pointing back to one of them is a cycle.
   const visitedUrls = new Set<string>();
   let lowNoveltyPages = 0;
@@ -482,8 +504,9 @@ export async function runIndeedAutoPagination(
       let finalUrl: string | null;
       let nextPageUrl: string | null;
       let totalJobCount: number | null;
+      let noJobList: boolean;
       try {
-        ({ signInRequired, leads, finalUrl, nextPageUrl, totalJobCount } = await tab.loadPage(pageUrl));
+        ({ signInRequired, leads, finalUrl, nextPageUrl, totalJobCount, noJobList } = await tab.loadPage(pageUrl));
       } catch (err) {
         if (isClosedError(err)) {
           stopReason = 'window_closed';
@@ -527,6 +550,7 @@ export async function runIndeedAutoPagination(
       const pageEntry: IndeedPageLogEntry = {
         page, start, requestedUrl: pageUrl, urlSource, nextPageUrl, finalUrl, outcome: 'parsed', ...emptyCounts,
         postings: leads.length, ...dateSpan(leads, timeZone), sample: postingSample(leads, timeZone),
+        ...(noJobList ? { note: 'no job list on page — treated as 0 results' } : {}),
       };
 
       // Primary "no more pages" signal — see this function's doc comment for why an empty
@@ -605,7 +629,10 @@ export async function runIndeedAutoPagination(
       savedLeads.push(...saveResults);
       pagesSinceLastPause++;
       // End-of-results signals, any one of which stops the run (Indeed never says "no more pages"):
-      //  - it rendered a next link on an earlier page but none here;
+      //  - no "next page" link on this page. Trusted from page 1 on since 06.10: the link selector
+      //    is confirmed live (pagination-page-next, every multi-page run so far), and probing
+      //    `start=N` past a single-page result only re-served the same page — one wasted request
+      //    per small country, ~50 per all-regions run;
       //  - the next link points back at a page already requested this run (a cycle);
       //  - INDEED_LOW_NOVELTY_PAGES_TO_STOP pages in a row added almost nothing new (a re-served
       //    last page with rotating sponsored postings — the exact "zero unseen" case is caught
@@ -616,10 +643,9 @@ export async function runIndeedAutoPagination(
       // the seen count overtook Indeed's reported total (39) on page 2 while a next link still
       // existed — that check ended the run early. totalJobCount stays informational only.
       const isLastPage =
-        (sawNextLink && !nextPageUrl) ||
+        !nextPageUrl ||
         (!!nextPageUrl && visitedUrls.has(nextPageUrl)) ||
         lowNoveltyPages >= INDEED_LOW_NOVELTY_PAGES_TO_STOP;
-      if (nextPageUrl) sawNextLink = true;
       nextLinkUrl = nextPageUrl;
       logPage({
         ...pageEntry,

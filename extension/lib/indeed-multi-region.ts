@@ -18,6 +18,11 @@ import type { IndeedRegion } from './indeed-regions';
 // hang in the first live run (no visible countdown back then).
 export const INDEED_REGION_PAUSE_MIN_MS = 45_000;
 export const INDEED_REGION_PAUSE_MAX_MS = 90_000;
+// After a region that took at most one results page (most small countries — survey 06.10: many
+// domains have 0-10 results a week) there was hardly any burst to cool down from; the full pause
+// would make a 60-region run take over an hour of mostly waiting.
+export const INDEED_REGION_SHORT_PAUSE_MIN_MS = 10_000;
+export const INDEED_REGION_SHORT_PAUSE_MAX_MS = 20_000;
 
 // Only the search query carries over from the manager's tab. Location is always the region's own
 // remote location (remote-only hiring, 02.10 decision); every other param is either per-view state
@@ -146,7 +151,11 @@ export async function runIndeedMultiRegion(
       }
 
       if (i < regions.length - 1) {
-        const pauseMs = INDEED_REGION_PAUSE_MIN_MS + Math.random() * (INDEED_REGION_PAUSE_MAX_MS - INDEED_REGION_PAUSE_MIN_MS);
+        const [minMs, maxMs] =
+          result.pagesProcessed <= 1
+            ? [INDEED_REGION_SHORT_PAUSE_MIN_MS, INDEED_REGION_SHORT_PAUSE_MAX_MS]
+            : [INDEED_REGION_PAUSE_MIN_MS, INDEED_REGION_PAUSE_MAX_MS];
+        const pauseMs = minMs + Math.random() * (maxMs - minMs);
         const nextRegion = regions[i + 1];
         tab.setProgress(
           `Waiting ~${Math.round(pauseMs / 1000)}s before ${nextRegion.label} (anti-bot cooldown) · ${overlayStatus(null, done, queued)}`,

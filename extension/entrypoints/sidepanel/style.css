@@ -467,3 +467,88 @@ h1 {
   font-size: 13px;
   font-weight: 600;
 }
+
+/* Indeed region dropdown (RegionDropdown.tsx). */
+.region-dropdown {
+  position: relative;
+  margin: 4px 0 8px;
+}
+.region-dropdown-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--panel-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.region-dropdown-toggle:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.region-dropdown-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.region-dropdown-filter {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+}
+.region-dropdown-actions {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0;
+}
+.region-dropdown-actions button {
+  flex: 1;
+  padding: 4px 6px;
+  background: var(--chip-bg-neutral);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.region-dropdown-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.region-group + .region-group {
+  margin-top: 6px;
+}
+.region-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+}
+.region-group .region-check {
+  display: flex;
+  padding-left: 18px;
+}

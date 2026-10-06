@@ -48,7 +48,10 @@ import {
   runIndeedMultiRegion,
   type IndeedMultiRegionProgress,
 } from '../../lib/indeed-multi-region';
-import { findIndeedRegionByHost, INDEED_REGIONS, isIndeedHost } from '../../lib/indeed-regions';
+import { DEFAULT_INDEED_REGION_IDS, findIndeedRegionByHost, INDEED_REGIONS, isIndeedHost } from '../../lib/indeed-regions';
+import { RegionDropdown } from './RegionDropdown';
+
+const INDEED_REGIONS_STORAGE_KEY = 'indeedSelectedRegionIds';
 import { INDEED_HUMAN_CHECK_WAIT_MS, subscribeIndeedHumanCheck } from '../../lib/indeed-background-window';
 import {
   deepenIndeedLeads,
@@ -258,8 +261,25 @@ export default function App() {
   const indeedAutoRunningRef = useRef(false);
   const [indeedAutoRunning, setIndeedAutoRunning] = useState(false);
   const [indeedAutoProgress, setIndeedAutoProgress] = useState<IndeedMultiRegionProgress | null>(null);
-  // Regions the multi-region run walks (checkboxes, all on by default — 02.10 decision).
-  const [indeedSelectedRegionIds, setIndeedSelectedRegionIds] = useState<string[]>(() => INDEED_REGIONS.map((r) => r.id));
+  // Regions the multi-region run walks (RegionDropdown). Remembered in this browser between
+  // sessions — a per-viewer convenience, so localStorage (guarded: it can throw or be empty);
+  // ids no longer in INDEED_REGIONS are dropped on load.
+  const [indeedSelectedRegionIds, setIndeedSelectedRegionIds] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(INDEED_REGIONS_STORAGE_KEY) ?? 'null');
+      if (Array.isArray(saved)) return saved.filter((id) => INDEED_REGIONS.some((r) => r.id === id));
+    } catch {
+      // fall through to the defaults
+    }
+    return DEFAULT_INDEED_REGION_IDS;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(INDEED_REGIONS_STORAGE_KEY, JSON.stringify(indeedSelectedRegionIds));
+    } catch {
+      // not persisted this time — selection still works for this session
+    }
+  }, [indeedSelectedRegionIds]);
   // One line per region from the last multi-region run.
   const [indeedRegionSummaries, setIndeedRegionSummaries] = useState<string[] | null>(null);
   const [indeedAutoSummary, setIndeedAutoSummary] = useState<string | null>(null);
@@ -1230,21 +1250,7 @@ export default function App() {
       {indeedListTabUrl && (
         <div className="multipage-block">
           <label>Parse Indeed — all regions (auto, all pages)</label>
-          <div className="region-checks">
-            {INDEED_REGIONS.map((r) => (
-              <label key={r.id} className="region-check">
-                <input
-                  type="checkbox"
-                  checked={indeedSelectedRegionIds.includes(r.id)}
-                  disabled={indeedAutoRunning}
-                  onChange={(e) =>
-                    setIndeedSelectedRegionIds((ids) => (e.target.checked ? [...ids, r.id] : ids.filter((id) => id !== r.id)))
-                  }
-                />
-                {r.label}
-              </label>
-            ))}
-          </div>
+          <RegionDropdown selectedIds={indeedSelectedRegionIds} onChange={setIndeedSelectedRegionIds} disabled={indeedAutoRunning} />
           <DateRangePicker value={indeedAutoRange} onChange={setIndeedAutoRange} disabled={indeedAutoRunning} />
           <button
             className="parse-button"
@@ -1255,10 +1261,11 @@ export default function App() {
             {indeedAutoRunning ? 'Parsing…' : 'Parse'}
           </button>
           <div className="hint">
-            Runs the search query from this tab on every checked Indeed region, one after another, always with location
+            Runs the search query from this tab on every selected Indeed region, one after another, always with location
             &quot;Remote&quot;. Saves only postings published in the picked range (judged in each region&apos;s own time zone);
             ranges starting within the last 14 days use Indeed&apos;s &quot;Date posted&quot; filter to keep runs short. Pauses
-            between pages and ~{INDEED_REGION_PAUSE_MIN_MS / 60000}-{INDEED_REGION_PAUSE_MAX_MS / 60000} min between regions
+            between pages and {INDEED_REGION_PAUSE_MIN_MS / 1000}-{INDEED_REGION_PAUSE_MAX_MS / 1000}s between regions (shorter after
+            single-page regions)
             (anti-bot). A region that hits a sign-in wall or bot check is skipped, the rest continue. Deepens everything saved
             afterward in a background tab. No Gemini here.
           </div>

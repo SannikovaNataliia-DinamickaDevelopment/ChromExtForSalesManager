@@ -1,7 +1,7 @@
 import { TechjobsListParser } from '../lib/parsers/techjobs';
 import { DevitjobsListParser } from '../lib/parsers/devitjobs';
 import { WellfoundListParser } from '../lib/parsers/wellfound';
-import { findIndeedNextPageUrl, findIndeedTotalJobCount, IndeedListParser } from '../lib/parsers/indeed';
+import { findIndeedNextPageUrl, findIndeedTotalJobCount, hasIndeedJobList, IndeedListParser } from '../lib/parsers/indeed';
 import { extractIndeedJobDescription } from '../lib/indeed-detail-extract';
 import { extractWellfoundJobPosting } from '../lib/wellfound-detail-extract';
 import { isIndeedHost } from '../lib/indeed-regions';
@@ -87,7 +87,14 @@ const INDEED_POLL_TIMEOUT_MS = 15000;
 // (see indeed-background-window.ts's waitForHumanCheck). UNVERIFIED markers — no captured copy of
 // Indeed's challenge page yet; a broad set of Cloudflare's standard signals. The page title is
 // included in timeout errors below so a miss here is diagnosable from the console.
+//
+// Confirmed live 06.10 (survey of Indeed country domains): Indeed's check page is titled
+// "Security Check - Indeed.com" and its URL carries a `__cf_chl_rt_tk` param, while Cloudflare's
+// own interstitial title is LOCALIZED to the browser's language ("Трохи зачекайте…" on a
+// Ukrainian Chrome instead of "Just a moment…") — so the URL marker is checked first; title
+// matching alone would miss non-English browsers.
 function detectBotChallenge(): string | null {
+  if (/[?&]__cf_chl/.test(location.search)) return 'Cloudflare challenge URL';
   const title = document.title || '';
   if (/just a moment|attention required|security check|verification required|verify you are human/i.test(title)) {
     return `page title "${title}"`;
@@ -318,7 +325,11 @@ export default defineContentScript({
           // Indeed pagination follows the site's own "next page" link — see findIndeedNextPageUrl.
           const extra =
             parser === indeedParser
-              ? { nextPageUrl: findIndeedNextPageUrl(document), totalJobCount: findIndeedTotalJobCount(document) }
+              ? {
+                  nextPageUrl: findIndeedNextPageUrl(document),
+                  totalJobCount: findIndeedTotalJobCount(document),
+                  noJobList: !hasIndeedJobList(document),
+                }
               : {};
           sendResponse({ ok: true, leads, ...extra });
         } catch (err) {
