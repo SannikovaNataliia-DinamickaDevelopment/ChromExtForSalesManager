@@ -12,7 +12,8 @@
     "db:studio": "drizzle-kit studio",
     "resync-sheet": "node dist/src/scripts/resync-sheet.js",
     "backfill-website": "node dist/src/scripts/backfill-website-from-description.js",
-    "reverify-ai-websites": "node dist/src/scripts/reverify-ai-websites.js"
+    "reverify-ai-websites": "node dist/src/scripts/reverify-ai-websites.js",
+    "sync-company-data": "node dist/src/scripts/sync-company-data.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

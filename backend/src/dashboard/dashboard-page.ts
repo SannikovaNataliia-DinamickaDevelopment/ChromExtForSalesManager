@@ -3005,8 +3005,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // Apollo organization id, optionally for every lead of the same company name.
   var companyMatch = { lead: null, query: '', loading: false, saving: false, result: null, error: '', notice: '', applyAll: true };
 
+  // "Same company" — mirrors backend company-key.ts: case, accents, punctuation and a trailing
+  // legal form ignored ("EPAM Systems, Inc." = "EPAM Systems").
   function normalizeCompanyName(name) {
-    return (name || '').trim().toLowerCase();
+    return cleanCompanyQuery(name)
+      .normalize('NFKD')
+      .replace(/[\\u0300-\\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9&]+/g, ' ')
+      .trim();
   }
 
   // Search text for Apollo: the company name without its legal form. Apollo matches names
@@ -3260,17 +3267,15 @@ export function renderDashboardPage(opts: { authError?: string }): string {
         (result.cached ? ' \\u00B7 from cache, no credit used' : ''),
     }));
 
+    // Company data is always shared with every lead of the company (backend CompanyDataSyncService,
+    // 09.10) — so this is information, not an option.
     var others = sameCompanyOthers(lead);
     if (others.length > 0) {
-      var applyLabel = el('label', { className: 'cm-apply-all' });
-      var applyBox = el('input', { type: 'checkbox' });
-      applyBox.checked = companyMatch.applyAll;
-      applyBox.addEventListener('change', function () { companyMatch.applyAll = applyBox.checked; });
-      applyLabel.appendChild(applyBox);
-      applyLabel.appendChild(document.createTextNode(
-        'Also apply to ' + others.length + ' other lead(s) of \\u201C' + lead.company + '\\u201D without a verified website',
-      ));
-      body.appendChild(applyLabel);
+      body.appendChild(el('div', {
+        className: 'cm-apply-all',
+        text: 'The pick is also saved to ' + others.length + ' other lead(s) of \\u201C' + lead.company +
+          '\\u201D without a verified website \\u2014 company data is shared across all its leads.',
+      }));
     }
 
     var guessedDomain = isWebsiteUnverified(lead) ? websiteDomain(lead.company_website) : '';

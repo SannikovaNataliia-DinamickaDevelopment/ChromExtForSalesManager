@@ -4,6 +4,7 @@ import * as ExcelJS from 'exceljs';
 import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { AppError } from '../common/app-error';
 import { AiWebsiteService } from './ai-website.service';
+import { CompanyDataSyncService } from './company-data-sync.service';
 import { guessCompanyWebsite } from './company-website-from-description';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
@@ -45,6 +46,7 @@ export class LeadsService {
     private readonly openaiClassifier: OpenaiClassifierService,
     private readonly apolloClassifier: ApolloClassifierService,
     private readonly aiWebsite: AiWebsiteService,
+    private readonly companySync: CompanyDataSyncService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -179,6 +181,16 @@ export class LeadsService {
     for (const item of items) {
       results.push(await this.createOrUpdateOne(creatorUserId, item));
     }
+    // A new lead of a company already in the DB gets that company's data right away (website,
+    // Apollo org/industry, LinkedIn, same-country DM) — no paid lookup (CompanyDataSyncService).
+    const newCompanies = results.filter((r) => !r.deduplicated).map((r) => r.lead.company);
+    if (newCompanies.length > 0) {
+      try {
+        await this.companySync.syncCompanies(newCompanies);
+      } catch (err) {
+        this.logger.warn(`Company data sync after save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     return results;
   }
 
@@ -292,6 +304,9 @@ export class LeadsService {
 
     const [updated] = await this.db.update(job_leads).set(update).where(eq(job_leads.id, id)).returning();
 
+    // A description guess (or anything else just saved) is shared with the company's other leads.
+    if (patch.description && updated.company) await this.companySync.syncCompanies([updated.company]);
+
     // Opt-in (AI_WEBSITE_AUTO=true): a freshly deepened lead still without a reliable website goes
     // to the AI website finder automatically. No-op by default — every call costs OpenAI credit.
     if (
@@ -398,7 +413,8 @@ export class LeadsService {
       .set(values)
       .where(sameCompany ? or(eq(job_leads.id, id), sameCompany) : eq(job_leads.id, id))
       .returning({ id: job_leads.id });
-    return { updated: updated.length };
+    const synced = await this.companySync.syncCompanies([lead.company]);
+    return { updated: updated.length + synced.updatedLeads };
   }
 
   // Dashboard "Confirm website": the manager checked a description-guessed website and it is
@@ -412,6 +428,7 @@ export class LeadsService {
     if (!updated) {
       throw new NotFoundException({ code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found or has no website` });
     }
+    await this.companySync.syncCompanies([updated.company]);
     return updated;
   }
 
@@ -587,6 +604,8 @@ export class LeadsService {
           updated_at: new Date(),
         })
         .where(eq(job_leads.id, id));
+      // Same-country leads of this company get these DM too (and every lead the Apollo org/industry).
+      await this.companySync.syncCompanies([existing.company]);
     }
 
     return {

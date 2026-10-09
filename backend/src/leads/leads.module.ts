@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { DestinationsModule } from '../destinations/destinations.module';
 import { AiWebsiteService } from './ai-website.service';
+import { CompanyDataSyncService } from './company-data-sync.service';
 import { ApolloBulkSearchService } from './apollo-bulk-search.service';
 import { ApolloCompanySearchService } from './apollo-company-search.service';
 import { ApolloClassifierService } from './apollo-classifier.service';
@@ -25,6 +26,7 @@ import { OpenaiClassifierService } from './openai-classifier.service';
     ApolloBulkSearchService,
     ApolloCompanySearchService,
     AiWebsiteService,
+    CompanyDataSyncService,
   ],
 })
 export class LeadsModule {}

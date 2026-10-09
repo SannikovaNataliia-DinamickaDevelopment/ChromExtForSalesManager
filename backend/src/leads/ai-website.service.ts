@@ -4,6 +4,8 @@ import OpenAI, { RateLimitError } from 'openai';
 import { DB } from '../db/db.module';
 import type { Db } from '../db/client';
 import { job_leads } from '../db/schema';
+import { CompanyDataSyncService } from './company-data-sync.service';
+import { companyKey as sharedCompanyKey } from './company-key';
 import { isBlocked, nameTokens, registrableDomain } from './company-website-from-description';
 
 // AI company-website finder (Indeed V1, 06.10 meeting): Indeed postings carry a company NAME but
@@ -113,9 +115,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Same normalization the dashboard uses to group "leads of the same company".
+// "Same company" = companyKey (company-key.ts): case, accents, punctuation and legal form ignored.
 function companyKey(company: string): string {
-  return company.trim().toLowerCase();
+  return sharedCompanyKey(company);
 }
 
 function domainFromAnswer(website: string): string | null {
@@ -225,7 +227,10 @@ export class AiWebsiteService {
   private state: AiWebsiteStatus = { ...IDLE_STATUS };
   private autoQueue = new Set<string>();
 
-  constructor(@Inject(DB) private readonly db: Db) {}
+  constructor(
+    @Inject(DB) private readonly db: Db,
+    private readonly companySync: CompanyDataSyncService,
+  ) {}
 
   getStatus(): AiWebsiteStatus {
     return { ...this.state };
@@ -366,24 +371,17 @@ export class AiWebsiteService {
     }
   }
 
+  // Free first: if another lead of this company already has a reliable website, share it (the
+  // company sync) instead of paying for a search. In MOCK mode nothing is written — only checked.
   private async reuseKnownWebsite(g: CompanyGroup, mock: boolean): Promise<boolean> {
-    const [known] = await this.db
-      .select({ website: job_leads.company_website, source: job_leads.company_website_source, orgId: job_leads.apollo_organization_id })
+    if (!mock) await this.companySync.syncCompanies([g.company]);
+    const rows = await this.db
+      .select({ company: job_leads.company, website: job_leads.company_website, source: job_leads.company_website_source })
       .from(job_leads)
-      .where(
-        and(
-          isNull(job_leads.deleted_at),
-          isNotNull(job_leads.company_website),
-          sql`lower(trim(${job_leads.company})) = ${g.key}`,
-          sql`(${job_leads.company_website_source} in ('confirmed', 'ai_verified', 'job_posting'))`,
-        ),
-      )
-      .limit(1);
-    if (!known?.website) return false;
-    if (!mock) {
-      await this.saveForGroup(g, known.website, known.source === 'confirmed' ? 'confirmed' : 'ai_verified', `Same company as another lead with a ${known.source} website — reused, no AI call.`);
-    }
-    return true;
+      .where(and(isNull(job_leads.deleted_at), isNotNull(job_leads.company_website)));
+    return rows.some(
+      (r) => companyKey(r.company ?? '') === g.key && (r.source === 'confirmed' || r.source === 'ai_verified' || r.source === 'job_posting' || r.source === null),
+    );
   }
 
   private async searchAndSave(g: CompanyGroup): Promise<'verified' | 'guessed' | 'notFound'> {
@@ -394,6 +392,7 @@ export class AiWebsiteService {
         .update(job_leads)
         .set({ company_website_note: `${AI_NOT_FOUND_NOTE_PREFIX} (${answer.confidence}): ${answer.reasoning}`, updated_at: new Date() })
         .where(inArray(job_leads.id, g.leadIds));
+      await this.companySync.syncCompanies([g.company]);
       return 'notFound';
     }
     const check = await verifySite(domain, g.company);
@@ -406,6 +405,7 @@ export class AiWebsiteService {
           updated_at: new Date(),
         })
         .where(inArray(job_leads.id, g.leadIds));
+      await this.companySync.syncCompanies([g.company]);
       return 'notFound';
     }
     const reliable = answer.confidence !== 'low' && check.loaded && check.mentionsCompany && !answer.is_recruiting_agency;
@@ -414,6 +414,8 @@ export class AiWebsiteService {
       `AI (${answer.confidence}${answer.is_recruiting_agency ? ', poster looks like a recruiting agency' : ''}; ${siteCheck}): ` +
       answer.reasoning;
     await this.saveForGroup(g, `https://${domain}`, reliable ? 'ai_verified' : 'ai_guess', note);
+    // Every lead of the company gets it — not only the ones selected for this run.
+    await this.companySync.syncCompanies([g.company]);
     return reliable ? 'verified' : 'guessed';
   }
 
