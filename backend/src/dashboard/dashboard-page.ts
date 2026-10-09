@@ -1272,6 +1272,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     <span class="bulk-count" id="bulk-count"></span>
     <button id="bulk-enrich-btn" type="button">Enrich selected</button>
     <button id="bulk-contact-btn" type="button">Backfill contact selected</button>
+    <button id="bulk-ai-website-btn" type="button" title="Finds the company website with ChatGPT web search — one OpenAI call per company (leads of the same company share it); companies that already have a reliable website on another lead are reused for free. Asks for confirmation with the estimated cost first.">AI website selected</button>
     <button id="bulk-company-linkedin-btn" type="button" title="Fetches each selected lead's company_website and scans it for LinkedIn links (capped at 50/run)">Backfill LinkedIn selected</button>
     <button id="bulk-apollo-search-btn" type="button" title="Apollo-only: searches for decision-makers (DM) and picks up the company's industry as a side effect. Only leads never searched before are eligible — use the sidebar's DM Search button to re-run one.">DM Search + Industry selected</button>
     <button id="bulk-delete-btn" class="bulk-delete-btn" type="button">Delete selected</button>
@@ -2944,13 +2945,16 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // Website guessed from the job description (06.10 call) — plausible but unverified (could be an
   // agency, a client, a parent company). Shown with a "!" mark everywhere it appears, and never
   // sent to Apollo without an explicit confirmation (see confirmUnverifiedForApollo).
+  // 'ai_guess' (09.10): the AI website finder found a website but couldn't confirm it (low
+  // confidence, the site didn't load / didn't mention the company, or a recruiting agency) —
+  // flagged and gated exactly like a description guess.
   function isWebsiteUnverified(lead) {
-    return lead.company_website_source === 'description_guess' && !!lead.company_website;
+    return (lead.company_website_source === 'description_guess' || lead.company_website_source === 'ai_guess') && !!lead.company_website;
   }
 
   var UNVERIFIED_WEBSITE_TEXT =
-    'Found in the job description, not verified \\u2014 it may belong to a recruiting agency, a client or a parent ' +
-    'company. Check it before an Apollo search; Apollo will ask for confirmation.';
+    'Found automatically (job description or AI search), not verified \\u2014 it may belong to a recruiting agency, ' +
+    'a client, a parent company or a namesake. Check it before an Apollo search; Apollo will ask for confirmation.';
 
   function buildUnverifiedFlag() {
     var flag = el('span', { className: 'unverified-flag', text: '!' });
@@ -3282,7 +3286,14 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   // the website is an unverified description guess.
   function buildWebsiteDetailRow(lead) {
     var row = buildDetailRow('Website', lead.company_website, true);
-    if (!isWebsiteUnverified(lead)) return row;
+    if (!isWebsiteUnverified(lead)) {
+      // Why an automatic finder picked this website (or that it found none) — for review.
+      if (!lead.company_website_note) return row;
+      var plain = document.createElement('div');
+      plain.appendChild(row);
+      plain.appendChild(el('div', { className: 'unverified-note', text: lead.company_website_note }));
+      return plain;
+    }
     row.appendChild(buildUnverifiedFlag());
     var confirmBtn = el('button', { className: 'confirm-website-btn', type: 'button', text: 'Confirm website' });
     confirmBtn.title = 'I checked it \\u2014 this is the company\\u2019s own website';
@@ -3291,6 +3302,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var wrap = document.createElement('div');
     wrap.appendChild(row);
     wrap.appendChild(el('div', { className: 'unverified-note', text: UNVERIFIED_WEBSITE_TEXT }));
+    if (lead.company_website_note) wrap.appendChild(el('div', { className: 'unverified-note', text: lead.company_website_note }));
     return wrap;
   }
 
@@ -4131,6 +4143,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     var enrichBtn = document.getElementById('bulk-enrich-btn');
     var contactBtn = document.getElementById('bulk-contact-btn');
     var linkedinBtn = document.getElementById('bulk-company-linkedin-btn');
+    var aiWebsiteBtn = document.getElementById('bulk-ai-website-btn');
+    var needsAiWebsiteCount = getSelectedNeedsAiWebsite().length;
     var apolloSearchBtn = document.getElementById('bulk-apollo-search-btn');
     var deleteBtn = document.getElementById('bulk-delete-btn');
     var statusEl = document.getElementById('bulk-status');
@@ -4143,6 +4157,8 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       countEl.textContent = 'Enriching ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'contact') {
       countEl.textContent = 'Checking contacts ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
+    } else if (bulkState.inFlight && bulkState.mode === 'ai-website') {
+      countEl.textContent = 'AI website search ' + bulkState.completed + '/' + bulkState.total + ' companies\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'linkedin') {
       countEl.textContent = 'Checking company LinkedIn ' + bulkState.completed + '/' + bulkState.total + '\\u2026';
     } else if (bulkState.inFlight && bulkState.mode === 'apollo') {
@@ -4169,6 +4185,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
     // silently hidden from this label.
     linkedinBtn.textContent = 'Backfill LinkedIn selected (' + needsLinkedinCount + ')';
     linkedinBtn.disabled = bulkState.inFlight || needsLinkedinCount === 0;
+
+    aiWebsiteBtn.textContent = 'AI website selected (' + needsAiWebsiteCount + ')';
+    aiWebsiteBtn.disabled = bulkState.inFlight || needsAiWebsiteCount === 0;
 
     // No cap here or server-side (see apollo-bulk-search.service.ts's own comment) — the count
     // shown is exactly what a confirmed click will attempt.
@@ -4695,6 +4714,127 @@ export function renderDashboardPage(opts: { authError?: string }): string {
       });
   }
 
+  // --- Bulk "AI website selected" (Indeed V1, 09.10) -------------------------------------------
+  // Server-side batch (ai-website.service.ts), same start/poll shape as Backfill LinkedIn. Every
+  // non-reused company is one paid OpenAI web-search call, so the confirm dialog states how many
+  // companies and the estimated cost before anything is sent.
+  var AI_WEBSITE_POLL_MS = 1500;
+  var AI_WEBSITE_EST_COST_PER_COMPANY_USD = 0.015; // mirrors ai-website.service.ts (~$0.01 measured 09.10)
+  var AI_WEBSITE_RUN_CAP = 40; // mirrors ai-website.service.ts
+  var AI_NOT_FOUND_NOTE_PREFIX = 'AI: no website found';
+  var aiWebsitePollId = null;
+  var aiWebsiteTargetIds = [];
+
+  // Eligible: company name present, no reliable website (none / description or AI guess), and
+  // not a known dead end from an earlier AI search — mirrors AiWebsiteService.startBatch.
+  function getSelectedNeedsAiWebsite() {
+    return getSelectedLeads().filter(function (l) {
+      if (!l.company || !l.company.trim()) return false;
+      if ((l.company_website_note || '').indexOf(AI_NOT_FOUND_NOTE_PREFIX) === 0) return false;
+      return !l.company_website || isWebsiteUnverified(l);
+    });
+  }
+
+  function buildAiWebsiteSummary(status) {
+    if (status.mock) {
+      return 'AI website (SAMPLE MODE, nothing saved): ' + status.totalCompanies + ' compan' + (status.totalCompanies === 1 ? 'y' : 'ies') + ' would be searched' +
+        (status.reused ? ', ' + status.reused + ' would reuse a known website' : '') + '.';
+    }
+    var parts = [status.verified + ' verified'];
+    if (status.guessed) parts.push(status.guessed + ' found but unverified (!)');
+    if (status.notFound) parts.push(status.notFound + ' not found');
+    if (status.reused) parts.push(status.reused + ' reused (no AI call)');
+    if (status.failed) parts.push(status.failed + ' failed');
+    if (status.skippedCap) parts.push(status.skippedCap + ' lead(s) over the ' + AI_WEBSITE_RUN_CAP + '-company cap');
+    var text = 'AI website: ' + parts.join(', ') + ' (companies).';
+    if (status.quotaExhausted) text += ' STOPPED \\u2014 OpenAI quota/rate limit: ' + (status.lastError || '');
+    return text;
+  }
+
+  function pollAiWebsiteStatus() {
+    apiFetch('/leads/ai-website/status')
+      .then(function (status) {
+        bulkState.completed = status.processedCompanies;
+        bulkState.total = status.totalCompanies;
+        render();
+        if (status.running) {
+          if (!aiWebsitePollId) aiWebsitePollId = setInterval(pollAiWebsiteStatus, AI_WEBSITE_POLL_MS);
+          return;
+        }
+        if (aiWebsitePollId) {
+          clearInterval(aiWebsitePollId);
+          aiWebsitePollId = null;
+        }
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = buildAiWebsiteSummary(status);
+        render();
+        loadLeads().then(function () {
+          deselectSucceededTargets(aiWebsiteTargetIds, function (lead) {
+            return !!lead.company_website && !isWebsiteUnverified(lead);
+          });
+          render();
+        });
+      })
+      .catch(function () {
+        // Best-effort, same as the other bulk pollers — the next tick retries.
+      });
+  }
+
+  function startBulkAiWebsite() {
+    if (bulkState.inFlight) return;
+    var leads = getSelectedNeedsAiWebsite();
+    if (leads.length === 0) return;
+    var companies = {};
+    leads.forEach(function (l) { companies[normalizeCompanyName(l.company)] = true; });
+    var companyCount = Object.keys(companies).length;
+    var callCount = Math.min(companyCount, AI_WEBSITE_RUN_CAP);
+    var confirmed = window.confirm(
+      'Find the company website with AI for ' + leads.length + ' lead(s) = ' + companyCount + ' compan' + (companyCount === 1 ? 'y' : 'ies') + '.\\n\\n' +
+        'Up to ' + callCount + ' OpenAI web-search call(s), roughly $' + (callCount * AI_WEBSITE_EST_COST_PER_COMPANY_USD).toFixed(2) +
+        ' (estimate). Companies that already have a reliable website on another lead are reused for free' +
+        (companyCount > AI_WEBSITE_RUN_CAP ? '; only the first ' + AI_WEBSITE_RUN_CAP + ' companies run this time' : '') + '.\\n\\n' +
+        'Run it?',
+    );
+    if (!confirmed) return;
+
+    aiWebsiteTargetIds = leads.map(function (l) { return l.id; });
+    bulkState.inFlight = true;
+    bulkState.mode = 'ai-website';
+    bulkState.completed = 0;
+    bulkState.total = callCount;
+    bulkState.status = '';
+    render();
+
+    apiFetch('/leads/ai-website/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadIds: aiWebsiteTargetIds }),
+    })
+      .then(function (result) {
+        if (!result.started) {
+          if (result.alreadyRunning) {
+            pollAiWebsiteStatus();
+            return;
+          }
+          bulkState.inFlight = false;
+          bulkState.mode = null;
+          bulkState.status = result.reason || 'Nothing to search.';
+          render();
+          return;
+        }
+        bulkState.total = result.companies;
+        render();
+        pollAiWebsiteStatus();
+      })
+      .catch(function (err) {
+        bulkState.inFlight = false;
+        bulkState.mode = null;
+        bulkState.status = err.message;
+        render();
+      });
+  }
+
   // Bulk "DM Search + Industry selected" (task 4 of 4, 08.09 follow-up) — same server-side
   // batch/polling architecture as Backfill LinkedIn above (apollo-bulk-search.service.ts),
   // Apollo-only (never OpenAI/Gemini/Claude — the sidebar's single-lead DM Search button is
@@ -4927,6 +5067,7 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   document.getElementById('bulk-enrich-btn').addEventListener('click', startBulkEnrich);
   document.getElementById('bulk-contact-btn').addEventListener('click', startBulkContactBackfill);
   document.getElementById('bulk-company-linkedin-btn').addEventListener('click', startBulkCompanyLinkedin);
+  document.getElementById('bulk-ai-website-btn').addEventListener('click', startBulkAiWebsite);
   document.getElementById('bulk-apollo-search-btn').addEventListener('click', startBulkApolloSearch);
   document.getElementById('bulk-delete-btn').addEventListener('click', startBulkDelete);
 

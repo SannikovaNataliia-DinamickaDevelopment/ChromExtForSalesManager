@@ -106,8 +106,9 @@ export const INDEED_REGIONS: IndeedRegion[] = [
 ];
 
 // Pre-selected in the side panel's region dropdown until the manager changes the selection
-// (then her own choice is remembered — see App.tsx).
-export const DEFAULT_INDEED_REGION_IDS = ['us', 'ca', 'au', 'uk', 'de'];
+// (then her own choice is remembered — see App.tsx). All countries by default (06.10 meeting):
+// parse everything first, exclude countries later only if their data proves irrelevant.
+export const DEFAULT_INDEED_REGION_IDS = INDEED_REGIONS.map((r) => r.id);
 
 // Indeed's account/sign-in host — never a job page (see indeed-pagination.ts's isIndeedSignInWall).
 export const INDEED_SIGNIN_HOST = 'secure.indeed.com';

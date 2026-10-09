@@ -138,12 +138,12 @@ export class ApolloBulkSearchService {
     // LeadsService.lprSearch, checked here up front so a batch isn't half-run before refusing.
     const flagged = targets
       .map((id) => byId.get(id))
-      .filter((row) => row?.company_website_source === 'description_guess');
+      .filter((row) => row?.company_website_source === 'description_guess' || row?.company_website_source === 'ai_guess');
     if (flagged.length > 0 && !confirmUnverifiedWebsites) {
       throw new AppError(
         HttpStatus.CONFLICT,
         'UNVERIFIED_COMPANY_WEBSITE',
-        `${flagged.length} selected lead(s) have a website guessed from the job description (not verified): ` +
+        `${flagged.length} selected lead(s) have an automatically found website that is not verified: ` +
           flagged.map((row) => `${row?.company} (${row?.company_website})`).join(', ') +
           '. Confirm before running the Apollo search.',
       );

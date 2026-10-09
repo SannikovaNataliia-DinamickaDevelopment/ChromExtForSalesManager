@@ -66,7 +66,7 @@ const LEGAL_SUFFIX_WORDS = new Set([
   'holdings', 'international', 'global', 'services', 'solutions',
 ]);
 
-function registrableDomain(host: string): string | null {
+export function registrableDomain(host: string): string | null {
   const h = host.toLowerCase().replace(/^\.+|\.+$/g, '');
   const labels = h.split('.').filter(Boolean);
   if (labels.length < 2) return null;
@@ -75,13 +75,13 @@ function registrableDomain(host: string): string | null {
   return lastTwo;
 }
 
-function isBlocked(domain: string): boolean {
+export function isBlocked(domain: string): boolean {
   if (BLOCKED_DOMAINS.has(domain)) return true;
   const tld = domain.split('.').pop() ?? '';
   return BLOCKED_TLDS.has(tld);
 }
 
-function nameTokens(company: string): string[] {
+export function nameTokens(company: string): string[] {
   const plain = company
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
@@ -94,7 +94,7 @@ function nameTokens(company: string): string[] {
 
 // 0 = no match, 2 = the domain's main label contains a name token / the name contains the label,
 // 3 = the label starts with the name (wabteccorp.com for "Wabtec" beats mywabtecbenefits.com).
-function nameMatchScore(domain: string, tokens: string[]): number {
+export function nameMatchScore(domain: string, tokens: string[]): number {
   if (tokens.length === 0) return 0;
   const label = domain.split('.')[0].replace(/-/g, '');
   const joined = tokens.join('');

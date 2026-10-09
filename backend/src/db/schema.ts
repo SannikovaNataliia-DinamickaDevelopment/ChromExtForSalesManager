@@ -46,7 +46,17 @@ export const industryEnum = pgEnum('industry', [
 // 'job_posting' = structured data from the posting itself (JSON-LD sameAs etc.); 'confirmed' = a
 // manager verified it. Null on rows saved before this column existed — treated like
 // 'job_posting' (every website before this feature came from structured posting data).
-export const companyWebsiteSourceEnum = pgEnum('company_website_source', ['job_posting', 'description_guess', 'confirmed']);
+// 'ai_verified' / 'ai_guess' (09.10, Indeed V1): found by the AI website finder
+// (ai-website.service.ts) — 'ai_verified' when the site loaded and mentions the company and the
+// model was confident (treated as reliable, no flag); 'ai_guess' otherwise (flagged exactly like
+// 'description_guess').
+export const companyWebsiteSourceEnum = pgEnum('company_website_source', [
+  'job_posting',
+  'description_guess',
+  'confirmed',
+  'ai_verified',
+  'ai_guess',
+]);
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -90,6 +100,9 @@ export const job_leads = pgTable(
     // detail page's JSON-LD JobPosting. Sometimes a reposting board, not the true employer.
     company_website: text('company_website'),
     company_website_source: companyWebsiteSourceEnum('company_website_source'),
+    // Why this website was chosen, when an automatic finder picked it (AI confidence + reasoning,
+    // verification outcome) — shown in the dashboard sidebar for review. Null otherwise.
+    company_website_note: text('company_website_note'),
     job_title: text('job_title'),
     location: text('location'),
     description: text('description'),

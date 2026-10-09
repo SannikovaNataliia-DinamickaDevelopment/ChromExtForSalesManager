@@ -6,9 +6,11 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import type { SessionPayload } from '../auth/types';
 import { AppError } from '../common/app-error';
+import { AiWebsiteService } from './ai-website.service';
 import { ApolloBulkSearchService } from './apollo-bulk-search.service';
 import { ApolloCompanySearchService } from './apollo-company-search.service';
 import { CompanyLinkedinService } from './company-linkedin.service';
+import { AiWebsiteDto } from './dto/ai-website.dto';
 import { BackfillCompanyLinkedinDto } from './dto/backfill-company-linkedin.dto';
 import { BulkApolloSearchDto } from './dto/bulk-apollo-search.dto';
 import { BulkDeleteLeadsDto } from './dto/bulk-delete-leads.dto';
@@ -31,6 +33,7 @@ export class LeadsController {
     private readonly companyLinkedinService: CompanyLinkedinService,
     private readonly apolloBulkSearchService: ApolloBulkSearchService,
     private readonly apolloCompanySearch: ApolloCompanySearchService,
+    private readonly aiWebsiteService: AiWebsiteService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead.
@@ -88,6 +91,24 @@ export class LeadsController {
   @Get('company-linkedin/status')
   async companyLinkedinStatus() {
     return this.companyLinkedinService.getStatus();
+  }
+
+  // AI company-website finder (Indeed V1) — selection-scoped background batch, same shape as
+  // company-linkedin/backfill: POST starts it (spends OpenAI credit — one call per company), GET is
+  // polled for progress. See AiWebsiteService.
+  @Post('ai-website/start')
+  async startAiWebsite(@Body() body: unknown) {
+    const dto = plainToInstance(AiWebsiteDto, body);
+    const errors = await validate(dto);
+    if (errors.length > 0) {
+      throw new AppError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR', 'leadIds must be a non-empty array of lead id strings');
+    }
+    return this.aiWebsiteService.startBatch(dto.leadIds);
+  }
+
+  @Get('ai-website/status')
+  async aiWebsiteStatus() {
+    return this.aiWebsiteService.getStatus();
   }
 
   // Bulk "DM Search + Industry selected" (task 4 of 4, 08.09 follow-up) — Apollo-only, row-

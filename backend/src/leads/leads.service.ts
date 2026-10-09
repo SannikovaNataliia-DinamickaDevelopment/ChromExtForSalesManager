@@ -3,6 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import * as ExcelJS from 'exceljs';
 import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { AppError } from '../common/app-error';
+import { AiWebsiteService } from './ai-website.service';
 import { guessCompanyWebsite } from './company-website-from-description';
 import { getKyivTodayUtcRange } from '../common/format-kyiv-time';
 import { DB } from '../db/db.module';
@@ -43,6 +44,7 @@ export class LeadsService {
     private readonly claudeClassifier: ClaudeClassifierService,
     private readonly openaiClassifier: OpenaiClassifierService,
     private readonly apolloClassifier: ApolloClassifierService,
+    private readonly aiWebsite: AiWebsiteService,
   ) {}
 
   // Shared team lead base (decision log): every authenticated user sees every lead, not
@@ -290,6 +292,16 @@ export class LeadsService {
 
     const [updated] = await this.db.update(job_leads).set(update).where(eq(job_leads.id, id)).returning();
 
+    // Opt-in (AI_WEBSITE_AUTO=true): a freshly deepened lead still without a reliable website goes
+    // to the AI website finder automatically. No-op by default — every call costs OpenAI credit.
+    if (
+      patch.description &&
+      updated.company &&
+      (!updated.company_website || updated.company_website_source === 'description_guess')
+    ) {
+      this.aiWebsite.enqueueAuto(updated.id);
+    }
+
     const [owner] = await this.db
       .select({ email: users.email, display_name: users.display_name })
       .from(users)
@@ -374,7 +386,11 @@ export class LeadsService {
       ? and(
           isNull(job_leads.deleted_at),
           sql`lower(trim(${job_leads.company})) = lower(trim(${lead.company}))`,
-          or(isNull(job_leads.company_website), eq(job_leads.company_website_source, 'description_guess')),
+          or(
+            isNull(job_leads.company_website),
+            eq(job_leads.company_website_source, 'description_guess'),
+            eq(job_leads.company_website_source, 'ai_guess'),
+          ),
         )
       : undefined;
     const updated = await this.db
@@ -540,13 +556,13 @@ export class LeadsService {
     // unless the caller explicitly confirms (the dashboard asks the manager first).
     if (
       resolvedProvider === 'apollo' &&
-      existing.company_website_source === 'description_guess' &&
+      (existing.company_website_source === 'description_guess' || existing.company_website_source === 'ai_guess') &&
       !options.confirmUnverifiedWebsite
     ) {
       throw new AppError(
         HttpStatus.CONFLICT,
         'UNVERIFIED_COMPANY_WEBSITE',
-        `The website for ${existing.company} (${existing.company_website}) was guessed from the job description and is not verified — confirm it before an Apollo search.`,
+        `The website for ${existing.company} (${existing.company_website}) was found automatically and is not verified — confirm it before an Apollo search.`,
       );
     }
     const classifier =
