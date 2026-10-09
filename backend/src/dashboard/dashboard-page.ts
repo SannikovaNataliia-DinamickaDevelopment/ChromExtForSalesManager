@@ -4730,13 +4730,13 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   var aiWebsitePollId = null;
   var aiWebsiteTargetIds = [];
 
-  // Eligible: company name present, no reliable website (none / description or AI guess), and
-  // not a known dead end from an earlier AI search — mirrors AiWebsiteService.startBatch.
+  // Eligible: company name present, no website or only a description guess, and not already
+  // searched by AI (dead end or 'ai_guess' — those need a human) — mirrors AiWebsiteService.startBatch.
   function getSelectedNeedsAiWebsite() {
     return getSelectedLeads().filter(function (l) {
       if (!l.company || !l.company.trim()) return false;
       if ((l.company_website_note || '').indexOf(AI_NOT_FOUND_NOTE_PREFIX) === 0) return false;
-      return !l.company_website || isWebsiteUnverified(l);
+      return !l.company_website || l.company_website_source === 'description_guess';
     });
   }
 

@@ -282,12 +282,13 @@ export class AiWebsiteService {
       .from(job_leads)
       .where(and(isNull(job_leads.deleted_at), inArray(job_leads.id, leadIds)));
 
-    // Eligible: has a company name, no reliable website yet (none, or only a flagged guess), and
-    // not an already-paid-for dead end.
+    // Eligible: has a company name, no website yet or only a description guess (the AI may confirm
+    // or correct it), and not already searched by AI — neither a dead end nor an 'ai_guess' (a
+    // repeat call would most likely return the same answer; those need a human, not more spend).
     const groups = new Map<string, CompanyGroup>();
     let skippedIneligible = 0;
     for (const r of rows) {
-      const unreliable = !r.company_website || r.company_website_source === 'description_guess' || r.company_website_source === 'ai_guess';
+      const unreliable = !r.company_website || r.company_website_source === 'description_guess';
       const deadEnd = (r.company_website_note ?? '').startsWith(AI_NOT_FOUND_NOTE_PREFIX);
       if (!r.company?.trim() || !unreliable || deadEnd) {
         skippedIneligible++;
