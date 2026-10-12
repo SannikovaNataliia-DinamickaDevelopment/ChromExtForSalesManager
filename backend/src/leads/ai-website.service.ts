@@ -529,8 +529,8 @@ export class AiWebsiteService {
       is_recruiting_agency: parsed.is_recruiting_agency === true,
       // NUL characters stripped: Postgres text rejects them (live 12.10: "invalid byte sequence for
       // encoding UTF8: 0x00" failed the save for one company after the paid call).
-      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.replace(/ /g, '').slice(0, 500) : '',
-      website: typeof parsed.website === 'string' ? parsed.website.replace(/ /g, '') : '',
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.replace(/\u0000/g, '').slice(0, 500) : '',
+      website: typeof parsed.website === 'string' ? parsed.website.replace(/\u0000/g, '') : '',
     };
   }
 }
