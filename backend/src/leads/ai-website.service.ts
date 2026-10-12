@@ -525,10 +525,12 @@ export class AiWebsiteService {
 
     const parsed = JSON.parse(response.output_text || '{}') as Partial<AiAnswer>;
     return {
-      website: typeof parsed.website === 'string' ? parsed.website : '',
       confidence: parsed.confidence === 'high' || parsed.confidence === 'medium' ? parsed.confidence : 'low',
       is_recruiting_agency: parsed.is_recruiting_agency === true,
-      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 500) : '',
+      // NUL characters stripped: Postgres text rejects them (live 12.10: "invalid byte sequence for
+      // encoding UTF8: 0x00" failed the save for one company after the paid call).
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.replace(/ /g, '').slice(0, 500) : '',
+      website: typeof parsed.website === 'string' ? parsed.website.replace(/ /g, '') : '',
     };
   }
 }
