@@ -66,6 +66,28 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Long wait that keeps an MV3 service worker alive (12.10: the dashboard's Enrich now runs Indeed
+// deepening from background.ts, where a plain 30-60s timer can outlive an idle-looking worker) —
+// one cheap real chrome.* call every 15s, same approach as wellfound-deepen.ts's
+// waitKeepingServiceWorkerAlive. Harmless when called from the side panel.
+const KEEPALIVE_TICK_MS = 15_000;
+
+async function waitKeepingAlive(ms: number): Promise<void> {
+  let remaining = ms;
+  while (remaining > 0) {
+    const tick = Math.min(KEEPALIVE_TICK_MS, remaining);
+    await sleep(tick);
+    remaining -= tick;
+    if (remaining > 0) {
+      try {
+        await chrome.runtime.getPlatformInfo();
+      } catch {
+        return; // extension context gone — nothing left to keep alive
+      }
+    }
+  }
+}
+
 interface ExtractResponse {
   ok: boolean;
   detail?: DeepenedFields;
@@ -365,7 +387,7 @@ export async function runIndeedAutoDeepenWaves(
 
     const isLastWave = w === waveCount - 1;
     if (!isLastWave) {
-      await sleep(INDEED_AUTO_BATCH_PAUSE_MIN_MS + Math.random() * (INDEED_AUTO_BATCH_PAUSE_MAX_MS - INDEED_AUTO_BATCH_PAUSE_MIN_MS));
+      await waitKeepingAlive(INDEED_AUTO_BATCH_PAUSE_MIN_MS + Math.random() * (INDEED_AUTO_BATCH_PAUSE_MAX_MS - INDEED_AUTO_BATCH_PAUSE_MIN_MS));
     }
   }
 

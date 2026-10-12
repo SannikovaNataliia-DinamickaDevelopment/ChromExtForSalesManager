@@ -3323,6 +3323,9 @@ export function renderDashboardPage(opts: { authError?: string }): string {
   function detailState(lead) {
     if (lead.enrichment_error) return 'error';
     if (!lead.description && !lead.company_website) return 'not_detailed';
+    // Indeed (12.10): its website never comes from the posting (AI search / Apollo / description
+    // fill it independently), so a website doesn't mean the posting was read — only a description does.
+    if (!lead.description && lead.source_site === 'indeed') return 'not_detailed';
     return 'detailed';
   }
 

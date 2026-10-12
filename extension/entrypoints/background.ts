@@ -4,6 +4,7 @@ import { BACKEND_URL, isSupportedUrl } from '../lib/backend';
 import { FetchDeepening } from '../lib/deepen';
 import { deepenWellfoundLeads, runWellfoundAutoDeepenWaves, WELLFOUND_RUN_CAP } from '../lib/wellfound-deepen';
 import { backfillWellfoundContact } from '../lib/wellfound-contact-backfill';
+import { deepenIndeedLeads, runIndeedAutoDeepenWaves } from '../lib/indeed-deepen';
 
 const BULK_ENRICH_PORT_NAME = 'enrich-bulk';
 
@@ -37,6 +38,10 @@ const sidePanelOpen = () => openSidePanelCount > 0;
 
 const WELLFOUND_SIDEPANEL_REQUIRED_ERROR =
   "Open the extension's side panel first, then try again — Wellfound enrichment needs it open to keep running.";
+// Same requirement for Indeed (12.10): its deepening also runs in a real background tab with
+// human-paced delays and can pause up to 10 min on a Cloudflare check.
+const INDEED_SIDEPANEL_REQUIRED_ERROR =
+  "Open the extension's side panel first, then try again — Indeed enrichment needs it open to keep running.";
 
 // Coordinator (CLAUDE.md phase 1): resolves the active tab, asks its content
 // script to parse the current list page, then forwards the batch to the
@@ -267,6 +272,26 @@ async function enrichLead(message: EnrichLeadMessage) {
       : { ok: false as const, error: 'Could not enrich this Wellfound lead (bot-detection block or timeout).' };
   }
 
+  // Indeed (12.10 fix): a plain fetch of an Indeed job page is always 403'd (anti-bot), so the
+  // old FetchDeepening fall-through below never worked for Indeed. Same real-background-tab
+  // deepening the side panel's auto-deepen uses (indeed-deepen.ts), at n=1 — including the
+  // Cloudflare-check pause. Only the description is saved; the backend then runs its usual
+  // follow-ups (website from description, company data sharing).
+  if (sourceSite === 'indeed') {
+    if (!sidePanelOpen()) {
+      return { ok: false as const, error: INDEED_SIDEPANEL_REQUIRED_ERROR };
+    }
+    const result = await deepenIndeedLeads([{ id: leadId, source_url: sourceUrl }], () => {});
+    if (result.succeeded === 1) return { ok: true as const };
+    return result.interrupted
+      ? { ok: false as const, error: 'The Indeed background window was closed before the posting was read.' }
+      : {
+          ok: false as const,
+          error:
+            'Could not read this Indeed posting — a Cloudflare check that wasn\u2019t completed, a removed posting, or a timeout. Try again.',
+        };
+  }
+
   // Techjobs/ITjobs (and any other future fetch-reachable source): FetchDeepening directly.
   // Its batch wrapper (deepen.ts's deepenLeads) only adds a between-lead delay and progress
   // callbacks — both moot at n=1 — so there's no orchestration worth going through here.
@@ -346,7 +371,9 @@ async function enrichLeadsBulk(
   }
 
   const wellfoundLeads = leads.filter((l) => l.sourceSite === 'wellfound');
-  const otherLeads = leads.filter((l) => l.sourceSite !== 'wellfound');
+  // Indeed (12.10 fix): real-tab deepening in waves, like Wellfound — a fetch is always 403'd.
+  const indeedLeads = leads.filter((l) => l.sourceSite === 'indeed');
+  const otherLeads = leads.filter((l) => l.sourceSite !== 'wellfound' && l.sourceSite !== 'indeed');
 
   // Checked upfront, before any work (Techjobs/ITjobs included) starts — see
   // SIDEPANEL_PORT_NAME's comment above for why. A mixed selection with the panel closed
@@ -358,8 +385,11 @@ async function enrichLeadsBulk(
   if (wellfoundLeads.length > 0 && !sidePanelOpen()) {
     throw new Error(WELLFOUND_SIDEPANEL_REQUIRED_ERROR);
   }
+  if (indeedLeads.length > 0 && !sidePanelOpen()) {
+    throw new Error(INDEED_SIDEPANEL_REQUIRED_ERROR);
+  }
 
-  const total = otherLeads.length + wellfoundLeads.length;
+  const total = otherLeads.length + wellfoundLeads.length + indeedLeads.length;
   let completed = 0;
   let succeeded = 0;
   let failed = 0;
@@ -404,6 +434,22 @@ async function enrichLeadsBulk(
       // breaker inside one wave, or the background window closed) — the untried tail was
       // never attempted, so it's a skip, not a failure.
       skippedCircuitBreakerLeadIds = wellfoundLeads.slice(result.processed).map((l) => l.leadId);
+    }
+  }
+
+  if (indeedLeads.length > 0) {
+    const result = await runIndeedAutoDeepenWaves(
+      indeedLeads.map((l) => ({ id: l.leadId, source_url: l.sourceUrl })),
+      (progress) => onProgress({ completed: completed + progress.overallProcessed, total }),
+    );
+    completed += result.processed;
+    succeeded += result.succeeded;
+    failed += result.processed - result.succeeded;
+    if (result.stoppedEarly) {
+      // Untried tail of the Indeed selection (circuit breaker or window closed) — a skip, not a failure.
+      skippedCircuitBreakerLeadIds = skippedCircuitBreakerLeadIds.concat(
+        indeedLeads.slice(result.processed).map((l) => l.leadId),
+      );
     }
   }
 
