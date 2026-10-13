@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { AppError } from '../common/app-error';
 
 // Company lookup by NAME in Apollo (06.10 call, point 5): Indeed gives a company name but no
@@ -135,7 +135,6 @@ function mockCandidates(query: string): ApolloCompanyCandidate[] {
 
 @Injectable()
 export class ApolloCompanySearchService {
-  private readonly logger = new Logger(ApolloCompanySearchService.name);
   private readonly cache = new Map<string, { at: number; result: ApolloCompanySearchResult }>();
 
   async searchByName(rawQuery: string): Promise<ApolloCompanySearchResult> {
@@ -181,10 +180,6 @@ export class ApolloCompanySearchService {
         `Could not reach Apollo: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-
-    // First-integration visibility (same convention as apollo-classifier.service.ts) — remove
-    // once a real response has confirmed the field mapping in toCandidate().
-    this.logger.log(`[APOLLO DEBUG] company search "${query}" HTTP ${status}: ${JSON.stringify(data).slice(0, 3000)}`);
 
     if (status < 200 || status >= 300) {
       const errBody = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;

@@ -181,7 +181,7 @@ Copy `backend/.env.example` as your starting point. Every variable is commented 
 | `GEMINI_API_KEY_LPR_TEST` | No | Alternate DM-search provider; this project's own history notes billing/quota issues on this key specifically — not part of the recommended path |
 | `ANTHROPIC_API_KEY_LPR_TEST` | No | Alternate DM-search provider; a live test on record cost ~$0.65/lead — don't enable this as a default, it's roughly 5-6x OpenAI's cost |
 | `GEMINI_MODEL` | No | Falls back to a hardcoded default if unset |
-| `AI_WEBSITE_AUTO` | No — leave unset | `true` makes every freshly deepened lead without a reliable website go to the AI website finder automatically (spends OpenAI credit without a click). **Not enabled** — a business decision, not a deploy setting |
+| `AI_WEBSITE_AUTO` | No — leave unset | `true` makes every freshly deepened lead without a reliable website go to the AI website finder automatically (spends OpenAI credit without a click). **Not enabled** — whether to turn it on is Artem's call (he manages the OpenAI/Apollo budgets) |
 | `AI_WEBSITE_MOCK` | No — leave unset | `true` = the AI website finder makes no OpenAI call and saves nothing (UI testing only) |
 | `APOLLO_COMPANY_SEARCH_MOCK` | No — leave unset | `true` = "Find company in Apollo" shows clearly marked sample candidates and saves nothing (UI testing only) |
 
@@ -221,14 +221,22 @@ The extension is not going through the Chrome Web Store. It has **separate, inde
 - No health-check endpoint.
 - No spend cap on OpenAI usage anywhere in this codebase.
 - Soft-deleted leads are permanently purged after `LEAD_RETENTION_DAYS` (30) days by an in-process cron job — this only fires while the Node process stays continuously running; there's no external scheduler behind it.
-- Apollo responses are logged in full (`[APOLLO DEBUG]` lines) — first-integration visibility; noisy, and worth turning down once the integration is settled.
+- The DM-search module `apollo-classifier.service.ts` still logs raw Apollo responses (`[APOLLO DEBUG]` lines) — it predates the Indeed work and was deliberately left untouched, since production runs its own, reworked Apollo logic (see "Release handoff").
 - Company grouping ("same company") is computed in application code over all leads — fine at the current size (hundreds of rows); revisit with a stored key column if the table grows large.
 
 ---
 
 ## Release handoff
 
-Day-to-day work happens in this GitHub repository (feature branches, e.g. `fix/indeed-pagination` for the Indeed release). **The handoff for review and production goes through the corporate GitLab** (`gl.dinamicka.info`, project `teamprojects/job-site-parser`): the release branch is transferred there and reviewed by Artem, who merges and deploys it. Checklist for the production deploy of the Indeed release:
+Day-to-day work happens in this GitHub repository (feature branches, e.g. `fix/indeed-pagination` for the Indeed release). **The handoff for review and production goes through the corporate GitLab** (`gl.dinamicka.info`, project `teamprojects/job-site-parser`): the release branch is transferred there and reviewed by Artem, who merges and deploys it. **Apollo in production differs from this repository.** Production runs a reworked Apollo integration that this branch does not have, so the Indeed work will be adapted to it during review. The places where this branch touches Apollo — all optional for Indeed parsing itself:
+- `backend/src/leads/apollo-company-search.service.ts` + `POST /leads/:id/company-match` + the dashboard's "Find company in Apollo" modal — company lookup by name (`mixed_companies/search`), new in this branch.
+- The "!" gate before Apollo: `LeadsService.lprSearch` (`confirmUnverifiedWebsite`) and `ApolloBulkSearchService.startBatch` (`confirmUnverifiedWebsites`) refuse leads whose website is `description_guess` / `ai_guess` without an explicit confirmation; the dashboard asks first.
+- `backend/src/leads/company-data-sync.service.ts` copies Apollo results between leads of one company (organization id + industry fields everywhere; `lpr_*` decision-makers only within the same country) and is triggered after `lprSearch`.
+- The AI website finder (OpenAI) only fills `company_website`; it doesn't call Apollo.
+
+**Automatic runs are not enabled.** Neither the AI website finder (`AI_WEBSITE_AUTO`) nor any Apollo call runs automatically after parsing; enabling automation is Artem's decision, as he manages the OpenAI/Apollo credits.
+
+Checklist for the production deploy of the Indeed release:
 1. `npm run db:migrate` (adds migrations 0016–0017).
 2. `OPENAI_API_KEY` and `APOLLO_API_KEY` set on the server; `AI_WEBSITE_AUTO` / `*_MOCK` left unset.
 3. Outbound HTTPS from the backend allowed to arbitrary sites (see above).
